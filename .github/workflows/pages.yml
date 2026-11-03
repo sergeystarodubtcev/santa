@@ -2,6 +2,7 @@ name: Тесты и деплой сайта на GitHub Pages
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
