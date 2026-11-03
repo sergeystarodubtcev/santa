@@ -19,7 +19,7 @@
     budgetMin: null,
     budgetMax: null,
     announcement: '',
-    chatUrl: 'https://t.me/c/1641902727/156432',
+    chatUrl: 'https://t.me/coffeemaniacs_channel/10490',
   };
 
   const PREFS = { coffee: 'Кофейное', noncoffee: 'Некофейное', any: 'Удивите меня' };
@@ -48,6 +48,7 @@
     const base = emptyDb();
     for (const k of Object.keys(base)) if (db[k] === undefined) db[k] = base[k];
     db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings || {});
+    if (db.settings.chatUrl === 'https://t.me/c/1641902727/156432') db.settings.chatUrl = DEFAULT_SETTINGS.chatUrl;
     return db;
   }
 
