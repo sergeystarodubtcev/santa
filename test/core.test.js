@@ -24,7 +24,7 @@ function seed(n) {
   for (let i = 0; i < n; i++) {
     const r = call(db, 'POST', '/api/register', { name: 'User ' + i, phone: '8900123456' + i, tg: '@user_' + i, password: 'secret1' });
     ids.push(r.user.id);
-    call(db, 'POST', '/api/participate', { address: 'Ozon ПВЗ ' + i, wishes: 'кофе', agree: true, prefs: 'coffee' }, as(r.user.id));
+    call(db, 'POST', '/api/participate', { fullName: 'Иванов Иван ' + i, address: 'Ozon ПВЗ ' + i, wishes: 'кофе', agree: true, prefs: 'coffee' }, as(r.user.id));
   }
   return { db, ids };
 }
@@ -45,8 +45,10 @@ test('анкета требует согласия и адреса, счётчи
   const { db } = seed(3);
   assert.equal(call(db, 'GET', '/api/public').count, 3);
   const r = call(db, 'POST', '/api/register', { name: 'Аня', phone: '+79990000000', tg: 'anya_v60', password: 'secret1' });
-  assert.throws(() => call(db, 'POST', '/api/participate', { address: 'ПВЗ Ozon', agree: false }, as(r.user.id)), /Подтвердите/);
-  call(db, 'POST', '/api/participate', { address: 'ПВЗ Ozon', agree: true, notes: 'у меня аллергия на инфьюзы' }, as(r.user.id));
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Анна Смирнова', address: 'ПВЗ Ozon', agree: false }, as(r.user.id)), /Подтвердите/);
+  call(db, 'POST', '/api/participate', { fullName: 'Анна Смирнова', phone: '+7 999 111 22 33', address: 'ПВЗ Ozon', agree: true, notes: 'у меня аллергия на инфьюзы' }, as(r.user.id));
+  assert.equal(call(db, 'GET', '/api/me', null, as(r.user.id)).user.phone, '+79991112233'); // телефон обновился в профиле
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Анна', phone: '89001234560', address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /другого/);
   const pub = call(db, 'GET', '/api/public');
   assert.equal(pub.count, 4);
   assert.equal(pub.recent[0], 'Аня');
@@ -78,7 +80,7 @@ test('забаненные не участвуют, после жеребьёв�
   assert.equal(db.pairs.length, 3);
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
   const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1' });
-  assert.throws(() => call(db, 'POST', '/api/participate', { address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /Жеребьёвка/);
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /Жеребьёвка/);
 });
 
 test('полный цикл: получатель, дедлайн, отправка, «Вам подарок от Деда Мороза», получение', () => {
@@ -89,6 +91,7 @@ test('полный цикл: получатель, дедлайн, отправ�
 
   let me = call(db, 'GET', '/api/me', null, as(santa));
   assert.ok(me.assignment.recipient.address.startsWith('Ozon'));
+  assert.match(me.assignment.recipient.fullName, /^Иванов Иван/);
   assert.equal(me.deadline.kind, 'info'); // до 1 декабря
 
   clock = Date.parse('2026-12-08T10:00:00+03:00');

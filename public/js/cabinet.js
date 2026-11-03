@@ -19,6 +19,16 @@
     errEl.textContent = '';
     btn.disabled = true; btn.classList.add('loading');
     try { await fn(); } catch (e) {
+      if (e.status === 401 && Api.token()) {
+        Api.logout();
+        if (!modal.hidden) closePart();
+        $('[data-cab-view]').hidden = true;
+        $('[data-logout]').hidden = true;
+        $('[data-auth-view]').hidden = false;
+        $('[data-auth-view] [data-err]').textContent = 'Аккаунт не найден — войдите или зарегистрируйтесь заново';
+        btn.disabled = false; btn.classList.remove('loading');
+        return;
+      }
       errEl.textContent = e.message;
       form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
     }
@@ -51,6 +61,8 @@
   const pf = $('[data-form=part]');
   function openPart() {
     const p = me.participation || {};
+    pf.fullName.value = p.fullName || '';
+    pf.phone.value = me.user.phone || '';
     pf.address.value = p.address || '';
     pf.wishes.value = p.wishes || '';
     pf.notes.value = p.notes || '';
@@ -69,6 +81,7 @@
     submit(pf, async () => {
       const first = !me.participation;
       me = await Api.post('/api/participate', {
+        fullName: pf.fullName.value, phone: pf.phone.value,
         address: pf.address.value, wishes: pf.wishes.value, notes: pf.notes.value,
         prefs: (pf.querySelector('input[name=prefs]:checked') || {}).value, agree: pf.agree.checked,
       });
@@ -124,12 +137,13 @@
         <div class="${revealedOnce ? '' : 'flip'}">
           <p style="margin-bottom:14px">Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
           <dl class="kv">
+            <dt>ФИО</dt><dd><span class="copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
             <dt>Куда</dt><dd><span class="copy" data-copy="${esc(r.address)}" title="Скопировать">${esc(r.address)}</span> 📋</dd>
             <dt>Телефон</dt><dd><span class="copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
             <dt>Telegram</dt><dd>@${esc(r.tg)}</dd>
             <dt>Тематика</dt><dd>${esc(PREFS[r.prefs] || '—')}</dd>
             <dt>Хочет</dt><dd>${esc(r.wishes) || '<span class="muted">не написал(а) — сюрприз!</span>'}</dd>
-            ${r.notes ? `<dt>⚠️ Важно</dt><dd><b style="color:var(--gold)">${esc(r.notes)}</b></dd>` : ''}
+            ${r.notes ? `<dt>⚠️ Важно</dt><dd><span class="important">${esc(r.notes)}</span></dd>` : ''}
             ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
           </dl>
           ${a.status === 'assigned' ? `
@@ -193,6 +207,8 @@
       host.innerHTML = `<p class="muted">Анкета не заполнена.</p>${me.user.banned ? '' : '<button class="btn btn-primary" data-open-part>🎅 Участвовать</button>'}`;
     } else {
       host.innerHTML = `<dl class="kv">
+        <dt>ФИО</dt><dd>${esc(p.fullName) || '<span class="important">не указано — заполните!</span>'}</dd>
+        <dt>Телефон</dt><dd>${esc(me.user.phone)}</dd>
         <dt>Адрес</dt><dd>${esc(p.address)}</dd>
         <dt>Тематика</dt><dd>${esc(PREFS[p.prefs])}</dd>
         <dt>Пожелания</dt><dd>${esc(p.wishes) || '—'}</dd>

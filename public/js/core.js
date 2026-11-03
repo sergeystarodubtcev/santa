@@ -141,11 +141,21 @@
     const existing = db.participations[userId];
     if (!existing && db.drawnAt) fail(409, 'Жеребьёвка уже проведена — регистрация закрыта');
     if (!existing && !db.settings.regOpen) fail(409, 'Регистрация закрыта');
+    const fullName = str(body.fullName, 120);
+    if (fullName.length < 3) fail(400, 'Укажите ФИО получателя посылки');
+    if (body.phone != null && String(body.phone).trim()) {
+      const phone = normPhone(body.phone);
+      if (phone !== user.phone) {
+        if (db.users.some((u) => u.id !== userId && u.phone === phone)) fail(409, 'Этот телефон уже указан у другого участника');
+        user.phone = phone;
+      }
+    }
     const address = str(body.address, 400);
     if (address.length < 5) fail(400, 'Укажите адрес ПВЗ Ozon или свой адрес');
     if (!body.agree) fail(400, 'Подтвердите участие и дальнейшую отправку подарка');
     const prefs = PREFS[body.prefs] ? body.prefs : 'any';
     db.participations[userId] = {
+      fullName,
       address,
       wishes: str(body.wishes, 1000),
       notes: str(body.notes, 500),
@@ -248,7 +258,7 @@
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
       const rp = db.participations[mine.recipientId] || {};
       out.assignment = {
-        recipient: { name: r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
+        recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
       };
     }
@@ -351,7 +361,7 @@
       case 'POST /api/admin/login':
         if (!ctx.checkAdmin(String(body.password || ''))) fail(401, 'Неверный пароль администратора');
         return ok({ token: ctx.issueToken({ admin: true }) });
-      case 'GET /api/admin/state': needAdmin(); return ok(adminState(db));
+      case 'GET /api/admin/state': needAdmin(); return ok(Object.assign(adminState(db), { storage: ctx.storage ? ctx.storage() : null }));
       case 'POST /api/admin/shuffle': needAdmin(); shuffle(db, ctx, body); return ok(adminState(db), true);
       case 'POST /api/admin/reset': needAdmin(); resetDraw(db); return ok(adminState(db), true);
       case 'POST /api/admin/settings': needAdmin(); updateSettings(db, body); return ok(adminState(db), true);

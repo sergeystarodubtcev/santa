@@ -68,6 +68,7 @@ const GH_PATH = process.env.GITHUB_DATA_PATH || 'db.json';
 const GH_URL = GH_REPO ? `https://api.github.com/repos/${GH_REPO}/contents/${GH_PATH}` : null;
 const ghHeaders = () => ({ Authorization: 'Bearer ' + GH_TOKEN, Accept: 'application/vnd.github+json', 'User-Agent': 'coffeemaniacs-santa' });
 let ghSha = null, ghTimer = null, ghChain = Promise.resolve();
+const storage = { mode: GH_URL ? 'github' : 'disk', repo: GH_REPO || null, lastSave: null, lastError: null, loaded: false };
 
 async function ghLoad() {
   const r = await fetch(GH_URL, { headers: ghHeaders() });
@@ -78,6 +79,7 @@ async function ghLoad() {
   let text = Buffer.from(j.content || '', 'base64').toString('utf8');
   if (!text && j.download_url) text = await (await fetch(j.download_url, { headers: ghHeaders() })).text();
   db = core.ensure(JSON.parse(text));
+  storage.loaded = true;
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 1));
   console.log(`[santa] база загружена из github.com/${GH_REPO}/${GH_PATH}: ${db.users.length} пользователей`);
 }
@@ -91,11 +93,29 @@ async function ghPush() {
   }
   if (!r.ok) throw new Error('GitHub ' + r.status + ' ' + (await r.text()).slice(0, 200));
   ghSha = (await r.json()).content.sha;
+  storage.lastSave = Date.now();
+  storage.lastError = null;
 }
 function ghSchedule() {
   if (!GH_URL) return;
   clearTimeout(ghTimer);
-  ghTimer = setTimeout(() => { ghChain = ghChain.then(ghPush).catch((e) => console.error('[santa] не удалось сохранить в GitHub:', e.message)); }, 2000);
+  ghTimer = setTimeout(ghFlush, 700);
+}
+function ghFlush() {
+  clearTimeout(ghTimer);
+  ghTimer = null;
+  ghChain = ghChain.then(ghPush).catch((e) => {
+    storage.lastError = e.message;
+    console.error('[santa] не удалось сохранить в GitHub:', e.message);
+  });
+  return ghChain;
+}
+// Render/Docker при перезапуске шлют SIGTERM — успеваем дописать базу в GitHub.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, async () => {
+    if (GH_URL && ghTimer) { console.log('[santa] сохраняю базу перед остановкой…'); await ghFlush(); }
+    process.exit(0);
+  });
 }
 
 // ---------- crypto helpers ----------
@@ -217,6 +237,7 @@ const server = http.createServer(async (req, res) => {
       id: () => crypto.randomBytes(8).toString('hex'),
       random: () => crypto.randomInt(0, 2 ** 32) / 2 ** 32,
       hash, verify, issueToken, checkAdmin,
+      storage: () => Object.assign({}, storage),
       userId: auth && auth.uid ? auth.uid : null,
       isAdmin: !!(auth && auth.admin),
     };

@@ -6,7 +6,7 @@
   <title>Личный кабинет · Тайный Санта Кофеманьяков</title>
   <meta property="og:title" content="Кофеманьячный Тайный Санта ☕🎅">
   <meta property="og:image" content="img/og.png">
-  <meta name="theme-color" content="#140c09">
+  <meta name="theme-color" content="#ffffff">
   <link rel="icon" href="img/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,7 +46,7 @@
             <button class="btn btn-primary btn-block" type="submit">Войти</button>
           </form>
           <form class="form" data-form="register" novalidate hidden>
-            <label>Имя и фамилия<input name="name" autocomplete="name" placeholder="Сергей Кофеманов"></label>
+            <label>Как вас зовут<input name="name" autocomplete="given-name" placeholder="Сергей"></label>
             <label>Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00"></label>
             <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac"></label>
             <label>Пароль<input name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов"></label>
@@ -98,9 +98,13 @@
       <button class="modal-x" data-close aria-label="Закрыть">✕</button>
       <div class="modal-head"><div class="modal-emoji">📦</div><h3>Анкета участника</h3></div>
       <form class="form" data-form="part" novalidate>
+        <div class="form-section">📦 Данные для доставки</div>
+        <label>ФИО получателя<small>Так, как в паспорте — для выдачи в ПВЗ</small><input name="fullName" autocomplete="name" placeholder="Кофеманов Сергей Иванович"></label>
+        <label>Телефон для посылки<small>Если поменяете — обновится и в профиле</small><input name="phone" type="tel" autocomplete="tel"></label>
         <label>Адрес пункта выдачи Ozon
           <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно свой адрес — отправят в ближайший ПВЗ"></textarea>
         </label>
+        <div class="form-section">🎁 О подарке</div>
         <label>Что хочется получить<textarea name="wishes" rows="3" placeholder="Светлая обжарка, дрипы, подставка под дрипы, свечка…"></textarea></label>
         <div class="field-label">Тематика подарка</div>
         <div class="chips">

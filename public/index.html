@@ -10,7 +10,7 @@
   <meta property="og:image" content="img/og.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#140c09">
+  <meta name="theme-color" content="#ffffff">
   <link rel="icon" href="img/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,7 +34,6 @@
 
   <!-- ============ HERO ============ -->
   <section class="hero">
-    <canvas class="snow"></canvas>
     <div class="sky" data-santas></div>
     <div class="hero-grid wrap">
       <div class="hero-text reveal">
@@ -146,9 +145,18 @@
     </div>
   </section>
 
+  <!-- ============ DUSK: темнеет, пошёл снег ============ -->
+  <section class="dusk" aria-hidden="true">
+    <div class="moon"></div>
+    <div class="stars" data-stars></div>
+    <div class="dusk-text">
+      <h2>Темнеет… ❄️</h2>
+      <p>Самое время для зимних чудес и горячего кофе</p>
+    </div>
+  </section>
+
   <!-- ============ JOIN ============ -->
-  <section class="join" id="join">
-    <canvas class="snow"></canvas>
+  <section class="join dark" id="join">
     <div class="sky" data-santas-join></div>
     <div class="beans" aria-hidden="true"></div>
     <div class="join-inner wrap">
@@ -176,7 +184,7 @@
     </div>
   </section>
 
-  <footer class="footer">
+  <footer class="footer dark">
     <div class="wrap footer-inner">
       <div class="brand"><span class="brand-ava"><img src="img/logo.png" alt=""></span><span class="brand-name">Кофеманьяки<small>сварено с ☕ и ❤️ для своих</small></span></div>
       <div class="footer-links"><a href="cabinet.html">Личный кабинет</a><a data-chat-link href="https://t.me/coffeemaniacs_channel/10490" target="_blank" rel="noopener">Пост в Telegram</a><a href="admin.html">Админка</a></div>
@@ -200,7 +208,7 @@
           <button type="button" class="tab" data-auth="login">У меня есть аккаунт</button>
         </div>
         <div data-auth-pane="register">
-          <label>Имя и фамилия<input name="name" autocomplete="name" placeholder="Сергей Кофеманов" required></label>
+          <label>Как вас зовут<input name="name" autocomplete="given-name" placeholder="Сергей" required></label>
           <div class="row2">
             <label>Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" required></label>
             <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac" required></label>
@@ -216,9 +224,17 @@
       </form>
 
       <form data-step="2" class="form" novalidate hidden>
+        <div class="form-section">📦 Данные для доставки</div>
+        <label>ФИО получателя<small>Так, как в паспорте — для выдачи в ПВЗ</small>
+          <input name="fullName" autocomplete="name" placeholder="Кофеманов Сергей Иванович" required>
+        </label>
+        <label>Телефон для посылки<small>Подставили из аккаунта. Если поменяете — обновится и в личном кабинете</small>
+          <input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" required>
+        </label>
         <label>Адрес пункта выдачи Ozon
           <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно просто свой адрес — отправят в ближайший ПВЗ" required></textarea>
         </label>
+        <div class="form-section">🎁 О подарке</div>
         <label>Что хочется получить
           <textarea name="wishes" rows="3" placeholder="Светлая обжарка под фильтр, дрип-пакеты, подставка под дрипы, свечка…"></textarea>
         </label>

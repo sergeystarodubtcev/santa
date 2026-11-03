@@ -52,6 +52,12 @@
     $('[data-dash]').hidden = false;
     $('[data-logout]').hidden = false;
     const s = state.stats;
+    const sto = state.storage;
+    $('[data-storage]').innerHTML = !sto ? '' : sto.mode === 'github'
+      ? (sto.lastError
+        ? `<div class="storage bad">⚠️ Не удаётся сохранить базу в GitHub (${esc(sto.repo)}): ${esc(sto.lastError)}. Проверьте GITHUB_TOKEN и GITHUB_DATA_REPO в Render!</div>`
+        : `<div class="storage ok">💾 База сохраняется в приватный репозиторий ${esc(sto.repo)}${sto.lastSave ? ' · последнее сохранение ' + FX.fmtDateTime(sto.lastSave) : ''}</div>`)
+      : '<div class="storage bad">⚠️ База хранится только на диске сервера и сотрётся при перезапуске Render. Задайте GITHUB_DATA_REPO и GITHUB_TOKEN.</div>';
     $('[data-tiles]').innerHTML = [
       [s.users, 'аккаунтов'], [s.participants, 'в игре'], [s.banned, 'в чёрном списке'], [s.sent, 'отправили'], [s.received, 'получили'],
     ].map(([v, l]) => `<div class="card tile"><b>${v}</b><span>${l}</span></div>`).join('');
@@ -86,8 +92,8 @@
       return `<tr class="${u.banned ? 'banned' : ''}">
         <td><b>${esc(u.name)}</b><small>${FX.fmtDateTime(u.createdAt)}</small></td>
         <td>${esc(u.phone)}<small><a href="https://t.me/${esc(u.tg)}" target="_blank" rel="noopener">@${esc(u.tg)}</a></small></td>
-        <td>${p ? esc(p.address) : '<span class="muted">анкета не заполнена</span>'}</td>
-        <td>${p ? `${esc(SantaCore.PREFS[p.prefs])}<small>${esc(p.wishes) || '—'}</small>${p.notes ? `<small style="color:var(--gold)">⚠️ ${esc(p.notes)}</small>` : ''}` : ''}</td>
+        <td>${p ? `${esc(p.address)}<small>${esc(p.fullName || '')}</small>` : '<span class="muted">анкета не заполнена</span>'}</td>
+        <td>${p ? `${esc(SantaCore.PREFS[p.prefs])}<small>${esc(p.wishes) || '—'}</small>${p.notes ? `<small class="important">⚠️ ${esc(p.notes)}</small>` : ''}` : ''}</td>
         <td>${u.banned ? '<span class="status banned">🛑 бан</span>' : p ? '<span class="status received">в игре</span>' : '<span class="status">аккаунт</span>'}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Разбанить' : '🛑 В ЧС'}</button>
@@ -172,12 +178,12 @@
   });
   $('[data-csv]').addEventListener('click', () => {
     const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const rows = [['Имя', 'Телефон', 'Telegram', 'Адрес', 'Тематика', 'Пожелания', 'Пометки', 'Бан', 'Дарит кому']];
+    const rows = [['Имя', 'ФИО', 'Телефон', 'Telegram', 'Адрес', 'Тематика', 'Пожелания', 'Пометки', 'Бан', 'Дарит кому']];
     const byId = Object.fromEntries(state.users.map((u) => [u.id, u]));
     state.users.forEach((u) => {
       const p = u.participation || {};
       const pair = state.pairs.find((x) => x.santaId === u.id);
-      rows.push([u.name, u.phone, '@' + u.tg, p.address, SantaCore.PREFS[p.prefs] || '', p.wishes, p.notes, u.banned ? 'да' : '', pair && byId[pair.recipientId] ? byId[pair.recipientId].name : '']);
+      rows.push([u.name, p.fullName, u.phone, '@' + u.tg, p.address, SantaCore.PREFS[p.prefs] || '', p.wishes, p.notes, u.banned ? 'да' : '', pair && byId[pair.recipientId] ? byId[pair.recipientId].name : '']);
     });
     download('santa-participants.csv', '﻿' + rows.map((r) => r.map(q).join(';')).join('\n'), 'text/csv');
   });

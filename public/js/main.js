@@ -18,6 +18,29 @@
     beans.appendChild(b);
   }
 
+  // ---------- день → ночь: по мере прокрутки темнеет и начинается снег ----------
+  const nightSnow = document.createElement('canvas');
+  nightSnow.className = 'night-snow';
+  document.body.appendChild(nightSnow);
+  FX.snow(nightSnow, { density: 6000 });
+  const stars = $('[data-stars]');
+  for (let i = 0; i < 40; i++) {
+    const st = document.createElement('i');
+    st.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 100}%;--t:${2 + Math.random() * 3}s;opacity:${0.4 + Math.random() * 0.6}`;
+    stars.appendChild(st);
+  }
+  const dusk = $('.dusk');
+  function onScroll() {
+    const r = dusk.getBoundingClientRect();
+    // 0 — dusk ещё внизу экрана, 1 — dusk прокручен и началась ночь
+    const t = Math.min(1, Math.max(0, (innerHeight * 0.6 - r.top) / (r.height * 0.8)));
+    nightSnow.style.opacity = t.toFixed(3);
+    document.body.classList.toggle('night', t > 0.65);
+  }
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  onScroll();
+
   let me = null;
   let lastCount = null;
   let cdTimers = [];
@@ -93,7 +116,12 @@
     setTimeout(() => (modal.hidden = true), 250);
   }
   function fillStep2(p) {
+    if (me && me.user) {
+      f2.phone.value = me.user.phone || '';
+      if (!f2.fullName.value) f2.fullName.value = (p && p.fullName) || '';
+    }
     if (!p) return;
+    f2.fullName.value = p.fullName || f2.fullName.value;
     f2.address.value = p.address || '';
     f2.wishes.value = p.wishes || '';
     f2.notes.value = p.notes || '';
@@ -144,6 +172,7 @@
     try {
       const wasIn = me && me.participation;
       me = await Api.post('/api/participate', {
+        fullName: f2.fullName.value, phone: f2.phone.value,
         address: f2.address.value, wishes: f2.wishes.value, notes: f2.notes.value,
         prefs: (f2.querySelector('input[name=prefs]:checked') || {}).value, agree: f2.agree.checked,
       });
@@ -152,7 +181,18 @@
       FX.burst(innerWidth / 2, innerHeight / 2, { count: 160, power: 14 });
       loadPublic();
       FX.chrome();
-    } catch (ex) { err(f2, ex.message); }
+    } catch (ex) {
+      if (ex.status === 401) {
+        // сессия от старой базы — просим войти/зарегистрироваться заново
+        Api.logout();
+        me = null;
+        busy(f2, false);
+        showStep(1);
+        err(f1, 'Аккаунт не найден — зарегистрируйтесь заново (анкету мы сохраним, когда войдёте)');
+        return;
+      }
+      err(f2, ex.message);
+    }
     busy(f2, false);
   });
 

@@ -29,7 +29,7 @@
         if (f.y > h + 5) Object.assign(f, mk(false));
         if (f.x > w + 5) f.x = -5; else if (f.x < -5) f.x = w + 5;
         ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,250,240,${f.o})`; ctx.fill();
+        ctx.fillStyle = `rgba(${opts.rgb || '255,255,255'},${f.o})`; ctx.fill();
       }
       requestAnimationFrame(frame);
     }
@@ -177,7 +177,7 @@
 
   // ---------- shared chrome: header, demo badge, banners ----------
   async function chrome() {
-    document.querySelectorAll('canvas.snow').forEach((c) => snow(c));
+    document.querySelectorAll('canvas.snow').forEach((c) => snow(c, { rgb: '160,178,210', density: 14000 }));
     const mode = await Api.mode();
     if (mode === 'demo') {
       const b = document.createElement('div');
