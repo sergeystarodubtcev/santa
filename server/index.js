@@ -27,6 +27,7 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..',
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const STARTED_AT = new Date().toISOString();
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 60; // 60 дней
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -70,7 +71,19 @@ const ghHeaders = () => ({ Authorization: 'Bearer ' + GH_TOKEN, Accept: 'applica
 let ghSha = null, ghTimer = null, ghChain = Promise.resolve();
 const storage = { mode: GH_URL ? 'github' : 'disk', repo: GH_REPO || null, lastSave: null, lastError: null, loaded: false };
 
+async function ghCheckAccess() {
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}`, { headers: ghHeaders() });
+  if (r.ok) {
+    const j = await r.json();
+    if (j.permissions && j.permissions.push === false) throw new Error(`у токена нет права записи в ${GH_REPO} — нужно Contents: Read and write`);
+    return;
+  }
+  if (r.status === 401) throw new Error('GITHUB_TOKEN неверный или истёк (401)');
+  if (r.status === 404) throw new Error(`репозиторий ${GH_REPO} не найден или токену не дали к нему доступ (404). Проверьте имя owner/repo и «Only select repositories» в настройках токена`);
+  throw new Error('GitHub ' + r.status + ' ' + (await r.text()).slice(0, 200));
+}
 async function ghLoad() {
+  await ghCheckAccess();
   const r = await fetch(GH_URL, { headers: ghHeaders() });
   if (r.status === 404) { console.log('[santa] в репозитории данных пока нет базы — создам при первом сохранении'); return; }
   if (!r.ok) throw new Error('GitHub ' + r.status + ' ' + (await r.text()).slice(0, 200));
@@ -97,7 +110,7 @@ async function ghPush() {
   storage.lastError = null;
 }
 function ghSchedule() {
-  if (!GH_URL) return;
+  if (!GH_URL || storage.broken) return;
   clearTimeout(ghTimer);
   ghTimer = setTimeout(ghFlush, 700);
 }
@@ -241,6 +254,20 @@ const server = http.createServer(async (req, res) => {
       userId: auth && auth.uid ? auth.uid : null,
       isAdmin: !!(auth && auth.admin),
     };
+    if (url.pathname === '/api/health') {
+      return send(res, 200, {
+        ok: true,
+        storage: {
+          mode: storage.mode,
+          repo: storage.repo,
+          loadedFromGithub: storage.loaded,
+          lastSave: storage.lastSave ? new Date(storage.lastSave).toISOString() : null,
+          error: storage.lastError,
+        },
+        users: db.users.length,
+        startedAt: STARTED_AT,
+      });
+    }
     const { data, mutated } = core.handle(db, ctx, req.method, url.pathname, body);
     if (mutated) save();
     send(res, 200, data);
@@ -254,8 +281,15 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   (async () => {
     if (GH_URL) {
-      if (!GH_TOKEN) throw new Error('GITHUB_DATA_REPO задан, но нет GITHUB_TOKEN');
-      await ghLoad();
+      try {
+        if (!GH_TOKEN) throw new Error('GITHUB_DATA_REPO задан, но GITHUB_TOKEN пустой');
+        await ghLoad();
+      } catch (e) {
+        // Не падаем, чтобы сайт работал, но громко сообщаем: данные НЕ сохраняются.
+        storage.lastError = e.message;
+        storage.broken = true;
+        console.error('[santa] ⚠️ ХРАНИЛИЩЕ GITHUB НЕ РАБОТАЕТ:', e.message);
+      }
     }
     server.listen(PORT, () => console.log(`[santa] http://localhost:${PORT}  (база: ${DB_FILE}${GH_URL ? ' + github:' + GH_REPO : ''})`));
   })().catch((e) => { console.error('[santa] не удалось запуститься:', e.message); process.exit(1); });

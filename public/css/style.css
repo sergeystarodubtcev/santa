@@ -219,7 +219,7 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 .rule p b { color: var(--accent); }
 
 /* ---------- dusk: день переходит в ночь ---------- */
-.dusk { position: relative; height: 90vh; min-height: 520px; margin-top: 100px; display: grid; place-items: center; text-align: center; overflow: hidden;
+.dusk { position: relative; height: 90vh; min-height: 520px; margin-top: 60px; display: grid; place-items: center; text-align: center; overflow: hidden;
   background: linear-gradient(180deg, #ffffff 0%, #e8eefc 18%, #9fb2dc 42%, #3b4a7a 68%, #141c36 88%, var(--night) 100%); }
 .dusk-text { position: relative; z-index: 2; color: #fff; text-shadow: 0 4px 30px rgba(11, 16, 32, .6); padding: 0 20px; margin-top: 30vh; }
 .dusk-text h2 { font-size: clamp(30px, 5vw, 56px); font-weight: 900; }
@@ -451,3 +451,10 @@ tr.banned td { opacity: .55; }
 .mega-btn { animation: none; }
 .mega-wrap::before { content: ''; position: absolute; inset: 6%; border-radius: 50%; background: radial-gradient(circle, rgba(230, 57, 70, .55), transparent 65%); animation: glow 2.8s ease-in-out infinite; will-change: opacity, transform; }
 @keyframes glow { 50% { opacity: .45; transform: scale(1.12); } }
+
+/* блоки «Как это работает» и «Правила» — в ночной части, под кнопкой */
+.info { background: var(--night); padding-bottom: 100px; }
+.info .section:first-child { padding-top: 40px; }
+.dark .step-n { color: rgba(255, 255, 255, .1); }
+.dark .rule p b { color: #ffd166; }
+.join { padding-bottom: 60px; }
