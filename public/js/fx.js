@@ -127,11 +127,11 @@
       <path d="M28 10 L37 1 L41 10 Z" fill="#e63946"/>
       <circle cx="37" cy="1.5" r="2.4" fill="#fff"/>`;
   // Зверёк Specialty Кофеёк в шапке Деда Мороза
-  const CIVET = `<circle cx="30" cy="26" r="10" fill="#6b6259"/>
-      <image href="img/civet-head.png" x="20" y="0" width="24" height="24"/>
-      <path d="M21 4 L33 -10 L44 3 Z" fill="#e63946"/>
-      <rect x="19" y="2" width="27" height="5" rx="2.5" fill="#fff"/>
-      <circle cx="33" cy="-10" r="2.8" fill="#fff"/>`;
+  const CIVET = `<circle cx="30" cy="27" r="9" fill="#6b6259"/>
+      <image href="img/civet-head.png" x="23" y="5" width="18" height="18"/>
+      <path d="M24 8 L33 -3 L41 7 Z" fill="#e63946"/>
+      <rect x="22.5" y="5.5" width="20" height="4" rx="2" fill="#fff"/>
+      <circle cx="33" cy="-3" r="2.3" fill="#fff"/>`;
   const sleighSvg = (rider) => `<svg viewBox="-4 -4 190 66" width="190" height="66" aria-hidden="true">
       <path class="rein" d="M62 36 Q 90 30 112 30 Q 130 28 150 22"/>
       <path class="runner" d="M0 56 H60 q10 0 10 -9"/>
@@ -152,7 +152,11 @@
       el.className = 'flying-santa';
       const rtl = Math.random() < 0.5;
       sleighN++;
-      el.innerHTML = '<span class="fs-inner">' + sleighSvg(sleighN % 3 === 0 ? CIVET : SANTA) + '</span>';
+      // раз в 10 саней едет зверёк Specialty Кофеёк — по клику открывается канал
+      const civet = sleighN % 10 === 0;
+      el.innerHTML = civet
+        ? '<a class="fs-inner fs-link" href="https://t.me/speccof" target="_blank" rel="noopener" title="Specialty Кофеёк">' + sleighSvg(CIVET) + '</a>'
+        : '<span class="fs-inner">' + sleighSvg(SANTA) + '</span>';
       const top = 5 + Math.random() * (opts.maxTop || 55);
       const dur = 9 + Math.random() * 8;
       const scale = 0.7 + Math.random() * 0.9;

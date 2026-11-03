@@ -111,7 +111,8 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 /* ---------- hero ---------- */
 .hero { position: relative; min-height: calc(100vh - 69px); display: flex; align-items: center; overflow: hidden; padding: 40px 0 80px;
   background: radial-gradient(900px 500px at 85% 0%, #fff1e6, transparent 60%), radial-gradient(700px 500px at 0% 100%, #eef2ff, transparent 60%), #fff; }
-.sky { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+.sky { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.fs-link { pointer-events: auto; cursor: pointer; }
 .hero-grid { position: relative; z-index: 2; display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
 .hero-grid > * { min-width: 0; }
 .hero h1 { font-size: clamp(36px, 5.2vw, 66px); font-weight: 900; margin: 18px 0 20px; }
