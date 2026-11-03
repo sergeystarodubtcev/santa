@@ -158,7 +158,7 @@
         ? '<a class="fs-inner fs-link" href="https://t.me/speccof" target="_blank" rel="noopener" title="Specialty Кофеёк">' + sleighSvg(CIVET) + '</a>'
         : '<span class="fs-inner">' + sleighSvg(SANTA) + '</span>';
       const top = 5 + Math.random() * (opts.maxTop || 55);
-      const dur = 9 + Math.random() * 8;
+      const dur = civet ? 18 + Math.random() * 4 : 9 + Math.random() * 8; // зверёк едет медленнее
       const scale = 0.7 + Math.random() * 0.9;
       el.style.cssText = `top:${top}%;--dur:${dur}s;--scale:${scale};`;
       if (rtl) el.classList.add('rtl');

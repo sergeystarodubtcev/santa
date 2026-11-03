@@ -491,3 +491,9 @@ tr.banned td { opacity: .55; }
 .fs-pop-x { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: #f1f3f8; color: #111318; cursor: pointer; font-size: 12px; }
 .fs-pop .btn { width: 100%; }
 @keyframes popin { from { opacity: 0; transform: translateY(8px) scale(.9); } }
+
+/* зверька должно быть можно нажать везде, в том числе в ночной части у кнопки */
+.join .sky { z-index: 4; }
+/* навели мышку на сани со зверьком — они замирают, чтобы было легко попасть */
+.flying-santa:has(.fs-link):hover, .flying-santa:has(.fs-link):hover .fs-inner, .flying-santa:has(.fs-link):hover .fs-inner * { animation-play-state: paused; }
+.fs-link::before { content: ''; position: absolute; inset: -14px; } /* область клика чуть больше саней */
