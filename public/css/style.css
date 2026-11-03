@@ -458,3 +458,13 @@ tr.banned td { opacity: .55; }
 .dark .step-n { color: rgba(255, 255, 255, .1); }
 .dark .rule p b { color: #ffd166; }
 .join { padding-bottom: 60px; }
+
+/* подпись автора сайта */
+.madeby { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); padding: 6px 16px 6px 6px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); transition: transform .2s, border-color .2s; }
+.madeby:hover { transform: translateY(-2px); border-color: #8b5a3a; }
+.madeby img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: #fff; }
+.madeby span { display: flex; flex-direction: column; font-size: 13px; line-height: 1.25; color: var(--muted); }
+.madeby b { color: var(--text); font-size: 14px; }
+.madeby small { font-size: 12px; color: var(--muted); }
+.footer-mini { background: var(--bg-soft); border-top: 1px solid var(--border); padding: 20px 0 30px; }
+.footer-mini .footer-inner { justify-content: center; }
