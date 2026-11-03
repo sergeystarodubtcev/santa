@@ -20,6 +20,11 @@
     if (!modePromise) {
       modePromise = (async () => {
         if (cfg.forceDemo) return 'demo';
+        // Адрес бэкенда задан явно — никогда не уходим в демо (бесплатный хостинг может «просыпаться» до минуты).
+        if (base) {
+          fetch(base + '/api/health', { cache: 'no-store' }).catch(() => {});
+          return 'remote';
+        }
         try {
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 6000);
@@ -91,7 +96,7 @@
         cache: 'no-store',
       });
     } catch (e) {
-      const err = new Error('Сервер недоступен. Проверьте интернет и попробуйте ещё раз.');
+      const err = new Error('Сервер просыпается или недоступен. Подождите полминуты и попробуйте ещё раз ☕');
       err.status = 0;
       throw err;
     }

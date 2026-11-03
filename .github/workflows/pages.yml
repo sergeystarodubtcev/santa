@@ -40,7 +40,9 @@ jobs:
           API_URL: ${{ vars.API_URL }}
           BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
-          node -e 'require("fs").writeFileSync("public/js/config.js", "window.SANTA_CONFIG = { apiUrl: " + JSON.stringify(process.env.API_URL || "") + " };\n")'
+          if [ -n "$API_URL" ]; then
+            node -e 'require("fs").writeFileSync("public/js/config.js", "window.SANTA_CONFIG = { apiUrl: " + JSON.stringify(process.env.API_URL) + " };\n")'
+          fi
           sed -i "s#content=\"img/og.png\"#content=\"${BASE_URL}/img/og.png\"#" public/*.html
           cat public/js/config.js
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
