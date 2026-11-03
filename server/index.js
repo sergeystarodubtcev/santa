@@ -221,7 +221,8 @@ function serveStatic(req, res, urlPath) {
     const ext = path.extname(file);
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600',
+      // html/css/js всегда перепроверяются — иначе после обновления браузер смешивает старые стили с новой разметкой
+      'Cache-Control': ['.html', '.css', '.js'].includes(ext) ? 'no-cache' : 'public, max-age=86400',
     });
     res.end(buf);
   });
