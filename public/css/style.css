@@ -76,7 +76,7 @@ p { margin: 0 0 .8em; }
 
 .pill { display: inline-block; padding: .4em 1em; border-radius: 999px; background: var(--card-strong); border: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
-.dark .card { backdrop-filter: blur(6px); }
+
 
 /* ---------- top bar ---------- */
 .topbar {
@@ -268,9 +268,9 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 .mega-cup .mc-stream { stroke: #6f4e37; stroke-width: 7; stroke-dasharray: 80; stroke-dashoffset: 80; }
 .mega-cup .mc-coffee { fill: #6f4e37; transform: translateY(30px); transition: transform .2s; }
 .mega-btn:hover .mc-coffee { transform: translateY(22px); }
-.mega-btn.pouring { animation: shake .5s ease-in-out 2; }
-.mega-btn.pouring .mc-stream { animation: pour 1s ease-in-out forwards; }
-.mega-btn.pouring .mc-coffee { animation: cupfill 1s ease-in-out forwards; }
+.mega-btn.pouring { animation: shake .45s ease-in-out 1; }
+.mega-btn.pouring .mc-stream { animation: pour .55s ease-in-out forwards; }
+.mega-btn.pouring .mc-coffee { animation: cupfill .55s ease-in-out forwards; }
 .mega-btn.pouring .mega-ring { animation-duration: .6s; }
 @keyframes pour { 0% { stroke-dashoffset: 80; } 60% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -80; } }
 @keyframes cupfill { to { transform: translateY(2px); } }
@@ -278,6 +278,8 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 body.flash::after { content: ''; position: fixed; inset: 0; z-index: 70; pointer-events: none; background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .6), transparent 60%); animation: flash .6s ease-out forwards; }
 @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
 canvas.fx-burst { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+/* пока открыта анкета — фон не анимируем, чтобы ничего не тормозило */
+body.modal-open .orbit, body.modal-open .beans i, body.modal-open .mega-btn, body.modal-open .mega-btn::before, body.modal-open .mega-ring, body.modal-open .ticker-track, body.modal-open .coffee-scene *, body.modal-open .ring-text { animation-play-state: paused !important; }
 
 /* ---------- footer ---------- */
 .footer { border-top: 1px solid rgba(255, 255, 255, .1); padding: 30px 0 70px; background: #070b16; }
@@ -288,7 +290,7 @@ canvas.fx-burst { position: fixed; inset: 0; z-index: 200; pointer-events: none;
 
 /* ---------- modal & forms (всегда светлые) ---------- */
 .modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; }
-.modal-backdrop { position: absolute; inset: 0; background: rgba(11, 16, 32, .55); backdrop-filter: blur(6px); opacity: 0; transition: opacity .25s; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(11, 16, 32, .7); opacity: 0; transition: opacity .25s; }
 .modal-card { position: relative; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: #fff; border-radius: 28px; padding: 28px; box-shadow: 0 40px 120px rgba(0, 0, 0, .4); transform: translateY(30px) scale(.94); opacity: 0; transition: transform .35s cubic-bezier(.3, 1.4, .5, 1), opacity .25s;
   --text: #111318; --muted: #5d6270; --border: rgba(17, 19, 24, .12); --card: #fff; --card-strong: #f1f3f8; --input: #f5f6fa; color: #111318; color-scheme: light; }
 .modal.open .modal-backdrop { opacity: 1; }
@@ -443,3 +445,9 @@ tr.banned td { opacity: .55; }
   *, *::before, *::after { animation-duration: .001s !important; animation-iteration-count: 1 !important; transition-duration: .001s !important; }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* производительность: анимируемые элементы — на отдельных GPU-слоях */
+.orbit, .orbit span, .beans i, .flying-santa, .mega-ring, .mega-btn::before, .ticker-track, .ring-text { will-change: transform; }
+.mega-btn { animation: none; }
+.mega-wrap::before { content: ''; position: absolute; inset: 6%; border-radius: 50%; background: radial-gradient(circle, rgba(230, 57, 70, .55), transparent 65%); animation: glow 2.8s ease-in-out infinite; will-change: opacity, transform; }
+@keyframes glow { 50% { opacity: .45; transform: scale(1.12); } }

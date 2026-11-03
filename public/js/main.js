@@ -22,7 +22,7 @@
   const nightSnow = document.createElement('canvas');
   nightSnow.className = 'night-snow';
   document.body.appendChild(nightSnow);
-  FX.snow(nightSnow, { density: 6000 });
+  FX.snow(nightSnow, { density: 7000, dpr: 1, max: 160 });
   const stars = $('[data-stars]');
   for (let i = 0; i < 40; i++) {
     const st = document.createElement('i');
@@ -53,7 +53,7 @@
       if (lastCount !== null && p.count > lastCount) {
         const el = $('.big-count');
         el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
-        FX.burstFrom(el, { count: 40, power: 7 });
+        FX.burstFrom(el, { count: 25, power: 8 });
         FX.toast('☕ +' + (p.count - lastCount) + ' кофеманьяк в игре: ' + p.recent[0]);
       }
       lastCount = p.count;
@@ -104,6 +104,7 @@
     modal.hidden = false;
     requestAnimationFrame(() => modal.classList.add('open'));
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('modal-open');
     if (me) {
       $('#mTitle').textContent = me.participation ? 'Обновить анкету' : 'Анкета Тайного Санты';
       fillStep2(me.participation);
@@ -113,6 +114,7 @@
   function closeModal() {
     modal.classList.remove('open');
     document.body.style.overflow = '';
+    document.body.classList.remove('modal-open');
     setTimeout(() => (modal.hidden = true), 250);
   }
   function fillStep2(p) {
@@ -178,7 +180,7 @@
       });
       showStep(3);
       if (wasIn) $('h3', done).textContent = 'Анкета обновлена!';
-      FX.burst(innerWidth / 2, innerHeight / 2, { count: 160, power: 14 });
+      FX.burst(innerWidth / 2, innerHeight / 2, { count: 60, power: 15 });
       loadPublic();
       FX.chrome();
     } catch (ex) {
@@ -202,10 +204,9 @@
     if (megaBtn.classList.contains('pouring')) return;
     megaBtn.classList.add('pouring');
     document.body.classList.add('flash');
-    FX.burstFrom(megaBtn, { count: 140, power: 15 });
-    setTimeout(() => FX.burstFrom(megaBtn, { count: 60, power: 9, emojiRatio: 0.8 }), 350);
-    setTimeout(() => document.body.classList.remove('flash'), 600);
-    setTimeout(() => { megaBtn.classList.remove('pouring'); openModal(); }, FX.reduced ? 0 : 1100);
+    FX.burstFrom(megaBtn, { count: 60, power: 16, emojiRatio: 0.2 });
+    setTimeout(() => document.body.classList.remove('flash'), 400);
+    setTimeout(() => { megaBtn.classList.remove('pouring'); openModal(); }, FX.reduced ? 0 : 550);
   });
 
   // ---------- init ----------

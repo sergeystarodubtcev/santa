@@ -87,7 +87,7 @@
       });
       closePart();
       render();
-      if (first) FX.burst(innerWidth / 2, innerHeight / 3, { count: 140 });
+      if (first) FX.burst(innerWidth / 2, innerHeight / 3, { count: 60 });
       FX.toast(first ? 'Вы в игре! 🎅' : 'Анкета сохранена ☕', 'success');
     });
   });
@@ -160,7 +160,7 @@
         submit(sf, async () => {
           me = await Api.post('/api/sent', { track: sf.track.value });
           render();
-          FX.burst(innerWidth / 2, innerHeight / 2, { count: 160, power: 14 });
+          FX.burst(innerWidth / 2, innerHeight / 2, { count: 60, power: 15 });
           FX.toast('Хо-хо-хо! Получатель увидит, что подарок в пути 🎁', 'success');
         });
       });
@@ -188,12 +188,12 @@
         try {
           me = await Api.post('/api/received');
           render();
-          FX.burst(innerWidth / 2, innerHeight / 2, { count: 200, power: 16, emojiRatio: 0.6 });
+          FX.burst(innerWidth / 2, innerHeight / 2, { count: 70, power: 16, emojiRatio: 0.25 });
         } catch (ex) { FX.toast(ex.message, 'error'); e.target.disabled = false; }
       });
       if (!sessionStorage.getItem('giftBurst')) {
         sessionStorage.setItem('giftBurst', '1');
-        setTimeout(() => FX.burstFrom(host, { count: 120 }), 400);
+        setTimeout(() => FX.burstFrom(host, { count: 50 }), 400);
       }
     } else {
       host.innerHTML = `<div class="gift-big" style="animation:none">🥳</div><p style="text-align:center">Подарок получен ${FX.fmtDateTime(g.receivedAt)}. С наступающим!</p>`;

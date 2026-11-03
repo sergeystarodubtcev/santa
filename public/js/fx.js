@@ -7,13 +7,13 @@
   function snow(canvas, opts) {
     opts = opts || {};
     const ctx = canvas.getContext('2d');
-    let w, h, flakes = [], dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w, h, flakes = [], dpr = opts.dpr || Math.min(window.devicePixelRatio || 1, 2);
     function resize() {
       w = canvas.clientWidth; h = canvas.clientHeight;
       canvas.width = w * dpr; canvas.height = h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const n = Math.round((w * h) / (opts.density || 9000));
-      flakes = Array.from({ length: Math.min(n, 260) }, () => mk(true));
+      flakes = Array.from({ length: Math.min(n, opts.max || 260) }, () => mk(true));
     }
     function mk(any) {
       const r = Math.random() * 2.6 + 0.6;
@@ -21,6 +21,8 @@
     }
     let wind = 0, t = 0;
     function frame() {
+      requestAnimationFrame(frame);
+      if (document.hidden || document.body.classList.contains('modal-open')) return;
       t += 0.01;
       wind = Math.sin(t * 0.7) * 0.6;
       ctx.clearRect(0, 0, w, h);
@@ -31,7 +33,6 @@
         ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${opts.rgb || '255,255,255'},${f.o})`; ctx.fill();
       }
-      requestAnimationFrame(frame);
     }
     resize();
     window.addEventListener('resize', resize);
@@ -49,22 +50,40 @@
     const rs = () => { burstCanvas.width = innerWidth; burstCanvas.height = innerHeight; };
     rs(); window.addEventListener('resize', rs);
   }
-  const EMOJI = ['☕', '🎁', '❄️', '⭐', '🎅', '🫘', '✨', '🦌', '🍪'];
-  const COLORS = ['#f6e7d2', '#d4a373', '#e63946', '#ffd166', '#ffffff', '#8ecae6'];
+  // Эмодзи рисуем один раз в маленькие картинки — fillText с эмодзи каждый кадр очень тормозит.
+  const EMOJI = ['🎁', '☕', '❄️', '⭐'];
+  const COLORS = ['#e63946', '#ffd166', '#ffffff', '#60a5fa', '#22c55e', '#ff7a00'];
+  const sprites = {};
+  function sprite(e) {
+    if (!sprites[e]) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const x = c.getContext('2d');
+      x.font = '48px serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(e, 32, 36);
+      sprites[e] = c;
+    }
+    return sprites[e];
+  }
+  const MAX_PARTS = 140;
+  // заранее готовим холст и картинки эмодзи, чтобы первое нажатие не подлагивало
+  const warm = () => { ensureBurst(); EMOJI.forEach(sprite); };
+  if (!reduced) (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(warm);
   function burst(x, y, opts) {
     if (reduced) return;
     opts = opts || {};
     ensureBurst();
-    const n = opts.count || 90;
+    const n = Math.min(opts.count || 50, 70, MAX_PARTS - parts.length);
+    const ratio = Math.min(opts.emojiRatio == null ? 0.15 : opts.emojiRatio, 0.3);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = Math.random() * (opts.power || 11) + 3;
-      const emoji = Math.random() < (opts.emojiRatio == null ? 0.35 : opts.emojiRatio);
+      const sp = Math.random() * (opts.power || 14) + 6;
+      const emoji = Math.random() < ratio;
       parts.push({
-        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4, g: 0.25 + Math.random() * 0.1,
-        life: 1, decay: 0.008 + Math.random() * 0.01, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
-        size: emoji ? 18 + Math.random() * 18 : 5 + Math.random() * 6,
-        emoji: emoji ? EMOJI[(Math.random() * EMOJI.length) | 0] : null,
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, g: 0.35,
+        life: 1, decay: 0.022 + Math.random() * 0.018, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4,
+        size: emoji ? 26 + Math.random() * 12 : 6 + Math.random() * 6,
+        img: emoji ? sprite(EMOJI[(Math.random() * EMOJI.length) | 0]) : null,
         color: COLORS[(Math.random() * COLORS.length) | 0],
       });
     }
@@ -72,15 +91,21 @@
   }
   function tick() {
     bctx.clearRect(0, 0, burstCanvas.width, burstCanvas.height);
-    parts = parts.filter((p) => p.life > 0 && p.y < innerHeight + 60);
+    parts = parts.filter((p) => p.life > 0 && p.y < innerHeight + 40);
     for (const p of parts) {
-      p.vy += p.g; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= p.decay;
-      bctx.save(); bctx.globalAlpha = Math.max(0, p.life); bctx.translate(p.x, p.y); bctx.rotate(p.rot);
-      if (p.emoji) { bctx.font = p.size + 'px serif'; bctx.textAlign = 'center'; bctx.fillText(p.emoji, 0, p.size / 3); }
-      else { bctx.fillStyle = p.color; bctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); }
-      bctx.restore();
+      p.vy += p.g; p.vx *= 0.97; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= p.decay;
+      bctx.globalAlpha = Math.max(0, p.life);
+      if (p.img) {
+        bctx.drawImage(p.img, p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      } else {
+        bctx.save(); bctx.translate(p.x, p.y); bctx.rotate(p.rot);
+        bctx.fillStyle = p.color; bctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        bctx.restore();
+      }
     }
-    if (parts.length) requestAnimationFrame(tick); else running = false;
+    bctx.globalAlpha = 1;
+    if (parts.length) requestAnimationFrame(tick);
+    else { running = false; bctx.clearRect(0, 0, burstCanvas.width, burstCanvas.height); }
   }
   function burstFrom(el, opts) {
     const r = el.getBoundingClientRect();
@@ -114,6 +139,7 @@
     opts = opts || {};
     if (reduced) return;
     const spawn = () => {
+      if (document.hidden || document.body.classList.contains('modal-open')) return;
       const el = document.createElement('div');
       el.className = 'flying-santa';
       const rtl = Math.random() < 0.5;

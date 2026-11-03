@@ -288,7 +288,7 @@
     };
   }
 
-  function adminState(db) {
+  function adminStateRaw(db) {
     const byId = Object.fromEntries(db.users.map((u) => [u.id, u]));
     return {
       settings: db.settings,
@@ -332,6 +332,7 @@
    */
   function handle(db, ctx, method, path, body) {
     body = body || {};
+    const adminState = (d) => Object.assign(adminStateRaw(d), { storage: ctx.storage ? ctx.storage() : null });
     const needUser = () => { if (!ctx.userId) fail(401, 'Войдите в личный кабинет'); return ctx.userId; };
     const needAdmin = () => { if (!ctx.isAdmin) fail(401, 'Нужен вход в админку'); };
     const ok = (data, mutated) => ({ data: data === undefined ? { ok: true } : data, mutated: !!mutated });
@@ -361,7 +362,7 @@
       case 'POST /api/admin/login':
         if (!ctx.checkAdmin(String(body.password || ''))) fail(401, 'Неверный пароль администратора');
         return ok({ token: ctx.issueToken({ admin: true }) });
-      case 'GET /api/admin/state': needAdmin(); return ok(Object.assign(adminState(db), { storage: ctx.storage ? ctx.storage() : null }));
+      case 'GET /api/admin/state': needAdmin(); return ok(adminState(db));
       case 'POST /api/admin/shuffle': needAdmin(); shuffle(db, ctx, body); return ok(adminState(db), true);
       case 'POST /api/admin/reset': needAdmin(); resetDraw(db); return ok(adminState(db), true);
       case 'POST /api/admin/settings': needAdmin(); updateSettings(db, body); return ok(adminState(db), true);

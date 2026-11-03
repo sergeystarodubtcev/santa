@@ -136,7 +136,7 @@
     btn.classList.add('shuffle-anim');
     const ok = await act('/api/admin/shuffle', { force }, 'Пары сформированы! 🎅');
     setTimeout(() => btn.classList.remove('shuffle-anim'), 1500);
-    if (ok) FX.burstFrom(btn, { count: 180, power: 15 });
+    if (ok) FX.burstFrom(btn, { count: 60, power: 15 });
   });
   $('[data-reset]').addEventListener('click', () => {
     if (confirm('Сбросить все пары? Участники снова увидят «конверт запечатан».')) act('/api/admin/reset', {}, 'Пары сброшены');
