@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261103d">
+  <link rel="stylesheet" href="css/style.css?v=20261103e">
 </head>
 <body class="page-home">
   <div class="banners" data-banners></div>
@@ -62,12 +62,13 @@
         <div class="coffee-scene" aria-hidden="true">
           <svg viewBox="0 0 420 330">
             <defs>
+              <clipPath id="kettleClip"><path d="M250 40 L345 25 L380 135 L265 150 Z"/></clipPath>
               <clipPath id="cupClip"><path d="M95 180 h170 c0 70 -30 105 -85 105 s-85 -35 -85 -105z"/></clipPath>
               <linearGradient id="coffeeGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a0673f"/><stop offset="1" stop-color="#4a2c1d"/></linearGradient>
             </defs>
             <g class="kettle">
               <path class="k-body" d="M250 40 L345 25 L380 135 L265 150 Z"/>
-              <path class="k-liquid" d="M300 95 L372 85 L380 135 L265 150 Z"/>
+              <g clip-path="url(#kettleClip)"><g class="k-level"><rect class="k-liquid" x="190" y="55" width="260" height="160" fill="url(#coffeeGrad)"/></g></g>
               <path class="k-spout" d="M255 42 L215 62 L222 72 L262 58"/>
               <path class="k-handle" d="M300 33 C 300 0, 345 -5, 345 25"/>
             </g>
@@ -255,10 +256,10 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261103d"></script>
-  <script src="js/core.js?v=20261103d"></script>
-  <script src="js/api.js?v=20261103d"></script>
-  <script src="js/fx.js?v=20261103d"></script>
-  <script src="js/main.js?v=20261103d"></script>
+  <script src="js/config.js?v=20261103e"></script>
+  <script src="js/core.js?v=20261103e"></script>
+  <script src="js/api.js?v=20261103e"></script>
+  <script src="js/fx.js?v=20261103e"></script>
+  <script src="js/main.js?v=20261103e"></script>
 </body>
 </html>

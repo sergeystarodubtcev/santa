@@ -134,17 +134,21 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 .coffee-scene svg { width: 100%; overflow: visible; }
 .coffee-scene path, .mega-cup path { fill: none; stroke: var(--text); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
 .coffee-scene .k-body { fill: #fff; }
-.coffee-scene .k-liquid { fill: #3b2418; stroke: none; animation: drain 6s ease-in-out infinite; transform-origin: 320px 150px; }
-.coffee-scene .kettle { transform-origin: 320px 140px; animation: tilt 6s ease-in-out infinite; }
+.coffee-scene .k-liquid { stroke: none; animation: kettle-level 8s ease-in-out infinite; }
+.coffee-scene .k-level { transform-box: view-box; transform-origin: 320px 140px; animation: tilt-back 8s ease-in-out infinite; }
+.coffee-scene .kettle { transform-box: view-box; transform-origin: 320px 140px; animation: tilt 8s ease-in-out infinite; }
 .coffee-scene .cup-body { fill: #fff; }
-.coffee-scene .stream { stroke: #6f4e37; stroke-width: 8; stroke-dasharray: 260; stroke-dashoffset: 260; animation: stream 6s ease-in-out infinite; }
-.coffee-scene .cup-coffee { animation: fill 6s ease-in-out infinite; }
+.coffee-scene .stream { stroke: #6f4e37; stroke-width: 8; stroke-dasharray: 260; stroke-dashoffset: 260; animation: stream 8s ease-in-out infinite; }
+.coffee-scene .cup-coffee { animation: cup-level 8s ease-in-out infinite; }
 .coffee-scene .steam { stroke: rgba(17, 19, 24, .35); stroke-width: 4; opacity: 0; animation: steam 3s ease-in-out infinite; }
 .coffee-scene .s2 { animation-delay: .6s; } .coffee-scene .s3 { animation-delay: 1.2s; }
-@keyframes tilt { 0%, 8% { transform: rotate(18deg); } 25%, 70% { transform: rotate(0deg); } 88%, 100% { transform: rotate(18deg); } }
-@keyframes stream { 0%, 22% { stroke-dashoffset: 260; } 32%, 65% { stroke-dashoffset: 0; } 75%, 100% { stroke-dashoffset: -260; } }
-@keyframes fill { 0%, 28% { transform: translateY(105px); } 72%, 92% { transform: translateY(12px); } 100% { transform: translateY(105px); } }
-@keyframes drain { 0%, 28% { transform: scaleY(1); } 72%, 100% { transform: scaleY(.25); } }
+/* цикл 8 с: наклон → льётся (в чайнике плавно убывает, в чашке плавно прибывает) → чайник выпрямляется и плавно наполняется, чашка плавно пустеет */
+@keyframes tilt { 0%, 6% { transform: rotate(18deg); } 18%, 68% { transform: rotate(0deg); } 82%, 100% { transform: rotate(18deg); } }
+@keyframes stream { 0%, 16% { stroke-dashoffset: 260; } 24%, 64% { stroke-dashoffset: 0; } 72%, 100% { stroke-dashoffset: -260; } }
+/* поверхность кофе в чайнике всегда горизонтальна: поворачиваем её обратно наклону чайника */
+@keyframes tilt-back { 0%, 6% { transform: rotate(-18deg); } 18%, 68% { transform: rotate(0deg); } 82%, 100% { transform: rotate(-18deg); } }
+@keyframes kettle-level { 0%, 18% { transform: translateY(0); } 68% { transform: translateY(70px); } 100% { transform: translateY(0); } }
+@keyframes cup-level { 0%, 20% { transform: translateY(105px); } 70% { transform: translateY(14px); } 78% { transform: translateY(14px); } 100% { transform: translateY(105px); } }
 @keyframes steam { 0% { opacity: 0; transform: translateY(10px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(-30px); } }
 
 .scroll-hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 3; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--text); text-decoration: none; animation: hop 2s ease-in-out infinite; }

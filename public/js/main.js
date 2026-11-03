@@ -49,12 +49,12 @@
     try {
       const p = await Api.get('/api/public');
       $$('[data-count]').forEach((el) => FX.animateNumber(el, p.count));
-      $('[data-count-hint]').textContent = p.count ? 'последний: ' + p.recent[0] : 'станьте первым!';
+      $('[data-count-hint]').textContent = p.count ? 'присоединяйтесь!' : 'станьте первым!';
       if (lastCount !== null && p.count > lastCount) {
         const el = $('.big-count');
         el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
         FX.burstFrom(el, { count: 25, power: 8 });
-        FX.toast('☕ +' + (p.count - lastCount) + ' кофеманьяк в игре: ' + p.recent[0]);
+        FX.toast('☕ +' + (p.count - lastCount) + ' в игре!');
       }
       lastCount = p.count;
       const names = p.recent.length ? p.recent : ['тут', 'будут', 'ваши', 'имена'];

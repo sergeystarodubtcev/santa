@@ -121,19 +121,27 @@
       <path class="ant" d="M39 17 l-4 -10 M37 11 l-6 -2 M43 16 l1 -10 M44 10 l5 -4"/>
       <circle cx="48" cy="19" r="2" fill="#e63946"/>
     </g>`;
-  const SLEIGH = `<svg viewBox="-4 -4 190 66" width="190" height="66" aria-hidden="true">
-      <path class="rein" d="M62 36 Q 90 30 112 30 Q 130 28 150 22"/>
-      <path class="runner" d="M0 56 H60 q10 0 10 -9"/>
-      <path class="leg" d="M14 52 v4 M50 52 v4"/>
-      <circle cx="30" cy="22" r="10" fill="#e63946"/>
+  const SANTA = `<circle cx="30" cy="22" r="10" fill="#e63946"/>
       <circle cx="34" cy="13" r="5.5" fill="#f5d0b0"/>
       <path d="M29 15 q5 9 11 0 z" fill="#fff"/>
       <path d="M28 10 L37 1 L41 10 Z" fill="#e63946"/>
-      <circle cx="37" cy="1.5" r="2.4" fill="#fff"/>
+      <circle cx="37" cy="1.5" r="2.4" fill="#fff"/>`;
+  // Зверёк Specialty Кофеёк в шапке Деда Мороза
+  const CIVET = `<circle cx="30" cy="26" r="10" fill="#6b6259"/>
+      <image href="img/civet-head.png" x="20" y="0" width="24" height="24"/>
+      <path d="M21 4 L33 -10 L44 3 Z" fill="#e63946"/>
+      <rect x="19" y="2" width="27" height="5" rx="2.5" fill="#fff"/>
+      <circle cx="33" cy="-10" r="2.8" fill="#fff"/>`;
+  const sleighSvg = (rider) => `<svg viewBox="-4 -4 190 66" width="190" height="66" aria-hidden="true">
+      <path class="rein" d="M62 36 Q 90 30 112 30 Q 130 28 150 22"/>
+      <path class="runner" d="M0 56 H60 q10 0 10 -9"/>
+      <path class="leg" d="M14 52 v4 M50 52 v4"/>
+      ${rider}
       <path class="sleigh" d="M6 50 L4 28 Q4 23 10 25 L36 33 Q58 28 64 38 L60 50 Z"/>
       <path d="M6 30 h20" stroke="#ffd166" stroke-width="2"/>
       ${DEER(70)}${DEER(118)}
     </svg>`;
+  let sleighN = 0;
 
   function santas(container, opts) {
     opts = opts || {};
@@ -143,7 +151,8 @@
       const el = document.createElement('div');
       el.className = 'flying-santa';
       const rtl = Math.random() < 0.5;
-      el.innerHTML = '<span class="fs-inner">' + SLEIGH + '</span>';
+      sleighN++;
+      el.innerHTML = '<span class="fs-inner">' + sleighSvg(sleighN % 3 === 0 ? CIVET : SANTA) + '</span>';
       const top = 5 + Math.random() * (opts.maxTop || 55);
       const dur = 9 + Math.random() * 8;
       const scale = 0.7 + Math.random() * 0.9;
