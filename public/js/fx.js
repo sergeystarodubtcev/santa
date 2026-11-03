@@ -162,11 +162,44 @@
       const scale = 0.7 + Math.random() * 0.9;
       el.style.cssText = `top:${top}%;--dur:${dur}s;--scale:${scale};`;
       if (rtl) el.classList.add('rtl');
+      if (civet) setupCivet(el, top);
       container.appendChild(el);
-      setTimeout(() => el.remove(), dur * 1000 + 200);
+      // убираем, когда долетели (а не по таймеру — сани со зверьком могут остановиться)
+      el.addEventListener('animationend', (e) => { if (e.target === el) el.remove(); });
     };
     spawn();
     setInterval(spawn, opts.every || 4500);
+  }
+
+  // Клик по зверьку: олени тормозят, всплывает окошко с приглашением в канал.
+  function setupCivet(el, top) {
+    const link = el.querySelector('.fs-link');
+    link.addEventListener('click', (e) => {
+      if (el.classList.contains('stopped')) return; // второй клик — просто открываем канал
+      e.preventDefault();
+      el.classList.add('stopped');
+      const pop = document.createElement('div');
+      pop.className = 'fs-pop ' + (top < 40 ? 'below' : 'above');
+      pop.innerHTML = `
+        <button class="fs-pop-x" type="button" aria-label="Закрыть">✕</button>
+        <div class="fs-pop-head"><img src="img/civet-head.png" alt=""><b>Тпру-у! Вы поймали зверька ☕</b></div>
+        <p>Загляните в канал <b>Specialty Кофеёк</b> — тут много интересного!</p>
+        <a class="btn btn-primary btn-sm" href="https://t.me/speccof" target="_blank" rel="noopener">Открыть канал →</a>`;
+      el.appendChild(pop);
+      // не даём окошку уехать за край экрана
+      const r = pop.getBoundingClientRect();
+      const sky = el.closest('.sky').getBoundingClientRect();
+      let shift = 0;
+      if (r.right > sky.right - 10) shift = sky.right - 10 - r.right;
+      if (r.left + shift < sky.left + 10) shift = sky.left + 10 - r.left;
+      pop.style.left = shift + 'px';
+      const close = () => {
+        pop.classList.add('out');
+        setTimeout(() => { pop.remove(); el.classList.remove('stopped'); }, 200);
+      };
+      pop.querySelector('.fs-pop-x').addEventListener('click', close);
+      pop.querySelector('a').addEventListener('click', () => setTimeout(close, 300));
+    });
   }
 
   // ---------- toast ----------

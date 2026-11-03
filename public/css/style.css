@@ -156,7 +156,8 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 @keyframes hop { 50% { transform: translate(-50%, 8px); } }
 
 /* flying santa */
-.flying-santa { position: absolute; left: 0; animation: fly var(--dur) linear forwards; filter: drop-shadow(0 0 8px rgba(255, 190, 60, .45)); }
+.flying-santa { position: absolute; left: 0; animation: fly var(--dur) linear forwards; }
+.flying-santa .fs-inner { filter: drop-shadow(0 0 8px rgba(255, 190, 60, .45)); }
 .flying-santa .fs-inner { display: block; transform: scale(var(--scale)); animation: wobble 1.4s ease-in-out infinite; }
 .flying-santa.rtl { animation-name: fly-rtl; }
 .flying-santa.rtl .fs-inner { transform: scale(var(--scale)) scaleX(-1); }
@@ -473,3 +474,20 @@ tr.banned td { opacity: .55; }
 .madeby small { font-size: 12px; color: var(--muted); }
 .footer-mini { background: var(--bg-soft); border-top: 1px solid var(--border); padding: 20px 0 30px; }
 .footer-mini .footer-inner { justify-content: center; }
+
+/* зверёк остановил сани */
+.flying-santa.stopped, .flying-santa.stopped .fs-inner, .flying-santa.stopped .fs-inner * { animation-play-state: paused !important; }
+.flying-santa.stopped .fs-inner svg { animation: brake .5s cubic-bezier(.3, 1.6, .5, 1) !important; animation-play-state: running !important; }
+.flying-santa.stopped::after { opacity: 0; transition: opacity .3s; }
+@keyframes brake { 0% { transform: translateX(14px) rotate(-4deg); } 60% { transform: translateX(-4px) rotate(2deg); } 100% { transform: none; } }
+.fs-pop { position: absolute; left: 0; width: 260px; padding: 14px 16px; border-radius: 18px; background: #fff; color: #111318; box-shadow: 0 20px 50px rgba(0, 0, 0, .3); pointer-events: auto; z-index: 5; font-size: 14px; line-height: 1.4; animation: popin .35s cubic-bezier(.3, 1.5, .5, 1); text-align: left; }
+.fs-pop.below { top: calc(100% + 10px); }
+.fs-pop.above { bottom: calc(100% + 10px); }
+.fs-pop.out { opacity: 0; transform: scale(.9); transition: opacity .2s, transform .2s; }
+.fs-pop p { margin: 8px 0 12px; color: #5d6270; }
+.fs-pop p b { color: #111318; }
+.fs-pop-head { display: flex; align-items: center; gap: 10px; padding-right: 22px; }
+.fs-pop-head img { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+.fs-pop-x { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: #f1f3f8; color: #111318; cursor: pointer; font-size: 12px; }
+.fs-pop .btn { width: 100%; }
+@keyframes popin { from { opacity: 0; transform: translateY(8px) scale(.9); } }
