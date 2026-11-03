@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Админка · Тайный Санта Кофеманьяков</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#140c09">
+  <link rel="icon" href="img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">
+      <span class="brand-ava"><img src="img/logo.png" alt="Кофеманьяки"></span>
+      <span class="brand-name">Админка <small>Тайный Санта Кофеманьяков</small></span>
+    </a>
+    <nav class="nav">
+      <a href="./">На сайт</a>
+      <button class="btn btn-ghost btn-sm" data-logout hidden>Выйти</button>
+    </nav>
+  </header>
+
+  <main class="page">
+    <canvas class="snow"></canvas>
+    <div class="wrap">
+      <section data-login hidden>
+        <form class="card auth-card form" novalidate>
+          <h2>🔐 Вход для организаторов</h2>
+          <label>Пароль администратора<input name="password" type="password" autocomplete="current-password"></label>
+          <div class="form-err" data-err></div>
+          <button class="btn btn-primary btn-block" type="submit">Войти</button>
+        </form>
+      </section>
+
+      <section data-dash hidden>
+        <h1 class="page-title">Пульт <span class="grad">Деда Мороза</span></h1>
+        <div class="tiles" data-tiles></div>
+
+        <div class="grid2">
+          <div class="card">
+            <h3>🎲 Жеребьёвка</h3>
+            <p class="muted" data-draw-info></p>
+            <div class="actions">
+              <button class="btn btn-primary shuffle-btn" data-shuffle>🎲 Раскидать людей</button>
+              <button class="btn btn-danger btn-sm" data-reset>Сбросить пары</button>
+            </div>
+            <p class="muted" style="font-size:13px;margin-top:12px">Участники выстраиваются в одну случайную цепочку: каждый дарит следующему, последний — первому. Забаненные в жеребьёвку не попадают. После жеребьёвки новая регистрация закрывается автоматически.</p>
+          </div>
+
+          <form class="card form" data-settings>
+            <h3>⚙️ Настройки</h3>
+            <div class="row2">
+              <label>Начало отправки (МСК)<input type="datetime-local" name="sendStart"></label>
+              <label>Конец отправки (МСК)<input type="datetime-local" name="sendEnd"></label>
+            </div>
+            <div class="row2">
+              <label>Бюджет от, ₽<input type="number" name="budgetMin" min="0" step="100" placeholder="не задан"></label>
+              <label>Бюджет до, ₽<input type="number" name="budgetMax" min="0" step="100" placeholder="не задан"></label>
+            </div>
+            <label>Объявление на сайте (баннер сверху)<input name="announcement" placeholder="Например: Жеребьёвка 25 ноября в 20:00!"></label>
+            <label>Ссылка на пост/чат в Telegram<input name="chatUrl"></label>
+            <label class="check"><input type="checkbox" name="regOpen"><span>Регистрация открыта</span></label>
+            <button class="btn btn-gold" type="submit">Сохранить настройки</button>
+          </form>
+
+          <form class="card form" data-broadcast>
+            <h3>📣 Уведомление участникам</h3>
+            <textarea name="text" rows="3" placeholder="Например: У вас 3 дня, чтобы успеть отправить подарок!"></textarea>
+            <label class="check"><input type="checkbox" name="onlyParticipants" checked><span>Только тем, кто заполнил анкету</span></label>
+            <button class="btn btn-primary" type="submit">Отправить в личные кабинеты</button>
+          </form>
+
+          <div class="card">
+            <h3>💾 Данные</h3>
+            <p class="muted" style="font-size:14px">Скачайте бэкап перед жеребьёвкой. CSV удобно открыть в таблицах.</p>
+            <div class="actions">
+              <button class="btn btn-ghost btn-sm" data-export>⬇️ Бэкап JSON</button>
+              <button class="btn btn-ghost btn-sm" data-csv>⬇️ Участники CSV</button>
+              <label class="btn btn-ghost btn-sm">⬆️ Восстановить<input type="file" accept="application/json" data-import hidden></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+          <div class="toolbar">
+            <h3 style="margin:0">👥 Участники</h3>
+            <input type="search" placeholder="Поиск по имени, телефону, нику" data-search>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Кто</th><th>Контакты</th><th>Адрес</th><th>Пожелания / пометки</th><th>Статус</th><th></th></tr></thead>
+            <tbody data-users></tbody>
+          </table></div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+          <h3>🔗 Пары</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Санта</th><th></th><th>Получатель</th><th>Статус</th><th>Трек</th><th>Изменить</th></tr></thead>
+            <tbody data-pairs></tbody>
+          </table></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

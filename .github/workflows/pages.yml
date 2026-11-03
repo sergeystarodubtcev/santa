@@ -1,0 +1,50 @@
+name: Тесты и деплой сайта на GitHub Pages
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Подставить адрес бэкенда и абсолютные ссылки для превью
+        env:
+          API_URL: ${{ vars.API_URL }}
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          node -e 'require("fs").writeFileSync("public/js/config.js", "window.SANTA_CONFIG = { apiUrl: " + JSON.stringify(process.env.API_URL || "") + " };\n")'
+          sed -i "s#content=\"img/og.png\"#content=\"${BASE_URL}/img/og.png\"#" public/*.html
+          cat public/js/config.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

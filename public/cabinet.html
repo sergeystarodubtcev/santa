@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Личный кабинет · Тайный Санта Кофеманьяков</title>
+  <meta property="og:title" content="Кофеманьячный Тайный Санта ☕🎅">
+  <meta property="og:image" content="img/og.png">
+  <meta name="theme-color" content="#140c09">
+  <link rel="icon" href="img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="banners" data-banners></div>
+  <header class="topbar">
+    <a class="brand" href="./">
+      <span class="brand-ava"><img src="img/logo.png" alt="Кофеманьяки"></span>
+      <span class="brand-name">Кофеманьяки <small>Тайный Санта</small></span>
+    </a>
+    <nav class="nav">
+      <a href="./">Главная</a>
+      <a href="./#rules">Правила</a>
+      <button class="btn btn-ghost btn-sm" data-logout hidden>Выйти</button>
+    </nav>
+  </header>
+
+  <main class="page">
+    <canvas class="snow"></canvas>
+    <div class="wrap">
+
+      <!-- auth -->
+      <section data-auth-view hidden>
+        <div class="card auth-card">
+          <h2>🎅 Личный кабинет</h2>
+          <div class="tabs" style="margin-bottom:16px">
+            <button type="button" class="tab on" data-tab="login">Войти</button>
+            <button type="button" class="tab" data-tab="register">Регистрация</button>
+          </div>
+          <form class="form" data-form="login" novalidate>
+            <label>Ник в Telegram или телефон<input name="login" autocomplete="username" placeholder="@coffeemaniac"></label>
+            <label>Пароль<input name="password" type="password" autocomplete="current-password"></label>
+            <div class="form-err" data-err></div>
+            <button class="btn btn-primary btn-block" type="submit">Войти</button>
+          </form>
+          <form class="form" data-form="register" novalidate hidden>
+            <label>Имя и фамилия<input name="name" autocomplete="name" placeholder="Сергей Кофеманов"></label>
+            <label>Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00"></label>
+            <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac"></label>
+            <label>Пароль<input name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов"></label>
+            <div class="form-err" data-err></div>
+            <button class="btn btn-primary btn-block" type="submit">Создать кабинет</button>
+          </form>
+          <p class="muted" style="text-align:center;margin:16px 0 0;font-size:14px">Забыли пароль? Напишите организаторам в чат.</p>
+        </div>
+      </section>
+
+      <!-- cabinet -->
+      <section data-cab-view hidden>
+        <h1 class="page-title">Привет, <span class="grad" data-name></span>!</h1>
+        <p class="muted" data-sub style="margin-bottom:24px"></p>
+        <div data-notice></div>
+
+        <div class="grid2">
+          <div class="card reveal-card" id="give">
+            <h3>🎅 Кому я дарю</h3>
+            <div data-give></div>
+          </div>
+          <div class="card" id="gift">
+            <h3>🎁 Мой подарок</h3>
+            <div data-gift></div>
+          </div>
+
+          <div class="card">
+            <h3>📝 Моя анкета</h3>
+            <div data-part></div>
+          </div>
+          <div class="card">
+            <h3>🔔 Уведомления</h3>
+            <ul class="notif-list" data-notifs></ul>
+          </div>
+
+          <div class="card span2">
+            <h3>☕ Профиль</h3>
+            <dl class="kv" data-profile></dl>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- participation edit modal -->
+  <div class="modal" data-modal hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-close aria-label="Закрыть">✕</button>
+      <div class="modal-head"><div class="modal-emoji">📦</div><h3>Анкета участника</h3></div>
+      <form class="form" data-form="part" novalidate>
+        <label>Адрес пункта выдачи Ozon
+          <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно свой адрес — отправят в ближайший ПВЗ"></textarea>
+        </label>
+        <label>Что хочется получить<textarea name="wishes" rows="3" placeholder="Светлая обжарка, дрипы, подставка под дрипы, свечка…"></textarea></label>
+        <div class="field-label">Тематика подарка</div>
+        <div class="chips">
+          <label class="chip"><input type="radio" name="prefs" value="coffee" checked><span>☕ Кофейное</span></label>
+          <label class="chip"><input type="radio" name="prefs" value="noncoffee"><span>🧸 Некофейное</span></label>
+          <label class="chip"><input type="radio" name="prefs" value="any"><span>🎲 Удивите меня</span></label>
+        </div>
+        <label>Особые пометки<input name="notes" placeholder="Например: у меня аллергия на инфьюзы"></label>
+        <label class="check"><input type="checkbox" name="agree"><span>Подтверждаю участие и дальнейшую отправку подарка.</span></label>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">Сохранить</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/cabinet.js"></script>
+</body>
+</html>

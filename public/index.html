@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тайный Санта · Кофеманьяки</title>
+  <meta name="description" content="Кофеманьячный Тайный Санта 2026: регистрируйтесь, получайте имя получателя и дарите кофейные (и не только) подарки. Отправка 1–10 декабря.">
+  <meta property="og:title" content="Кофеманьячный Тайный Санта ☕🎅">
+  <meta property="og:description" content="От Кофеманьяков — туда-сюда. Регистрация, жеребьёвка и отправка подарков 1–10 декабря.">
+  <meta property="og:image" content="img/og.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#140c09">
+  <link rel="icon" href="img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="page-home">
+  <div class="banners" data-banners></div>
+
+  <header class="topbar">
+    <a class="brand" href="./">
+      <span class="brand-ava"><img src="img/logo.png" alt="Кофеманьяки"></span>
+      <span class="brand-name">Кофеманьяки <small>Тайный Санта</small></span>
+    </a>
+    <nav class="nav">
+      <a href="#how">Как это работает</a>
+      <a href="#rules">Правила</a>
+      <a class="btn btn-ghost btn-sm" href="cabinet.html" data-nav-user>Личный кабинет</a>
+    </nav>
+  </header>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <canvas class="snow"></canvas>
+    <div class="sky" data-santas></div>
+    <div class="hero-grid wrap">
+      <div class="hero-text reveal">
+        <div class="pill">☕ Кофеманьяки × 🎅 Тайный Санта 2026</div>
+        <h1>Тайный Санта <span class="grad">от Кофеманьяков</span><br>туда-сюда</h1>
+        <p class="lead">Мы несколько лет обещали — и вот оно: свой, кофеманьячный Тайный Санта. Без ботов и чужих сервисов. Регистрируетесь, пишете пожелания, получаете имя счастливчика и отправляете подарок <b>с 1 по 10 декабря</b>.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="#join">🎁 Хочу участвовать</a>
+          <a class="btn btn-ghost btn-lg" href="cabinet.html">Личный кабинет</a>
+        </div>
+        <div class="hero-counter">
+          <div class="hc-num" data-count>0</div>
+          <div class="hc-label"><b>кофеманьяков</b> уже в игре<br><span data-count-hint>присоединяйтесь!</span></div>
+        </div>
+      </div>
+
+      <div class="hero-art reveal">
+        <div class="ava-ring">
+          <svg viewBox="0 0 200 200" class="ring-text" aria-hidden="true">
+            <defs><path id="circ" d="M100,100 m-82,0 a82,82 0 1,1 164,0 a82,82 0 1,1 -164,0"/></defs>
+            <text><textPath href="#circ" textLength="508" lengthAdjust="spacing">КОФЕМАНЬЯКИ ✦ ТАЙНЫЙ САНТА ✦ 2026 ✦ </textPath></text>
+          </svg>
+          <img src="img/logo.png" alt="Аватар Кофеманьяков" class="ava-img">
+        </div>
+        <div class="coffee-scene" aria-hidden="true">
+          <svg viewBox="0 0 420 330">
+            <defs>
+              <clipPath id="cupClip"><path d="M95 180 h170 c0 70 -30 105 -85 105 s-85 -35 -85 -105z"/></clipPath>
+              <linearGradient id="coffeeGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a0673f"/><stop offset="1" stop-color="#4a2c1d"/></linearGradient>
+            </defs>
+            <g class="kettle">
+              <path class="k-body" d="M250 40 L345 25 L380 135 L265 150 Z"/>
+              <path class="k-liquid" d="M300 95 L372 85 L380 135 L265 150 Z"/>
+              <path class="k-spout" d="M255 42 L215 62 L222 72 L262 58"/>
+              <path class="k-handle" d="M300 33 C 300 0, 345 -5, 345 25"/>
+            </g>
+            <path class="stream" d="M218 70 C 205 110, 185 140, 180 230"/>
+            <g class="cup">
+              <path class="cup-body" d="M95 180 h170 c0 70 -30 105 -85 105 s-85 -35 -85 -105z"/>
+              <g clip-path="url(#cupClip)"><rect class="cup-coffee" x="90" y="180" width="180" height="120" fill="url(#coffeeGrad)"/></g>
+              <path class="cup-handle" d="M262 200 c38 -8 45 40 -2 50"/>
+              <path class="saucer" d="M60 300 h240"/>
+              <path class="steam s1" d="M150 165 c-12 -18 12 -28 0 -48"/>
+              <path class="steam s2" d="M180 160 c-12 -18 12 -28 0 -48"/>
+              <path class="steam s3" d="M210 165 c-12 -18 12 -28 0 -48"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <a class="scroll-hint" href="#stats" aria-label="Листать вниз">↓</a>
+  </section>
+
+  <!-- ============ STATS / COUNTDOWN ============ -->
+  <section class="stats wrap" id="stats">
+    <div class="card stat-card counter-card reveal">
+      <div class="stat-kicker">Уже заполнили анкету</div>
+      <div class="big-count"><span data-count>0</span><em>☕</em></div>
+      <div class="ticker"><div class="ticker-track" data-recent></div></div>
+    </div>
+    <div class="card stat-card reveal">
+      <div class="stat-kicker" data-cd1-label>До начала отправки подарков · 1 декабря</div>
+      <div class="countdown" data-cd1></div>
+    </div>
+    <div class="card stat-card reveal">
+      <div class="stat-kicker" data-cd2-label>До конца отправки · 10 декабря</div>
+      <div class="countdown" data-cd2></div>
+    </div>
+  </section>
+
+  <!-- ============ PREVIEW FROM CHAT ============ -->
+  <section class="wrap section">
+    <h2 class="section-title reveal">Из чата Кофеманьяков</h2>
+    <div class="chat-preview reveal">
+      <div class="tg-head">
+        <img src="img/logo.png" alt="">
+        <div><b>Кофеманьяки</b><span>3 ноября 2026 · 19:52</span></div>
+        <a class="btn btn-ghost btn-sm" data-chat-link href="https://t.me/c/1641902727/156432" target="_blank" rel="noopener">Открыть в Telegram ↗</a>
+      </div>
+      <div class="tg-bubble">
+        <p><b>Пришло время обсудить важное — кофеманьячный тайный Санта.</b></p>
+        <p>Вы несколько лет просите организовать что-то своё, кажется, в этом году у нас есть на это силы, желание и немного времени. Так что обсудили, решили, что Тайному Санте в этом году быть.</p>
+        <p>Мы не планируем прибегать к помощи ботов или каких-то сайтов, будем всё делать сами: собирать контакты, предпочтения, контролировать, чтобы адрес участника попал другому участнику только после того, как тот отправил свою посылку. Если участник нарушит правила, мы будем понимать, кто это, и занесём в чёрный список 🛑 Sorry not sorry. Если количество участников будет нечётным, примем участие сами.</p>
+      </div>
+      <div class="tg-replies">
+        <div class="tg-reply"><b>Сергей</b>Было бы прикольно ещё написать предпочтения. Кофейная/некофейная тематика + всякие аллергии на инфьюзы, это прям актуалочка</div>
+        <div class="tg-reply"><b>Кофеманьяки</b>Кто-то может вообще кофе не хочет. Кофейный мерч можно указать — свечи, подставки под дрипы, подвесы, стикеры. Почему нет.</div>
+        <div class="tg-reply"><b>Кофеманьяки</b>Начало декабря, 10-е числа уже хорошее время для первых подарков :)))</div>
+        <div class="tg-reply"><b>Кофеманьяки</b>Сроки будут ограничены — это будет мотивировать отправить скорее :)</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW ============ -->
+  <section class="wrap section" id="how">
+    <h2 class="section-title reveal">Как это работает</h2>
+    <div class="steps">
+      <div class="step card reveal"><div class="step-ico">📝</div><div class="step-n">01</div><h3>Анкета</h3><p>Имя, телефон, ник в Telegram, адрес ПВЗ Ozon (или свой — отправим в ближайший), пожелания и особые пометки.</p></div>
+      <div class="step card reveal"><div class="step-ico">🎲</div><div class="step-n">02</div><h3>Жеребьёвка</h3><p>Организаторы перемешивают всех участников в одну большую цепочку. Никто не дарит сам себе.</p></div>
+      <div class="step card reveal"><div class="step-ico">📦</div><div class="step-n">03</div><h3>Отправка</h3><p>В личном кабинете — кому, что и куда. Собрали посылку, отправили с 1 по 10 декабря, нажали «Отправил».</p></div>
+      <div class="step card reveal"><div class="step-ico">🎁</div><div class="step-n">04</div><h3>Сюрприз</h3><p>Получатель видит в кабинете «Вам подарок от Деда Мороза!» — и ждёт заветную посылку.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ RULES ============ -->
+  <section class="wrap section" id="rules">
+    <h2 class="section-title reveal">Правила игры</h2>
+    <div class="rules">
+      <div class="rule card reveal"><span>💸</span><div><h3>Бюджет</h3><p data-budget>Минимальную и максимальную сумму обсуждаем в чате — здесь появится итог.</p></div></div>
+      <div class="rule card reveal"><span>📅</span><div><h3>Сроки</h3><p data-dates>Отправка подарков — с 1 по 10 декабря. Не успели — организаторы узнают.</p></div></div>
+      <div class="rule card reveal"><span>🛑</span><div><h3>Чёрный список</h3><p>Зарегистрировались, получили адрес и пропали? Мы будем понимать, кто это. Sorry not sorry.</p></div></div>
+      <div class="rule card reveal"><span>🤧</span><div><h3>Аллергии и пометки</h3><p>Пишите в анкете всё важное: «аллергия на инфьюзы», «не пью кофе», «только decaf». Санта увидит.</p></div></div>
+      <div class="rule card reveal"><span>🕯️</span><div><h3>Не только кофе</h3><p>Зерно, дрипы, а ещё мерч: свечи, подставки под дрипы, подвесы, стикеры. Или вообще некофейное — укажите в анкете.</p></div></div>
+      <div class="rule card reveal"><span>👥</span><div><h3>Нечётное число?</h3><p>Не страшно: цепочка замыкается сама, а если надо — организаторы тоже примут участие.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ============ JOIN ============ -->
+  <section class="join" id="join">
+    <canvas class="snow"></canvas>
+    <div class="sky" data-santas-join></div>
+    <div class="beans" aria-hidden="true"></div>
+    <div class="join-inner wrap">
+      <h2 class="join-title reveal">Готовы стать<br><span class="grad">Тайным Сантой?</span></h2>
+      <p class="join-sub reveal">Жмякайте на кнопку — Дед Мороз нальёт вам кофе и выдаст анкету.</p>
+
+      <div class="mega-wrap">
+        <div class="orbit" aria-hidden="true"><span>🎅</span><span>☕</span><span>🎁</span><span>❄️</span><span>🦌</span><span>⭐</span></div>
+        <button class="mega-btn" data-join-btn>
+          <span class="mega-ring r1"></span><span class="mega-ring r2"></span><span class="mega-ring r3"></span>
+          <span class="mega-cup">
+            <svg viewBox="0 0 120 110" aria-hidden="true">
+              <defs><clipPath id="megaClip"><path d="M20 40 h70 c0 35 -12 55 -35 55 s-35 -20 -35 -55z"/></clipPath></defs>
+              <path class="mc-stream" d="M55 0 V 70"/>
+              <path class="mc-body" d="M20 40 h70 c0 35 -12 55 -35 55 s-35 -20 -35 -55z"/>
+              <g clip-path="url(#megaClip)"><rect class="mc-coffee" x="15" y="40" width="80" height="60"/></g>
+              <path class="mc-handle" d="M88 50 c18 -2 18 25 -3 26"/>
+              <path class="mc-saucer" d="M8 104 h95"/>
+            </svg>
+          </span>
+          <span class="mega-label" data-join-label>Хочу<br>участвовать</span>
+        </button>
+      </div>
+      <p class="join-note reveal" data-join-note>Нажимая, вы подтверждаете участие и дальнейшую отправку подарка — ваше имя попадёт в случайное распределение.</p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <div class="brand"><span class="brand-ava"><img src="img/logo.png" alt=""></span><span class="brand-name">Кофеманьяки<small>сварено с ☕ и ❤️ для своих</small></span></div>
+      <div class="footer-links"><a href="cabinet.html">Личный кабинет</a><a data-chat-link href="https://t.me/c/1641902727/156432" target="_blank" rel="noopener">Чат в Telegram</a><a href="admin.html">Админка</a></div>
+    </div>
+  </footer>
+
+  <!-- ============ MODAL FORM ============ -->
+  <div class="modal" data-modal hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <button class="modal-x" data-close aria-label="Закрыть">✕</button>
+      <div class="modal-head">
+        <div class="modal-emoji">🎅</div>
+        <h3 id="mTitle">Анкета Тайного Санты</h3>
+        <div class="stepper"><span class="on" data-dot="1">О себе</span><i></i><span data-dot="2">Посылка</span></div>
+      </div>
+
+      <form data-step="1" class="form" novalidate>
+        <div class="tabs">
+          <button type="button" class="tab on" data-auth="register">Я новенький</button>
+          <button type="button" class="tab" data-auth="login">У меня есть аккаунт</button>
+        </div>
+        <div data-auth-pane="register">
+          <label>Имя и фамилия<input name="name" autocomplete="name" placeholder="Сергей Кофеманов" required></label>
+          <div class="row2">
+            <label>Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" required></label>
+            <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac" required></label>
+          </div>
+          <label>Пароль для входа в кабинет<input name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов" required></label>
+        </div>
+        <div data-auth-pane="login" hidden>
+          <label>Ник в Telegram или телефон<input name="login" autocomplete="username" placeholder="@coffeemaniac"></label>
+          <label>Пароль<input name="lpassword" type="password" autocomplete="current-password"></label>
+        </div>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">Дальше →</button>
+      </form>
+
+      <form data-step="2" class="form" novalidate hidden>
+        <label>Адрес пункта выдачи Ozon
+          <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно просто свой адрес — отправят в ближайший ПВЗ" required></textarea>
+        </label>
+        <label>Что хочется получить
+          <textarea name="wishes" rows="3" placeholder="Светлая обжарка под фильтр, дрип-пакеты, подставка под дрипы, свечка…"></textarea>
+        </label>
+        <div class="field-label">Тематика подарка</div>
+        <div class="chips">
+          <label class="chip"><input type="radio" name="prefs" value="coffee" checked><span>☕ Кофейное</span></label>
+          <label class="chip"><input type="radio" name="prefs" value="noncoffee"><span>🧸 Некофейное</span></label>
+          <label class="chip"><input type="radio" name="prefs" value="any"><span>🎲 Удивите меня</span></label>
+        </div>
+        <label>Особые пометки
+          <input name="notes" placeholder="Например: у меня аллергия на инфьюзы">
+        </label>
+        <label class="check"><input type="checkbox" name="agree"><span>Подтверждаю участие и дальнейшую отправку подарка. Понимаю, что моё имя будет участвовать в случайном распределении.</span></label>
+        <div class="form-err" data-err></div>
+        <div class="row2">
+          <button class="btn btn-ghost" type="button" data-back>← Назад</button>
+          <button class="btn btn-primary" type="submit">🎅 Я в деле!</button>
+        </div>
+      </form>
+
+      <div data-step="3" class="done" hidden>
+        <div class="done-gift">🎁</div>
+        <h3>Вы в игре!</h3>
+        <p>Анкета сохранена. Как только организаторы проведут жеребьёвку, в личном кабинете появится имя и адрес вашего получателя.</p>
+        <a class="btn btn-primary btn-block" href="cabinet.html">Перейти в личный кабинет</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
