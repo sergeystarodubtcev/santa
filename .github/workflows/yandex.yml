@@ -19,6 +19,7 @@ jobs:
       YC_SA_KEY: ${{ secrets.YC_SA_KEY }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       CUSTOM_DOMAIN: santa.speccof.ru
+      DNS_ZONE: speccof.ru
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

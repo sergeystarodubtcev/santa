@@ -114,6 +114,22 @@ if [ -n "${CUSTOM_DOMAIN:-}" ]; then
   CERT_STATUS="$(echo "$CERT_JSON" | jq -r .status)"
   echo "Сертификат $CERT_ID: $CERT_STATUS"
   echo "$CERT_JSON" | jq -r '.challenges[]? | "Проверка домена: \(.status) — \(.dns_challenge.type // "") \(.dns_challenge.name // "") → \(.dns_challenge.value // "")"'
+  # Если DNS домена делегирован в Yandex Cloud DNS (DNS_ZONE), записи создаём сами.
+  if [ -n "${DNS_ZONE:-}" ]; then
+    ZONE_NAME="zone-$(echo "$DNS_ZONE" | tr '.' '-')"
+    if ! yc dns zone get --name "$ZONE_NAME" >/dev/null 2>&1; then
+      yc dns zone create --name "$ZONE_NAME" --zone "$DNS_ZONE." --public-visibility >/dev/null
+      echo "Создана DNS-зона $DNS_ZONE"
+    fi
+    CH_NAME="$(echo "$CERT_JSON" | jq -r '[.challenges[]? | select(.dns_challenge.type == "CNAME")][0].dns_challenge.name // empty')"
+    CH_VALUE="$(echo "$CERT_JSON" | jq -r '[.challenges[]? | select(.dns_challenge.type == "CNAME")][0].dns_challenge.value // empty')"
+    if [ -n "$CH_NAME" ]; then
+      yc dns zone replace-records --name "$ZONE_NAME" --record "$CH_NAME 600 CNAME $CH_VALUE" >/dev/null
+    fi
+    yc dns zone replace-records --name "$ZONE_NAME" --record "$CUSTOM_DOMAIN. 600 CNAME $DOMAIN." >/dev/null
+    echo "DNS-записи в зоне $DNS_ZONE обновлены:"
+    yc dns zone list-records --name "$ZONE_NAME" --format json | jq -r '.[] | "  \(.name) \(.type) \(.data | join(", "))"'
+  fi
   if [ "$CERT_STATUS" = "ISSUED" ]; then
     if yc serverless api-gateway get --name kofesanta --format json | jq -e --arg d "$CUSTOM_DOMAIN" '[.attached_domains[]?.domain] | index($d)' >/dev/null; then
       echo "Домен $CUSTOM_DOMAIN уже привязан к шлюзу"
@@ -160,6 +176,12 @@ for p in / /css/style.css /js/core.js /img/logo.png; do
 done
 [ "$FAILED" = 0 ] || exit 1
 {
+  if [ -n "${DNS_ZONE:-}" ] && [ -n "$DNS_NOTE" ]; then
+    echo "## 🌐 DNS домена $DNS_ZONE ведётся в Yandex Cloud"
+    echo "Записи созданы автоматически. В панели регистратора укажите NS: \`ns1.yandexcloud.net\` и \`ns2.yandexcloud.net\`."
+    echo ""
+    DNS_NOTE=""
+  fi
   if [ -n "$DNS_NOTE" ]; then
     echo "## 🌐 Чтобы заработал $CUSTOM_DOMAIN, добавьте DNS-записи"
     echo "$DNS_NOTE"
