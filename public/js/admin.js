@@ -53,7 +53,9 @@
     $('[data-logout]').hidden = false;
     const s = state.stats;
     const sto = state.storage;
-    $('[data-storage]').innerHTML = !sto ? '' : sto.mode === 'github'
+    $('[data-storage]').innerHTML = !sto ? '' : sto.mode === 'yandex-object-storage'
+      ? `<div class="storage ok">💾 База хранится в Yandex Object Storage (бакет ${esc(sto.repo)}), на серверах в России</div>`
+      : sto.mode === 'github'
       ? (sto.lastError
         ? `<div class="storage bad">⚠️ Не удаётся сохранить базу в GitHub (${esc(sto.repo)}): ${esc(sto.lastError)}. Проверьте GITHUB_TOKEN и GITHUB_DATA_REPO в Render!</div>`
         : `<div class="storage ok">💾 База сохраняется в приватный репозиторий ${esc(sto.repo)}${sto.lastSave ? ' · последнее сохранение ' + FX.fmtDateTime(sto.lastSave) : ''}</div>`)
