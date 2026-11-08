@@ -66,7 +66,7 @@ ctype() {
 n=0
 while IFS= read -r -d '' f; do
   rel="${f#"$SITE"/}"
-  curl -fsS -X PUT "https://storage.yandexcloud.net/$BUCKET/site/$rel" \
+  curl -fsS --retry 5 --retry-all-errors --connect-timeout 20 -X PUT "https://storage.yandexcloud.net/$BUCKET/site/$rel" \
     -H "X-YaCloud-SubjectToken: $TOKEN" -H "Content-Type: $(ctype "$rel")" \
     -H "Cache-Control: no-cache" --data-binary "@$f" >/dev/null
   n=$((n + 1))
