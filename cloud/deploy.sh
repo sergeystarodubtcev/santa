@@ -164,6 +164,7 @@ fi
 # 4c. Telegram: вебхук, меню команд и ежедневный таймер напоминаний (12:00 МСК)
 if [ -n "$TG_USERNAME" ]; then
   HOOK_SECRET="$(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)"
+  echo "Вебхук (было): $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_date, last_error_message}')"
   curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setWebhook" \
     --data-urlencode "url=https://$DOMAIN/api/tg/webhook" -d "secret_token=$HOOK_SECRET" \
     --data-urlencode 'allowed_updates=["message","callback_query"]' | jq -c '{ok, description}'
@@ -176,7 +177,10 @@ if [ -n "$TG_USERNAME" ]; then
       --invoke-function-id "$FN_ID" --invoke-function-service-account-id "$SA_ID" >/dev/null
     echo "Создан таймер напоминаний (каждый день в 12:00 МСК)"
   fi
-  echo "Вебхук: $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_message}')"
+  echo "Вебхук (до обновления): $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_date, last_error_message}')"
+  echo "--- последние логи функции ---"
+  yc serverless function logs santa-api --since 3h --limit 60 2>/dev/null | grep -v -i 'token' | tail -60 || true
+  echo "--- конец логов ---"
 fi
 
 # 5. Проверка
