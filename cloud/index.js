@@ -14,7 +14,14 @@ const crypto = require('node:crypto');
 let core;
 try { core = require('./core.js'); } catch (e) { core = require('../public/js/core.js'); } // при деплое core.js кладётся рядом
 
+const { createBot } = require('./bot.js');
+
 const BUCKET = process.env.BUCKET;
+const TG_TOKEN = process.env.TG_BOT_TOKEN || '';
+const TG_USERNAME = process.env.TG_BOT_USERNAME || '';
+const SITE_URL = (process.env.SITE_URL || '').replace(/\/$/, '');
+// Секрет вебхука Telegram (заголовок X-Telegram-Bot-Api-Secret-Token); deploy.sh считает его так же.
+const TG_HOOK_SECRET = TG_TOKEN ? crypto.createHash('sha256').update(TG_TOKEN).digest('hex').slice(0, 32) : '';
 const S3 = 'https://storage.yandexcloud.net';
 const DB_KEY = 'data/db.json';
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 60;
@@ -99,6 +106,35 @@ function rateLimited(ip) {
   return rec.n > 30;
 }
 
+// ---------- Telegram ----------
+async function tgSend(list) {
+  if (!TG_TOKEN) return;
+  for (const item of list) {
+    const { method = 'sendMessage', ...payload } = item;
+    if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!j.ok) console.error('telegram', method, payload.chat_id, j.description);
+    } catch (e) { console.error('telegram', method, e.message); }
+  }
+}
+const botFor = (sec) => (TG_TOKEN && TG_USERNAME ? createBot({ core, secret: sec.secret, siteUrl: SITE_URL, username: TG_USERNAME }) : null);
+
+function makeCtx(auth, t) {
+  return {
+    now: () => Date.now(),
+    id: () => crypto.randomBytes(8).toString('hex'),
+    random: () => crypto.randomInt(0, 2 ** 32) / 2 ** 32,
+    hash, verify, issueToken: auth.issueToken, checkAdmin: auth.checkAdmin,
+    storage: () => ({ mode: 'yandex-object-storage', repo: BUCKET, lastSave: null, lastError: null }),
+    userId: t && t.uid ? t.uid : null,
+    isAdmin: !!(t && t.admin),
+  };
+}
+
 // ---------- HTTP ----------
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -130,6 +166,17 @@ function routeOf(event) {
 }
 
 module.exports.handler = async function handler(event, context) {
+  // Ежедневный таймер: напоминания в Telegram
+  if (Array.isArray(event.messages) && !event.httpMethod) {
+    const token = context && context.token && context.token.access_token;
+    const sec = await getSecrets(token);
+    const bot = botFor(sec);
+    if (!bot) return { ok: true, skipped: 'bot not configured' };
+    const db = await loadDb(token);
+    const out = bot.runReminders(db, makeCtx(makeAuth(sec.secret, sec.adminPassword), null));
+    if (out.length) { await s3('PUT', DB_KEY, token, JSON.stringify(db)); await tgSend(out); }
+    return { ok: true, sent: out.length };
+  }
   const method = (event.httpMethod || 'GET').toUpperCase();
   if (method === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   try {
@@ -154,19 +201,50 @@ module.exports.handler = async function handler(event, context) {
 
     const sec = await getSecrets(token);
     const auth = makeAuth(sec.secret, sec.adminPassword);
+    const bot = botFor(sec);
+
+    // Вебхук Telegram
+    if (path === '/api/tg/webhook') {
+      if (!bot || header(event, 'x-telegram-bot-api-secret-token') !== TG_HOOK_SECRET) return reply(403, { error: 'forbidden' });
+      try {
+        const db = await loadDb(token);
+        const n0 = db.notifications.length;
+        const { out, actingUid } = bot.handleUpdate(db, makeCtx(auth, null), body);
+        out.push(...bot.pushNotifications(db, db.notifications.slice(n0), actingUid));
+        await s3('PUT', DB_KEY, token, JSON.stringify(db));
+        await tgSend(out);
+      } catch (e) { console.error('tg update', e); }
+      return reply(200, { ok: true }); // всегда 200, иначе Telegram будет повторять апдейт
+    }
+
     const t = auth.readToken(header(event, 'authorization').replace(/^Bearer\s+/i, ''));
+    const ctx = makeCtx(auth, t);
+
+    // Ссылка «Подписаться на уведомления» для личного кабинета
+    if (path === '/api/tg/link') {
+      if (!bot) throw new core.SantaError(404, 'Бот пока не подключён');
+      if (!ctx.userId) throw new core.SantaError(401, 'Войдите в личный кабинет');
+      return reply(200, { url: bot.linkUrl(ctx.userId), username: TG_USERNAME });
+    }
+
     const db = await loadDb(token); // каждый раз свежая база: экземпляров функции может быть несколько
-    const ctx = {
-      now: () => Date.now(),
-      id: () => crypto.randomBytes(8).toString('hex'),
-      random: () => crypto.randomInt(0, 2 ** 32) / 2 ** 32,
-      hash, verify, issueToken: auth.issueToken, checkAdmin: auth.checkAdmin,
-      storage: () => ({ mode: 'yandex-object-storage', repo: BUCKET, lastSave: null, lastError: null }),
-      userId: t && t.uid ? t.uid : null,
-      isAdmin: !!(t && t.admin),
-    };
+
+    // Ручной запуск напоминаний из админки (для проверки)
+    if (path === '/api/admin/run-reminders' && method === 'POST') {
+      if (!ctx.isAdmin) throw new core.SantaError(401, 'Нужен вход в админку');
+      if (!bot) throw new core.SantaError(404, 'Бот пока не подключён');
+      const out = bot.runReminders(db, ctx);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      await tgSend(out);
+      return reply(200, { sent: out.length });
+    }
+
+    const n0 = db.notifications.length;
     const { data, mutated } = core.handle(db, ctx, method, path, body);
-    if (mutated) await s3('PUT', DB_KEY, token, JSON.stringify(db));
+    if (mutated) {
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      if (bot) await tgSend(bot.pushNotifications(db, db.notifications.slice(n0), null));
+    }
     return reply(200, data);
   } catch (e) {
     if (e instanceof core.SantaError) return reply(e.status, { error: e.message });

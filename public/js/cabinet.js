@@ -124,6 +124,7 @@
       <dt>Telegram</dt><dd><a href="https://t.me/${esc(u.tg)}" target="_blank" rel="noopener">@${esc(u.tg)}</a></dd>
       <dt>С нами с</dt><dd>${FX.fmtDate(u.createdAt)}</dd>
       ${u.banned ? '<dt>Статус</dt><dd><span class="status banned">🛑 чёрный список</span></dd>' : ''}`;
+    renderTg();
     const del = $('[data-delete-me]');
     del.hidden = !!(me.assignment || me.incoming);
   }
@@ -245,6 +246,29 @@
       : '<li>Пока тихо. Как будто перед большим завозом зерна.</li>';
     if (list.some((n) => !n.read)) setTimeout(() => Api.post('/api/notifications/read').catch(() => {}), 2500);
   }
+
+  // ---------- Telegram ----------
+  let tgLink = null; // null — ещё не спрашивали, false — бот не подключён
+  async function renderTg() {
+    const card = $('[data-tg]');
+    if (tgLink === null) {
+      try { tgLink = await Api.get('/api/tg/link'); } catch (e) { tgLink = false; }
+    }
+    if (!tgLink) { card.hidden = true; return; }
+    card.hidden = false;
+    const linked = me.user.tgLinked;
+    card.classList.toggle('on', linked);
+    $('[data-tg-title]').textContent = linked ? '✅ Уведомления в Telegram включены' : 'Уведомления в Telegram';
+    $('[data-tg-sub]').textContent = linked
+      ? `Бот @${tgLink.username} пришлёт напоминания и подскажет, кому дарить.`
+      : 'Бот напомнит о жеребьёвке, подскажет, кому дарить, и не даст пропустить сроки отправки.';
+    $('[data-tg-btn]').textContent = linked ? 'Открыть бота' : '🔔 Подписаться на уведомления';
+  }
+  $('[data-tg-btn]').addEventListener('click', () => {
+    if (tgLink) window.open(tgLink.url, '_blank', 'noopener');
+    // после возврата из Telegram обновим статус привязки
+    setTimeout(() => Api.get('/api/me').then((m) => { me = m; renderTg(); }).catch(() => {}), 8000);
+  });
 
   // Отзыв согласия на обработку ПДн = удаление аккаунта и всех данных
   $('[data-delete-me]').addEventListener('click', async () => {

@@ -499,3 +499,12 @@ tr.banned td { opacity: .55; }
 /* навели мышку на сани со зверьком — они замирают, чтобы было легко попасть */
 .flying-santa:has(.fs-link):hover, .flying-santa:has(.fs-link):hover .fs-inner, .flying-santa:has(.fs-link):hover .fs-inner * { animation-play-state: paused; }
 .fs-link::before { content: ''; position: absolute; inset: -14px; } /* область клика чуть больше саней */
+
+/* карточка Telegram в личном кабинете */
+.tg-card { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; background: linear-gradient(135deg, #e8f4fd, #f3f9ff); border-color: #bfdcf5; }
+.tg-card.on { background: linear-gradient(135deg, #e9f9ef, #f4fcf7); border-color: #bfe8cf; }
+.tg-ico { font-size: 34px; flex: none; }
+.tg-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.tg-text span { color: var(--muted); font-size: 14px; }
+.tg-card .btn-primary { background: linear-gradient(135deg, #2aabee, #229ed9); box-shadow: 0 10px 30px -10px rgba(34, 158, 217, .7); }
+@media (max-width: 680px) { .tg-card { flex-direction: column; text-align: center; } .tg-card .btn { width: 100%; } }

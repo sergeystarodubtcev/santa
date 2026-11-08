@@ -41,6 +41,10 @@
       drawnAt: null,
       notifications: [],
       settings: Object.assign({}, DEFAULT_SETTINGS),
+      // Telegram-бот: состояние диалогов, чаты админов, отправленные напоминания
+      tgState: {},
+      tgAdmins: [],
+      tgReminders: {},
     };
   }
 
@@ -89,7 +93,7 @@
   }
 
   function publicUser(u) {
-    return { id: u.id, name: u.name, phone: u.phone, tg: u.tg, createdAt: u.createdAt, banned: !!u.banned };
+    return { id: u.id, name: u.name, phone: u.phone, tg: u.tg, createdAt: u.createdAt, banned: !!u.banned, tgLinked: !!u.tgChatId };
   }
 
   // Статус модерации анкеты: pending — ждёт проверки, approved — допущена к жеребьёвке, rejected — отклонена.
@@ -103,8 +107,9 @@
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) === 'approved');
   }
 
-  function notify(db, ctx, userId, text, kind) {
-    db.notifications.push({ id: newId(ctx), userId, text, kind: kind || 'info', createdAt: ctx.now(), read: false });
+  // action — подсказка для Telegram-бота, какую кнопку приложить (whom, gift, moderation, …)
+  function notify(db, ctx, userId, text, kind, action) {
+    db.notifications.push({ id: newId(ctx), userId, text, kind: kind || 'info', action: action || null, createdAt: ctx.now(), read: false });
   }
 
   function firstName(name) {
@@ -179,7 +184,7 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
-    if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info');
+    if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info', 'moderation');
     else if (modStatus(existing) === 'rejected') notify(db, ctx, userId, 'Анкета исправлена и снова отправлена на модерацию', 'info');
     return db.participations[userId];
   }
@@ -224,7 +229,7 @@
     }));
     db.drawnAt = ctx.now();
     for (const id of ids) {
-      notify(db, ctx, id, 'Жеребьёвка проведена! Загляните в «Кому я дарю» — там имя и адрес получателя 🎁', 'success');
+      notify(db, ctx, id, 'Жеребьёвка проведена! Загляните в «Кому я дарю» — там имя и адрес получателя 🎁', 'success', 'whom');
     }
     return { pairs: db.pairs.length };
   }
@@ -240,7 +245,7 @@
     pair.status = pair.status === 'received' ? 'received' : 'sent';
     pair.track = str(body && body.track, 80);
     pair.sentAt = pair.sentAt || ctx.now();
-    notify(db, ctx, pair.recipientId, 'Вам подарок от Деда Мороза! 🎁 Посылка уже в пути' + (pair.track ? ' (трек: ' + pair.track + ')' : ''), 'gift');
+    notify(db, ctx, pair.recipientId, 'Вам подарок от Деда Мороза! 🎁 Посылка уже в пути' + (pair.track ? ' (трек: ' + pair.track + ')' : ''), 'gift', 'gift');
     return pair;
   }
 
@@ -324,8 +329,8 @@
         return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modStatus(part) }) : null });
       }),
       pairs: db.pairs.map((p) => Object.assign({}, p, {
-        santa: byId[p.santaId] ? byId[p.santaId].name + ' @' + byId[p.santaId].tg : '—',
-        recipient: byId[p.recipientId] ? byId[p.recipientId].name + ' @' + byId[p.recipientId].tg : '—',
+        santa: byId[p.santaId] ? '@' + byId[p.santaId].tg : '—',
+        recipient: byId[p.recipientId] ? '@' + byId[p.recipientId].tg : '—',
       })),
       stats: {
         users: db.users.length,

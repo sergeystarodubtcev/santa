@@ -180,6 +180,12 @@
     }, 'Настройки сохранены');
   });
 
+  $('[data-run-reminders]').addEventListener('click', async () => {
+    try {
+      const r = await Api.post('/api/admin/run-reminders', {}, A);
+      FX.toast(r.sent ? `Отправлено напоминаний: ${r.sent}` : 'Сегодня напоминать некому — всё по плану', 'success');
+    } catch (e) { FX.toast(e.message, 'error'); }
+  });
   $('[data-broadcast]').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -205,12 +211,12 @@
   });
   $('[data-csv]').addEventListener('click', () => {
     const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-    const rows = [['Имя', 'ФИО', 'Телефон', 'Telegram', 'Адрес', 'Тематика', 'Пожелания', 'Пометки', 'Бан', 'Дарит кому']];
+    const rows = [['Имя', 'ФИО', 'Телефон', 'Telegram', 'Адрес', 'Тематика', 'Пожелания', 'Пометки', 'Бан', 'Дарит кому (Telegram)']];
     const byId = Object.fromEntries(state.users.map((u) => [u.id, u]));
     state.users.forEach((u) => {
       const p = u.participation || {};
       const pair = state.pairs.find((x) => x.santaId === u.id);
-      rows.push([u.name, p.fullName, u.phone, '@' + u.tg, p.address, SantaCore.PREFS[p.prefs] || '', p.wishes, p.notes, u.banned ? 'да' : '', pair && byId[pair.recipientId] ? byId[pair.recipientId].name : '']);
+      rows.push([u.name, p.fullName, u.phone, '@' + u.tg, p.address, SantaCore.PREFS[p.prefs] || '', p.wishes, p.notes, u.banned ? 'да' : '', pair && byId[pair.recipientId] ? '@' + byId[pair.recipientId].tg : '']);
     });
     download('santa-participants.csv', '﻿' + rows.map((r) => r.map(q).join(';')).join('\n'), 'text/csv');
   });

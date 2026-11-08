@@ -76,14 +76,32 @@ echo "Загружено файлов сайта: $n"
 # 3. Облачная функция
 FN_DIR="$(mktemp -d)"
 cp cloud/index.js "$FN_DIR/index.js"
+cp cloud/bot.js "$FN_DIR/bot.js"
 cp public/js/core.js "$FN_DIR/core.js"
 echo '{"name":"kofesanta-api","private":true}' > "$FN_DIR/package.json"
 yc serverless function get --name santa-api >/dev/null 2>&1 || yc serverless function create --name santa-api >/dev/null
 ENV_ARGS=(--environment "BUCKET=$BUCKET")
 if [ -n "${ADMIN_PASSWORD:-}" ]; then ENV_ARGS+=(--environment "ADMIN_PASSWORD=$ADMIN_PASSWORD"); fi
+
+# Адрес сайта для ссылок из бота: свой домен, если сертификат уже выпущен, иначе адрес шлюза.
+GW_DOMAIN="$(yc serverless api-gateway get --name kofesanta --format json 2>/dev/null | jq -r '.domain // empty' || true)"
+SITE_URL="${GW_DOMAIN:+https://$GW_DOMAIN}"
+if [ -n "${CUSTOM_DOMAIN:-}" ] && [ "$(yc certificate-manager certificate get --name "cert-$(echo "$CUSTOM_DOMAIN" | tr '.' '-')" --format json 2>/dev/null | jq -r '.status // empty')" = "ISSUED" ]; then
+  SITE_URL="https://$CUSTOM_DOMAIN"
+fi
+ENV_ARGS+=(--environment "SITE_URL=$SITE_URL")
+
+# Telegram-бот (необязательно): токен из секрета TG_BOT_TOKEN
+TG_USERNAME=""
+if [ -n "${TG_BOT_TOKEN:-}" ]; then
+  TG_USERNAME="$(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getMe" | jq -r '.result.username // empty' || true)"
+  if [ -z "$TG_USERNAME" ]; then echo "::error::Telegram не принял TG_BOT_TOKEN (getMe). Проверьте токен от @BotFather."; exit 1; fi
+  echo "Бот: @$TG_USERNAME"
+  ENV_ARGS+=(--environment "TG_BOT_TOKEN=$TG_BOT_TOKEN" --environment "TG_BOT_USERNAME=$TG_USERNAME")
+fi
 deploy_fn() {
   yc serverless function version create --function-name santa-api --runtime "$1" --entrypoint index.handler \
-    --memory 256m --execution-timeout 15s --source-path "$FN_DIR" --service-account-id "$SA_ID" "${ENV_ARGS[@]}" >/dev/null
+    --memory 256m --execution-timeout 30s --source-path "$FN_DIR" --service-account-id "$SA_ID" "${ENV_ARGS[@]}" >/dev/null
 }
 deploy_fn nodejs22 || { echo "nodejs22 недоступен, пробую nodejs18"; deploy_fn nodejs18; }
 FN_ID="$(yc serverless function get --name santa-api --format json | jq -r .id)"
@@ -141,6 +159,24 @@ if [ -n "${CUSTOM_DOMAIN:-}" ]; then
   else
     DNS_NOTE="$(echo "$CERT_JSON" | jq -r '.challenges[]? | "- `\(.dns_challenge.type)` **\(.dns_challenge.name)** → `\(.dns_challenge.value)`"')"
   fi
+fi
+
+# 4c. Telegram: вебхук, меню команд и ежедневный таймер напоминаний (12:00 МСК)
+if [ -n "$TG_USERNAME" ]; then
+  HOOK_SECRET="$(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)"
+  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setWebhook" \
+    --data-urlencode "url=https://$DOMAIN/api/tg/webhook" -d "secret_token=$HOOK_SECRET" \
+    --data-urlencode 'allowed_updates=["message","callback_query"]' | jq -c '{ok, description}'
+  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyCommands" -H 'Content-Type: application/json' \
+    -d '{"commands":[{"command":"start","description":"Начать / привязать аккаунт"},{"command":"cancel","description":"Отменить текущий шаг"}]}' >/dev/null
+  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyDescription" -H 'Content-Type: application/json' \
+    -d '{"description":"🎅 Тайный Санта Кофеманьяков: регистрация, анкета, кому дарить и напоминания о сроках отправки подарков. Made by Specialty Кофеёк."}' >/dev/null
+  if ! yc serverless trigger get --name santa-reminders >/dev/null 2>&1; then
+    yc serverless trigger create timer --name santa-reminders --cron-expression '0 9 ? * * *' \
+      --invoke-function-id "$FN_ID" --invoke-function-service-account-id "$SA_ID" >/dev/null
+    echo "Создан таймер напоминаний (каждый день в 12:00 МСК)"
+  fi
+  echo "Вебхук: $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_message}')"
 fi
 
 # 5. Проверка

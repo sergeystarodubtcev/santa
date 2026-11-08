@@ -18,6 +18,7 @@ jobs:
     env:
       YC_SA_KEY: ${{ secrets.YC_SA_KEY }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       CUSTOM_DOMAIN: santa.speccof.ru
       DNS_ZONE: speccof.ru
     steps:
