@@ -142,6 +142,12 @@ if [ -n "${CUSTOM_DOMAIN:-}" ]; then
   CERT_ID="$(echo "$CERT_JSON" | jq -r .id)"
   CERT_STATUS="$(echo "$CERT_JSON" | jq -r .status)"
   echo "Сертификат $CERT_ID: $CERT_STATUS"
+  if [ "$CERT_STATUS" != "ISSUED" ] && [ -n "${DNS_ZONE:-}" ]; then
+    command -v dig >/dev/null || sudo apt-get install -y -qq dnsutils >/dev/null 2>&1 || true
+    echo "NS в реестре .RU:   $(dig +short NS "$DNS_ZONE" @a.dns.ripn.net 2>/dev/null | tr '\n' ' ')"
+    echo "NS у Google DNS:    $(dig +short NS "$DNS_ZONE" @8.8.8.8 2>/dev/null | tr '\n' ' ')"
+    echo "Запись проверки:    $(dig +short CNAME "_acme-challenge.$CUSTOM_DOMAIN" @8.8.8.8 2>/dev/null)"
+  fi
   echo "$CERT_JSON" | jq -r '.challenges[]? | "Проверка домена: \(.status) — \(.dns_challenge.type // "") \(.dns_challenge.name // "") → \(.dns_challenge.value // "")"'
   # Если DNS домена делегирован в Yandex Cloud DNS (DNS_ZONE), записи создаём сами.
   if [ -n "${DNS_ZONE:-}" ]; then
