@@ -93,7 +93,13 @@ ENV_ARGS+=(--environment "SITE_URL=$SITE_URL")
 
 # Telegram-бот (необязательно): токен из секрета TG_BOT_TOKEN
 TG_USERNAME=""
-if [ -n "${TG_BOT_TOKEN:-}" ]; then
+# TG_MODE: off — бот выключен (из Yandex Cloud нет связи с Telegram), polling | webhook — бот работает прямо из функции
+if [ "${TG_MODE:-off}" = "off" ]; then
+  if yc serverless trigger get --name santa-bot-poll >/dev/null 2>&1; then
+    yc serverless trigger delete --name santa-bot-poll >/dev/null && echo "Таймер опроса бота удалён (TG_MODE=off)"
+  fi
+fi
+if [ -n "${TG_BOT_TOKEN:-}" ] && [ "${TG_MODE:-off}" != "off" ]; then
   TG_USERNAME="$(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getMe" | jq -r '.result.username // empty' || true)"
   if [ -z "$TG_USERNAME" ]; then echo "::error::Telegram не принял TG_BOT_TOKEN (getMe). Проверьте токен от @BotFather."; exit 1; fi
   echo "Бот: @$TG_USERNAME"
