@@ -279,7 +279,16 @@ module.exports.handler = async function handler(event, context) {
         const hook = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo`).then((x) => x.json());
         return reply(200, { reachable: true, ms: Date.now() - t0, bot: me.result && me.result.username, webhook: hook.result });
       } catch (e) {
-        return reply(200, { reachable: false, ms: Date.now() - t0, error: String(e.cause && e.cause.code || e.message) });
+        // повторяем строго через IPv4 — вдруг мешает IPv6
+        const v4 = await new Promise((resolve) => {
+          const t1 = Date.now();
+          const req = require('node:https').get(`https://api.telegram.org/bot${TG_TOKEN}/getMe`, { family: 4, timeout: 10000 }, (res) => {
+            let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => resolve({ ok: true, ms: Date.now() - t1, status: res.statusCode, body: b.slice(0, 120) }));
+          });
+          req.on('timeout', () => { req.destroy(new Error('timeout')); });
+          req.on('error', (er) => resolve({ ok: false, ms: Date.now() - t1, error: er.code || er.message }));
+        });
+        return reply(200, { reachable: false, ms: Date.now() - t0, error: String(e.cause && e.cause.code || e.message), node: process.version, ipv4: v4 });
       }
     }
 

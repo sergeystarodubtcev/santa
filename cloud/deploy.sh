@@ -198,7 +198,7 @@ if [ -n "$TG_USERNAME" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
   ADM="$(curl -fsS -X POST "https://$DOMAIN/api/admin/login" -H 'Content-Type: application/json' \
     -d "$(jq -n --arg p "$ADMIN_PASSWORD" '{password:$p}')" | jq -r '.token // empty' || true)"
   if [ -n "$ADM" ]; then
-    echo "Связь функции с Telegram: $(curl -fsS -m 40 "https://$DOMAIN/api/admin/tg-check" -H "Authorization: Bearer $ADM" | jq -c '{reachable, ms, bot, error, url: .webhook.url, pending: .webhook.pending_update_count}' || echo 'не удалось проверить')"
+    echo "Связь функции с Telegram: $(curl -fsS -m 40 "https://$DOMAIN/api/admin/tg-check" -H "Authorization: Bearer $ADM" | jq -c '{reachable, ms, bot, error, node, ipv4, url: .webhook.url, pending: .webhook.pending_update_count}' || echo 'не удалось проверить')"
   fi
 fi
 
