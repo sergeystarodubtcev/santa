@@ -60,6 +60,20 @@ npm test
 
 ## Деплой
 
+### Основной: Yandex Cloud (бесплатный тариф, данные в РФ)
+
+Сайт: **https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net** · админка — `/admin.html`.
+
+Устройство: статика и база (`data/db.json`) — в приватном бакете Object Storage, API — облачная функция
+(`cloud/index.js`), единый HTTPS-адрес — API Gateway (`cloud/gateway.yaml`). Workflow `.github/workflows/yandex.yml`
+на каждый push в `main` прогоняет тесты и выкладывает всё сам (`cloud/deploy.sh`), затем проверяет страницы и API.
+
+Нужны секреты репозитория: `YC_SA_KEY` — авторизованный ключ сервисного аккаунта (роли на каталоге `editor` и
+`iam.serviceAccounts.user`), `ADMIN_PASSWORD` — пароль админки. К облаку должен быть привязан платёжный аккаунт
+(при бесплатных лимитах ничего не списывается).
+
+### Запасные варианты (ниже) — Render и Docker
+
 ### 1. Фронтенд на GitHub Pages
 
 Workflow `.github/workflows/pages.yml` на каждый push прогоняет тесты и публикует папку `public/` на GitHub Pages.

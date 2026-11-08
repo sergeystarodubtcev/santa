@@ -1,3 +1,3 @@
-// Адрес бэкенда (Render). Пусто — тот же домен.
-// Переменная репозитория API_URL в GitHub Actions, если задана, перезаписывает это значение.
-window.SANTA_CONFIG = { apiUrl: 'https://coffeemaniacs-santa.onrender.com' };
+// Адрес бэкенда (Yandex Cloud). Пусто — тот же домен.
+// На Yandex Cloud деплой подставляет '' (сайт и API на одном адресе).
+window.SANTA_CONFIG = { apiUrl: 'https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net' };
