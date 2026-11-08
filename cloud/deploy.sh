@@ -128,7 +128,7 @@ if [ -n "${CUSTOM_DOMAIN:-}" ]; then
     fi
     yc dns zone replace-records --name "$ZONE_NAME" --record "$CUSTOM_DOMAIN. 600 CNAME $DOMAIN." >/dev/null
     echo "DNS-записи в зоне $DNS_ZONE обновлены:"
-    yc dns zone list-records --name "$ZONE_NAME" --format json | jq -r '.[] | "  \(.name) \(.type) \(.data | join(", "))"'
+    yc dns zone list-records --name "$ZONE_NAME" --format json | jq -r '.. | objects | select(has("type") and has("name")) | "  \(.name) \(.type) \(.data | tostring)"' || true
   fi
   if [ "$CERT_STATUS" = "ISSUED" ]; then
     if yc serverless api-gateway get --name kofesanta --format json | jq -e --arg d "$CUSTOM_DOMAIN" '[.attached_domains[]?.domain] | index($d)' >/dev/null; then
