@@ -39,10 +39,16 @@ BUCKET="kofesanta-${FOLDER_ID}"
 echo "Каталог: $FOLDER_ID, сервисный аккаунт: $SA_ID, бакет: $BUCKET"
 
 # 1. Бакет (приватный)
-if ! yc storage bucket get "$BUCKET" >/dev/null 2>&1; then
-  yc storage bucket create --name "$BUCKET" --default-storage-class standard --max-size 1073741824 >/dev/null
-  echo "Создан бакет $BUCKET"
-fi
+# Сразу после привязки платёжного аккаунта Object Storage несколько минут может отвечать
+# «cloud does not exist» — ждём и пробуем снова.
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  if yc storage bucket get "$BUCKET" >/dev/null 2>&1; then break; fi
+  if yc storage bucket create --name "$BUCKET" --default-storage-class standard --max-size 1073741824 >/dev/null; then
+    echo "Создан бакет $BUCKET"; break
+  fi
+  if [ "$i" = 10 ]; then echo "::error::Не удалось создать бакет. Проверьте, что платёжный аккаунт активен и привязан к облаку."; exit 1; fi
+  echo "Хранилище ещё не готово, жду 60 с (попытка $i/10)…"; sleep 60
+done
 
 # 2. Статика сайта -> s3://BUCKET/site/
 TOKEN="$(yc iam create-token)"
