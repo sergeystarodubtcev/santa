@@ -94,7 +94,7 @@ ENV_ARGS+=(--environment "SITE_URL=$SITE_URL")
 # Telegram-бот (необязательно): токен из секрета TG_BOT_TOKEN
 TG_USERNAME=""
 # TG_MODE: off — бот выключен (из Yandex Cloud нет связи с Telegram), polling | webhook — бот работает прямо из функции
-if [ "${TG_MODE:-off}" = "off" ]; then
+if [ "${TG_MODE:-off}" != "polling" ]; then
   if yc serverless trigger get --name santa-bot-poll >/dev/null 2>&1; then
     yc serverless trigger delete --name santa-bot-poll >/dev/null && echo "Таймер опроса бота удалён (TG_MODE=off)"
   fi
@@ -102,8 +102,13 @@ fi
 if [ -n "${TG_BOT_TOKEN:-}" ] && [ "${TG_MODE:-off}" != "off" ]; then
   TG_USERNAME="$(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getMe" | jq -r '.result.username // empty' || true)"
   if [ -z "$TG_USERNAME" ]; then echo "::error::Telegram не принял TG_BOT_TOKEN (getMe). Проверьте токен от @BotFather."; exit 1; fi
-  echo "Бот: @$TG_USERNAME"
-  ENV_ARGS+=(--environment "TG_BOT_TOKEN=$TG_BOT_TOKEN" --environment "TG_BOT_USERNAME=$TG_USERNAME")
+  echo "Бот: @$TG_USERNAME (режим $TG_MODE)"
+  if [ "$TG_MODE" = "relay" ]; then
+    # токен остаётся в GitHub; облаку — только имя бота и общий секрет с ретранслятором
+    ENV_ARGS+=(--environment "TG_BOT_USERNAME=$TG_USERNAME" --environment "TG_RELAY_SECRET=$(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)")
+  else
+    ENV_ARGS+=(--environment "TG_BOT_TOKEN=$TG_BOT_TOKEN" --environment "TG_BOT_USERNAME=$TG_USERNAME")
+  fi
 fi
 deploy_fn() {
   yc serverless function version create --function-name santa-api --runtime "$1" --entrypoint index.handler \
@@ -170,8 +175,9 @@ fi
 # 4c. Telegram: вебхук, меню команд и ежедневный таймер напоминаний (12:00 МСК)
 if [ -n "$TG_USERNAME" ]; then
   HOOK_SECRET="$(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)"
-  echo "Вебхук (было): $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_date, last_error_message}')"
-  if [ "${TG_MODE:-polling}" = "webhook" ]; then
+  if [ "$TG_MODE" = "relay" ]; then
+    echo "Бот работает через ретранслятор в GitHub Actions (workflow «Telegram-бот»)"
+  elif [ "$TG_MODE" = "webhook" ]; then
     curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setWebhook" \
       --data-urlencode "url=https://$DOMAIN/api/tg/webhook" -d "secret_token=$HOOK_SECRET" \
       --data-urlencode 'allowed_updates=["message","callback_query"]' | jq -c '{ok, description}'
@@ -184,23 +190,15 @@ if [ -n "$TG_USERNAME" ]; then
       echo "Создан таймер опроса бота (раз в минуту)"
     fi
   fi
-  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyCommands" -H 'Content-Type: application/json' \
-    -d '{"commands":[{"command":"start","description":"Начать / привязать аккаунт"},{"command":"cancel","description":"Отменить текущий шаг"}]}' >/dev/null
-  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyDescription" -H 'Content-Type: application/json' \
-    -d '{"description":"🎅 Тайный Санта Кофеманьяков: регистрация, анкета, кому дарить и напоминания о сроках отправки подарков. Made by Specialty Кофеёк."}' >/dev/null
   if ! yc serverless trigger get --name santa-reminders >/dev/null 2>&1; then
     yc serverless trigger create timer --name santa-reminders --cron-expression '0 9 ? * * *' \
       --invoke-function-id "$FN_ID" --invoke-function-service-account-id "$SA_ID" >/dev/null
     echo "Создан таймер напоминаний (каждый день в 12:00 МСК)"
   fi
-  echo "Вебхук (до обновления): $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_date, last_error_message}')"
-  echo "--- последние логи функции ---"
-  yc serverless function logs santa-api --since 3h --limit 60 2>/dev/null | grep -v -i 'token' | tail -60 || true
-  echo "--- конец логов ---"
 fi
 
 # 4d. Видит ли облачная функция Telegram
-if [ -n "$TG_USERNAME" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
+if [ -n "$TG_USERNAME" ] && [ "$TG_MODE" != "relay" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
   ADM="$(curl -fsS -X POST "https://$DOMAIN/api/admin/login" -H 'Content-Type: application/json' \
     -d "$(jq -n --arg p "$ADMIN_PASSWORD" '{password:$p}')" | jq -r '.token // empty' || true)"
   if [ -n "$ADM" ]; then
@@ -210,6 +208,12 @@ fi
 
 # 5. Проверка
 sleep 5
+if [ "$TG_MODE" = "relay" ] && [ -n "$TG_USERNAME" ]; then
+  RELAY_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/tg/outbox" -H "X-Relay-Secret: $(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)" -H 'Content-Type: application/json' -d '{}')"
+  BAD_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/tg/outbox" -H 'X-Relay-Secret: wrong' -d '{}')"
+  echo "Ретранслятор: с секретом → $RELAY_CODE, с чужим секретом → $BAD_CODE"
+  [ "$RELAY_CODE" = 200 ] && [ "$BAD_CODE" = 403 ] || { echo "::error::Эндпоинт ретранслятора отвечает не так, как ожидалось"; exit 1; }
+fi
 echo "Проверка $URL/api/health"
 HEALTH="$(curl -fsS "$URL/api/health" || true)"
 echo "$HEALTH"

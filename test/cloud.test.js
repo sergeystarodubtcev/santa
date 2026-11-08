@@ -91,3 +91,36 @@ test('бот в режиме опроса: забирает сообщения �
   assert.equal(db.users.find((u) => u.tg === 'cloud_user1').tgChatId, 77);
   delete process.env.TG_BOT_TOKEN;
 });
+
+test('режим ретранслятора: апдейты через /api/tg/relay, уведомления копятся в очереди /api/tg/outbox', async () => {
+  delete require.cache[require.resolve('../cloud/index.js')];
+  delete process.env.TG_BOT_TOKEN;
+  process.env.TG_BOT_USERNAME = 'kofesanta_bot';
+  process.env.TG_RELAY_SECRET = 'relay-secret';
+  const { handler: h } = require('../cloud/index.js');
+  const s3fetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    if (String(url).includes('api.telegram.org')) throw new Error('из облака в Telegram ходить нельзя');
+    return s3fetch(url, opts);
+  };
+  const post = async (url, body, headers = {}) => {
+    const r = await h({ httpMethod: 'POST', url, headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify(body), isBase64Encoded: false }, ctx);
+    return { status: r.statusCode, data: JSON.parse(r.body) };
+  };
+  // чужой секрет и пустой вебхук не пускаем
+  assert.equal((await post('/api/tg/relay', { update: {} }, { 'X-Relay-Secret': 'nope' })).status, 403);
+  assert.equal((await post('/api/tg/webhook', { update_id: 1 })).status, 403);
+  // /start через ретранслятор → ответ в out
+  const r = await post('/api/tg/relay', { update: { update_id: 1, message: { chat: { id: 88, type: 'private' }, from: { id: 88, username: 'cloud_user2' }, text: '/start' } } }, { 'X-Relay-Secret': 'relay-secret' });
+  assert.equal(r.status, 200);
+  assert.match(r.data.out.find((o) => o.chat_id === 88).text, /Привет, <b>Юзер2<\/b>/);
+  // действие на сайте → уведомление в очередь, а не в сеть
+  const admin = (await post('/api/admin/login', { password: 'adminpw' })).data.token;
+  await post('/api/admin/broadcast', { text: 'Жеребьёвка завтра!', onlyParticipants: true }, { Authorization: 'Bearer ' + admin });
+  let q = await post('/api/tg/outbox', {}, { 'X-Relay-Secret': 'relay-secret' });
+  assert.ok(q.data.out.some((o) => o.chat_id === 88 && /Жеребьёвка завтра/.test(o.text)));
+  q = await post('/api/tg/outbox', {}, { 'X-Relay-Secret': 'relay-secret' });
+  assert.equal(q.data.out.length, 0, 'очередь очищается после выдачи');
+  global.fetch = s3fetch;
+  delete process.env.TG_RELAY_SECRET;
+});

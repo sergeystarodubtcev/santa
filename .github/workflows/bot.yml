@@ -1,0 +1,34 @@
+name: Telegram-бот
+
+# Ретранслятор бота: GitHub видит и Telegram, и Yandex Cloud, а они друг друга — нет.
+# Одна смена работает ~5,5 часа; расписание каждые 30 минут держит в очереди следующую смену,
+# так что бот работает непрерывно (concurrency не даёт запустить две смены одновременно).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: false
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Бот на смене
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          SITE_API: https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net
+          RUN_MINUTES: '330'
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ]; then echo "::warning::Нет секрета TG_BOT_TOKEN"; exit 0; fi
+          node relay/bot-runner.js

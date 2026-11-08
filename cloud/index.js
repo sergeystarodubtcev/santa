@@ -22,6 +22,10 @@ const TG_USERNAME = process.env.TG_BOT_USERNAME || '';
 const SITE_URL = (process.env.SITE_URL || '').replace(/\/$/, '');
 // Секрет вебхука Telegram (заголовок X-Telegram-Bot-Api-Secret-Token); deploy.sh считает его так же.
 const TG_HOOK_SECRET = TG_TOKEN ? crypto.createHash('sha256').update(TG_TOKEN).digest('hex').slice(0, 32) : '';
+// Режим «ретранслятора»: из облака нет связи с Telegram, поэтому бота крутит GitHub Actions (relay/bot-runner.js).
+// Он забирает апдейты у Telegram, передаёт их сюда (/api/tg/relay) и отправляет ответы; исходящие уведомления
+// копятся в очереди db.tgOutbox и забираются через /api/tg/outbox. Секрет общий: sha256(токен бота).
+const TG_RELAY_SECRET = process.env.TG_RELAY_SECRET || '';
 const S3 = 'https://storage.yandexcloud.net';
 const DB_KEY = 'data/db.json';
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 60;
@@ -121,7 +125,14 @@ async function tgSend(list) {
     } catch (e) { console.error('telegram', method, e.message); }
   }
 }
-const botFor = (sec) => (TG_TOKEN && TG_USERNAME ? createBot({ core, secret: sec.secret, siteUrl: SITE_URL, username: TG_USERNAME }) : null);
+const botFor = (sec) => ((TG_TOKEN || TG_RELAY_SECRET) && TG_USERNAME ? createBot({ core, secret: sec.secret, siteUrl: SITE_URL, username: TG_USERNAME }) : null);
+// Доставка исходящих сообщений: напрямую (если есть связь) или в очередь для ретранслятора.
+// В режиме ретранслятора вызывать ДО сохранения базы.
+function queueOut(db, out) {
+  if (!TG_RELAY_SECRET || !out.length) return false;
+  db.tgOutbox = (db.tgOutbox || []).concat(out).slice(-500);
+  return true;
+}
 
 function makeCtx(auth, t) {
   return {
@@ -215,7 +226,11 @@ module.exports.handler = async function handler(event, context) {
     if (payload === 'poll') return pollTelegram(token, sec, bot);
     const db = await loadDb(token);
     const out = bot.runReminders(db, makeCtx(makeAuth(sec.secret, sec.adminPassword), null));
-    if (out.length) { await s3('PUT', DB_KEY, token, JSON.stringify(db)); await tgSend(out); }
+    if (out.length) {
+      const queued = queueOut(db, out);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      if (!queued) await tgSend(out);
+    }
     return { ok: true, sent: out.length };
   }
   const method = (event.httpMethod || 'GET').toUpperCase();
@@ -246,7 +261,7 @@ module.exports.handler = async function handler(event, context) {
 
     // Вебхук Telegram
     if (path === '/api/tg/webhook') {
-      if (!bot || header(event, 'x-telegram-bot-api-secret-token') !== TG_HOOK_SECRET) return reply(403, { error: 'forbidden' });
+      if (!bot || !TG_HOOK_SECRET || header(event, 'x-telegram-bot-api-secret-token') !== TG_HOOK_SECRET) return reply(403, { error: 'forbidden' });
       try {
         const db = await loadDb(token);
         const n0 = db.notifications.length;
@@ -256,6 +271,24 @@ module.exports.handler = async function handler(event, context) {
         await tgSend(out);
       } catch (e) { console.error('tg update', e); }
       return reply(200, { ok: true }); // всегда 200, иначе Telegram будет повторять апдейт
+    }
+
+    // Ретранслятор (GitHub Actions): апдейт от Telegram → ответы; плюс очередь исходящих
+    if (path === '/api/tg/relay' || path === '/api/tg/outbox') {
+      if (!bot || !TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
+      const db = await loadDb(token);
+      let out = [];
+      if (path === '/api/tg/relay' && body.update) {
+        const n0 = db.notifications.length;
+        const r = bot.handleUpdate(db, makeCtx(auth, null), body.update);
+        out = r.out.concat(bot.pushNotifications(db, db.notifications.slice(n0), r.actingUid));
+      }
+      const queue = db.tgOutbox || [];
+      if (path === '/api/tg/relay' || queue.length) {
+        db.tgOutbox = [];
+        await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      }
+      return reply(200, { out: out.concat(queue) });
     }
 
     const t = auth.readToken(header(event, 'authorization').replace(/^Bearer\s+/i, ''));
@@ -297,16 +330,19 @@ module.exports.handler = async function handler(event, context) {
       if (!ctx.isAdmin) throw new core.SantaError(401, 'Нужен вход в админку');
       if (!bot) throw new core.SantaError(404, 'Бот пока не подключён');
       const out = bot.runReminders(db, ctx);
+      const queued = queueOut(db, out);
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
-      await tgSend(out);
+      if (!queued) await tgSend(out);
       return reply(200, { sent: out.length });
     }
 
     const n0 = db.notifications.length;
     const { data, mutated } = core.handle(db, ctx, method, path, body);
     if (mutated) {
+      const out = bot ? bot.pushNotifications(db, db.notifications.slice(n0), null) : [];
+      const queued = queueOut(db, out);
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
-      if (bot) await tgSend(bot.pushNotifications(db, db.notifications.slice(n0), null));
+      if (out.length && !queued) await tgSend(out);
     }
     return reply(200, data);
   } catch (e) {
