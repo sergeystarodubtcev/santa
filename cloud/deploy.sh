@@ -124,7 +124,12 @@ check POST /api/login 401 '{"login":"nobody","password":"x"}'
 check POST /api/register 400 '{"name":"x"}'
 check GET /api/me 401
 for p in / /css/style.css /js/core.js /img/logo.png; do
-  echo "Тип $p: шлюз=$(curl -sI "$URL$p" | grep -i '^content-type' | tr -d '\r') | бакет=$(curl -sI -H "X-YaCloud-SubjectToken: $TOKEN" "https://storage.yandexcloud.net/$BUCKET/site${p%/}$( [ "$p" = / ] && echo /index.html )" | grep -i '^content-type' | tr -d '\r')"
+  ct="$(curl -s -o /dev/null -w '%{content_type}' "$URL$p")"
+  echo "Тип $p: $ct"
+  case "$p:$ct" in
+    /:text/html*|*.css:text/css*|*.js:text/javascript*|*.png:image/png*) ;;
+    *) echo "::warning::Неожиданный Content-Type у $p: $ct" ;;
+  esac
 done
 [ "$FAILED" = 0 ] || exit 1
 {
