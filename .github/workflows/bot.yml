@@ -27,7 +27,7 @@ jobs:
       - name: Бот на смене
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          SITE_API: https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net
+          SITE_API: https://santa.speccof.ru
           RUN_MINUTES: '330'
         run: |
           if [ -z "$TG_BOT_TOKEN" ]; then echo "::warning::Нет секрета TG_BOT_TOKEN"; exit 0; fi

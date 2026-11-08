@@ -62,7 +62,7 @@ npm test
 
 ### Основной: Yandex Cloud (бесплатный тариф, данные в РФ)
 
-Сайт: **https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net** · админка — `/admin.html`.
+Сайт: **https://santa.speccof.ru** (запасной адрес шлюза: https://d5dcc304pqfkqgt6skfl.4kscn31j.apigw.yandexcloud.net) · админка — `/admin.html`.
 
 Устройство: статика и база (`data/db.json`) — в приватном бакете Object Storage, API — облачная функция
 (`cloud/index.js`), единый HTTPS-адрес — API Gateway (`cloud/gateway.yaml`). Workflow `.github/workflows/yandex.yml`
