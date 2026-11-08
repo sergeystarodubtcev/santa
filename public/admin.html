@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261103h">
+  <link rel="stylesheet" href="css/style.css?v=20261108b">
 </head>
 <body>
   <header class="topbar">
@@ -46,10 +46,11 @@
             <h3>🎲 Жеребьёвка</h3>
             <p class="muted" data-draw-info></p>
             <div class="actions">
+              <button class="btn btn-green" data-approve-all hidden>✅ Одобрить всех ожидающих</button>
               <button class="btn btn-primary shuffle-btn" data-shuffle>🎲 Раскидать людей</button>
               <button class="btn btn-danger btn-sm" data-reset>Сбросить пары</button>
             </div>
-            <p class="muted" style="font-size:13px;margin-top:12px">Участники выстраиваются в одну случайную цепочку: каждый дарит следующему, последний — первому. Забаненные в жеребьёвку не попадают. После жеребьёвки новая регистрация закрывается автоматически.</p>
+            <p class="muted" style="font-size:13px;margin-top:12px">Сначала проверьте анкеты (модерация), затем раскидайте. Участники выстраиваются в одну случайную цепочку: каждый дарит следующему, последний — первому. Забаненные в жеребьёвку не попадают. После жеребьёвки новая регистрация закрывается автоматически.</p>
           </div>
 
           <form class="card form" data-settings>
@@ -89,10 +90,11 @@
         <div class="card" style="margin-top:18px">
           <div class="toolbar">
             <h3 style="margin:0">👥 Участники</h3>
+            <label class="check" style="font-size:14px;display:flex;gap:8px;align-items:center"><input type="checkbox" data-only-pending style="width:18px;height:18px">Только на модерации</label>
             <input type="search" placeholder="Поиск по имени, телефону, нику" data-search>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Кто</th><th>Контакты</th><th>Адрес</th><th>Пожелания / пометки</th><th>Статус</th><th></th></tr></thead>
+            <thead><tr><th>Кто</th><th>Контакты</th><th>ПВЗ Ozon / ФИО</th><th>Пожелания / пометки</th><th>Модерация</th><th></th></tr></thead>
             <tbody data-users></tbody>
           </table></div>
         </div>
@@ -117,10 +119,10 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261103h"></script>
-  <script src="js/core.js?v=20261103h"></script>
-  <script src="js/api.js?v=20261103h"></script>
-  <script src="js/fx.js?v=20261103h"></script>
-  <script src="js/admin.js?v=20261103h"></script>
+  <script src="js/config.js?v=20261108b"></script>
+  <script src="js/core.js?v=20261108b"></script>
+  <script src="js/api.js?v=20261108b"></script>
+  <script src="js/fx.js?v=20261108b"></script>
+  <script src="js/admin.js?v=20261108b"></script>
 </body>
 </html>

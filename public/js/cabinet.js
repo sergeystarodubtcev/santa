@@ -48,7 +48,7 @@
     e.preventDefault();
     const f = e.target;
     submit(f, async () => {
-      const r = await Api.post('/api/register', { name: f.name.value, phone: f.phone.value, tg: f.tg.value, password: f.password.value });
+      const r = await Api.post('/api/register', { name: f.name.value, phone: f.phone.value, tg: f.tg.value, password: f.password.value, pdConsent: f.pdConsent.checked });
       Api.setToken(r.token);
       await load();
       openPart();
@@ -99,9 +99,12 @@
     $('[data-cab-view]').hidden = false;
     $('[data-logout]').hidden = false;
     $('[data-name]').textContent = u.name.split(' ')[0];
-    $('[data-sub]').textContent = me.participation
-      ? (me.drawn ? 'Жеребьёвка проведена — пора собирать посылку!' : 'Вы в списке участников. Ждём жеребьёвку ☕')
-      : 'Вы ещё не заполнили анкету участника.';
+    const mod = me.participation && me.participation.moderation;
+    $('[data-sub]').textContent = !me.participation ? 'Вы ещё не заполнили анкету участника.'
+      : me.assignment ? 'Жеребьёвка проведена — пора собирать посылку!'
+      : mod === 'approved' ? 'Анкета одобрена ✅ Ждём жеребьёвку ☕'
+      : mod === 'rejected' ? 'Анкета не прошла модерацию — исправьте её или напишите организаторам.'
+      : 'Анкета на модерации ⏳ Организаторы проверят её перед жеребьёвкой.';
     FX.renderBanners($('[data-banners]'), me);
 
     // big deadline notice
@@ -121,6 +124,8 @@
       <dt>Telegram</dt><dd><a href="https://t.me/${esc(u.tg)}" target="_blank" rel="noopener">@${esc(u.tg)}</a></dd>
       <dt>С нами с</dt><dd>${FX.fmtDate(u.createdAt)}</dd>
       ${u.banned ? '<dt>Статус</dt><dd><span class="status banned">🛑 чёрный список</span></dd>' : ''}`;
+    const del = $('[data-delete-me]');
+    del.hidden = !!(me.assignment || me.incoming);
   }
 
   function renderGive() {
@@ -128,8 +133,12 @@
     const a = me.assignment;
     if (!me.participation) {
       host.innerHTML = `<div class="sealed"><div class="env">✉️</div><p class="muted">Заполните анкету, чтобы участвовать в жеребьёвке.</p><button class="btn btn-primary" data-open-part>Заполнить анкету</button></div>`;
+    } else if (!a && me.participation.moderation === 'pending') {
+      host.innerHTML = `<div class="sealed"><div class="env">🕵️</div><p><b>Анкета на модерации</b></p><p class="muted">Перед жеребьёвкой организаторы проверяют всех участников. Как только анкету одобрят, вы попадёте в раздачу.</p></div>`;
+    } else if (!a && me.participation.moderation === 'rejected') {
+      host.innerHTML = `<div class="sealed"><div class="env">🚫</div><p><b>Анкета не прошла модерацию</b></p><p class="muted">${esc(me.participation.moderationNote) || 'Исправьте анкету или напишите организаторам.'}</p><button class="btn btn-primary" data-open-part>Исправить анкету</button></div>`;
     } else if (!a) {
-      host.innerHTML = `<div class="sealed"><div class="env">🔒</div><p class="muted">Конверт запечатан. Как только организаторы перемешают участников, здесь появится имя, адрес и пожелания вашего получателя.</p></div>`;
+      host.innerHTML = `<div class="sealed"><div class="env">🔒</div><p class="muted">Анкета одобрена ✅ Конверт запечатан. Как только организаторы перемешают участников, здесь появится имя, ПВЗ и пожелания вашего получателя.</p></div>`;
     } else {
       const r = a.recipient;
       const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
@@ -138,7 +147,7 @@
           <p style="margin-bottom:14px">Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
           <dl class="kv">
             <dt>ФИО</dt><dd><span class="copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
-            <dt>Куда</dt><dd><span class="copy" data-copy="${esc(r.address)}" title="Скопировать">${esc(r.address)}</span> 📋</dd>
+            <dt>ПВЗ Ozon</dt><dd><span class="copy" data-copy="${esc(r.address)}" title="Скопировать">${esc(r.address)}</span> 📋</dd>
             <dt>Телефон</dt><dd><span class="copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
             <dt>Telegram</dt><dd>@${esc(r.tg)}</dd>
             <dt>Тематика</dt><dd>${esc(PREFS[r.prefs] || '—')}</dd>
@@ -206,10 +215,12 @@
     if (!p) {
       host.innerHTML = `<p class="muted">Анкета не заполнена.</p>${me.user.banned ? '' : '<button class="btn btn-primary" data-open-part>🎅 Участвовать</button>'}`;
     } else {
+      const MOD = { pending: '<span class="status assigned">⏳ на модерации</span>', approved: '<span class="status received">✅ одобрена</span>', rejected: '<span class="status banned">🚫 отклонена</span>' };
       host.innerHTML = `<dl class="kv">
+        <dt>Статус</dt><dd>${MOD[p.moderation] || ''}${p.moderation === 'rejected' && p.moderationNote ? `<small class="important" style="display:block">${esc(p.moderationNote)}</small>` : ''}</dd>
         <dt>ФИО</dt><dd>${esc(p.fullName) || '<span class="important">не указано — заполните!</span>'}</dd>
         <dt>Телефон</dt><dd>${esc(me.user.phone)}</dd>
-        <dt>Адрес</dt><dd>${esc(p.address)}</dd>
+        <dt>ПВЗ Ozon</dt><dd>${esc(p.address)}</dd>
         <dt>Тематика</dt><dd>${esc(PREFS[p.prefs])}</dd>
         <dt>Пожелания</dt><dd>${esc(p.wishes) || '—'}</dd>
         <dt>Пометки</dt><dd>${esc(p.notes) || '—'}</dd>
@@ -234,6 +245,17 @@
       : '<li>Пока тихо. Как будто перед большим завозом зерна.</li>';
     if (list.some((n) => !n.read)) setTimeout(() => Api.post('/api/notifications/read').catch(() => {}), 2500);
   }
+
+  // Отзыв согласия на обработку ПДн = удаление аккаунта и всех данных
+  $('[data-delete-me]').addEventListener('click', async () => {
+    if (!confirm('Удалить аккаунт, анкету и все ваши данные? Это нельзя отменить, из Тайного Санты вы выйдете.')) return;
+    try {
+      await Api.post('/api/account/delete');
+      Api.logout();
+      alert('Аккаунт и данные удалены. Спасибо, что были с нами ☕');
+      location.href = './';
+    } catch (e) { FX.toast(e.message, 'error'); }
+  });
 
   async function load() {
     me = await Api.get('/api/me');

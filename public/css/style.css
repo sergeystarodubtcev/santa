@@ -217,7 +217,9 @@ canvas.night-snow { position: fixed; inset: 0; width: 100vw; height: 100vh; poin
 .step h3 { font-size: 20px; margin-top: 12px; }
 .step p { color: var(--muted); font-size: 15px; margin: 0; }
 
-.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.rules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.rules .rule { flex-direction: column; gap: 10px; }
+.rule p a { color: inherit; }
 .rule { display: flex; gap: 16px; }
 .rule > span { font-size: 34px; line-height: 1; }
 .rule h3 { font-size: 17px; }
@@ -387,7 +389,7 @@ input::placeholder, textarea::placeholder { color: #9aa0ad; }
 .copy { cursor: pointer; border-bottom: 1px dashed var(--muted); }
 .important { color: #b91c1c; font-weight: 800; }
 
-.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 18px; }
+.tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 18px; }
 .tile { text-align: center; padding: 18px 10px; }
 .tile b { display: block; font: 900 36px/1 var(--display); color: var(--accent); }
 .tile span { font-size: 13px; color: var(--muted); }
@@ -459,8 +461,8 @@ tr.banned td { opacity: .55; }
 @keyframes glow { 50% { opacity: .45; transform: scale(1.12); } }
 
 /* блоки «Как это работает» и «Правила» — в ночной части, под кнопкой */
-.info { background: var(--night); padding-bottom: 100px; }
-.info .section:first-child { padding-top: 40px; }
+.info-zone { background: var(--night); padding-bottom: 100px; }
+.info-zone .section:first-child { padding-top: 40px; }
 .dark .step-n { color: rgba(255, 255, 255, .1); }
 .dark .rule p b { color: #ffd166; }
 .join { padding-bottom: 60px; }

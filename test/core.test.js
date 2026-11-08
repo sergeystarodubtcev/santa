@@ -22,21 +22,22 @@ function seed(n) {
   const db = core.emptyDb();
   const ids = [];
   for (let i = 0; i < n; i++) {
-    const r = call(db, 'POST', '/api/register', { name: 'User ' + i, phone: '8900123456' + i, tg: '@user_' + i, password: 'secret1' });
+    const r = call(db, 'POST', '/api/register', { name: 'User ' + i, phone: '8900123456' + i, tg: '@user_' + i, password: 'secret1', pdConsent: true });
     ids.push(r.user.id);
     call(db, 'POST', '/api/participate', { fullName: 'Иванов Иван ' + i, address: 'Ozon ПВЗ ' + i, wishes: 'кофе', agree: true, prefs: 'coffee' }, as(r.user.id));
   }
+  call(db, 'POST', '/api/admin/approve-all', {}, admin);
   return { db, ids };
 }
 
 test('регистрация нормализует телефон и ник, не пускает дубликаты', () => {
   const db = core.emptyDb();
-  const r = call(db, 'POST', '/api/register', { name: 'Сергей', phone: '8 (900) 123-45-67', tg: 'https://t.me/Sergey_Coffee', password: 'qwerty' });
+  const r = call(db, 'POST', '/api/register', { name: 'Сергей', phone: '8 (900) 123-45-67', tg: 'https://t.me/Sergey_Coffee', password: 'qwerty', pdConsent: true });
   assert.equal(r.user.phone, '+79001234567');
   assert.equal(r.user.tg, 'sergey_coffee');
-  assert.throws(() => call(db, 'POST', '/api/register', { name: 'Икс', phone: '+7 900 123 45 67', tg: 'other', password: 'qwerty' }), /телефон/);
-  const l1 = call(db, 'POST', '/api/login', { login: '@Sergey_Coffee', password: 'qwerty' });
-  const l2 = call(db, 'POST', '/api/login', { login: '89001234567', password: 'qwerty' });
+  assert.throws(() => call(db, 'POST', '/api/register', { name: 'Икс', phone: '+7 900 123 45 67', tg: 'other', password: 'qwerty', pdConsent: true }), /телефон/);
+  const l1 = call(db, 'POST', '/api/login', { login: '@Sergey_Coffee', password: 'qwerty', pdConsent: true });
+  const l2 = call(db, 'POST', '/api/login', { login: '89001234567', password: 'qwerty', pdConsent: true });
   assert.equal(l1.user.id, l2.user.id);
   assert.throws(() => call(db, 'POST', '/api/login', { login: 'sergey_coffee', password: 'nope' }), /Неверный/);
 });
@@ -44,7 +45,7 @@ test('регистрация нормализует телефон и ник, н
 test('анкета требует согласия и адреса, счётчик растёт', () => {
   const { db } = seed(3);
   assert.equal(call(db, 'GET', '/api/public').count, 3);
-  const r = call(db, 'POST', '/api/register', { name: 'Аня', phone: '+79990000000', tg: 'anya_v60', password: 'secret1' });
+  const r = call(db, 'POST', '/api/register', { name: 'Аня', phone: '+79990000000', tg: 'anya_v60', password: 'secret1', pdConsent: true });
   assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Анна Смирнова', address: 'ПВЗ Ozon', agree: false }, as(r.user.id)), /Подтвердите/);
   call(db, 'POST', '/api/participate', { fullName: 'Анна Смирнова', phone: '+7 999 111 22 33', address: 'ПВЗ Ozon', agree: true, notes: 'у меня аллергия на инфьюзы' }, as(r.user.id));
   assert.equal(call(db, 'GET', '/api/me', null, as(r.user.id)).user.phone, '+79991112233'); // телефон обновился в профиле
@@ -79,7 +80,7 @@ test('забаненные не участвуют, после жеребьёв�
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   assert.equal(db.pairs.length, 3);
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
-  const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1' });
+  const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1', pdConsent: true });
   assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /Жеребьёвка/);
 });
 
@@ -129,4 +130,43 @@ test('админ: логин, настройки, рассылка, экспор
   const db2 = core.emptyDb();
   call(db2, 'POST', '/api/admin/import', { db: dump }, admin);
   assert.equal(call(db2, 'GET', '/api/public').count, 2);
+});
+
+test('согласие на ПДн обязательно, адрес — только ПВЗ', () => {
+  const db = core.emptyDb();
+  assert.throws(() => call(db, 'POST', '/api/register', { name: 'Олег', phone: '+79005554433', tg: 'oleg_pd', password: 'secret1' }), /персональных данных/);
+  const r = call(db, 'POST', '/api/register', { name: 'Олег', phone: '+79005554433', tg: 'oleg_pd', password: 'secret1', pdConsent: true });
+  assert.ok(db.users[0].pdConsentAt);
+  for (const bad of ['Москва, ул. Ленина 5, кв. 12', 'Тверская 7, подъезд 2, этаж 3', 'СПб, Невский 1 квартира 4']) {
+    assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Олег Олегов', address: bad, agree: true }, as(r.user.id)), /пункта выдачи/);
+  }
+  call(db, 'POST', '/api/participate', { fullName: 'Олег Олегов', address: 'ПВЗ Ozon, Москва, Тверская 7', agree: true }, as(r.user.id));
+});
+
+test('модерация: в жеребьёвку попадают только одобренные', () => {
+  const db = core.emptyDb();
+  const ids = [];
+  for (let i = 0; i < 4; i++) {
+    const r = call(db, 'POST', '/api/register', { name: 'M' + i, phone: '+7911000000' + i, tg: 'mod_user' + i, password: 'secret1', pdConsent: true });
+    call(db, 'POST', '/api/participate', { fullName: 'Мод Юзер ' + i, address: 'ПВЗ Ozon ' + i, agree: true }, as(r.user.id));
+    ids.push(r.user.id);
+  }
+  assert.equal(call(db, 'GET', '/api/me', null, as(ids[0])).participation.moderation, 'pending');
+  assert.equal(call(db, 'GET', '/api/public').count, 4); // на модерации тоже считаются в счётчике
+  assert.throws(() => call(db, 'POST', '/api/admin/shuffle', {}, admin), /одобренных/);
+  call(db, 'POST', '/api/admin/moderate', { userId: ids[0], status: 'approved' }, admin);
+  call(db, 'POST', '/api/admin/moderate', { userId: ids[1], status: 'approved' }, admin);
+  call(db, 'POST', '/api/admin/moderate', { userId: ids[2], status: 'rejected', note: 'подозрительный аккаунт' }, admin);
+  assert.equal(call(db, 'GET', '/api/public').count, 3); // отклонённый не считается
+  assert.ok(call(db, 'GET', '/api/me', null, as(ids[2])).notifications.some((n) => /подозрительный/.test(n.text)));
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  assert.deepEqual(new Set(db.pairs.map((p) => p.santaId)), new Set([ids[0], ids[1]]));
+  assert.throws(() => call(db, 'POST', '/api/admin/moderate', { userId: ids[0], status: 'rejected' }, admin), /в паре/);
+  // исправленная отклонённая анкета снова уходит на модерацию
+  call(db, 'POST', '/api/admin/reset', {}, admin);
+  call(db, 'POST', '/api/participate', { fullName: 'Мод Юзер 2', address: 'ПВЗ Ozon новый', agree: true }, as(ids[2]));
+  assert.equal(db.participations[ids[2]].moderation, 'pending');
+  // одобренная после правок остаётся одобренной
+  call(db, 'POST', '/api/participate', { fullName: 'Мод Юзер 0', address: 'ПВЗ Ozon другой', agree: true }, as(ids[0]));
+  assert.equal(db.participations[ids[0]].moderation, 'approved');
 });

@@ -52,8 +52,8 @@
     const t = Date.now() - names.length * 3600e3;
     names.forEach(([name, tg], i) => {
       const id = 'demo' + i;
-      db.users.push({ id, name, phone: '+7900000000' + i, tg, passHash: 'demo:demo123', createdAt: t + i * 3600e3, banned: false });
-      db.participations[id] = { address: 'Ozon ПВЗ, г. Москва, ул. Кофейная, ' + (i + 1), wishes: 'Зерно светлой обжарки, дрип-пакеты', notes: i === 2 ? 'Аллергия на инфьюзы' : '', prefs: ['coffee', 'any', 'noncoffee'][i % 3], joinedAt: t + i * 3600e3, updatedAt: t };
+      db.users.push({ id, name, phone: '+7900000000' + i, tg, passHash: 'demo:demo123', createdAt: t + i * 3600e3, banned: false, pdConsentAt: t });
+      db.participations[id] = { moderation: i < 5 ? 'approved' : 'pending', fullName: name + ' Кофеманов', address: 'Ozon ПВЗ, г. Москва, ул. Кофейная, ' + (i + 1), wishes: 'Зерно светлой обжарки, дрип-пакеты', notes: i === 2 ? 'Аллергия на инфьюзы' : '', prefs: ['coffee', 'any', 'noncoffee'][i % 3], joinedAt: t + i * 3600e3, updatedAt: t };
     });
     return db;
   }

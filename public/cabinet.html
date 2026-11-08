@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261103h">
+  <link rel="stylesheet" href="css/style.css?v=20261108b">
 </head>
 <body>
   <div class="banners" data-banners></div>
@@ -50,6 +50,7 @@
             <label>Телефон<input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00"></label>
             <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac"></label>
             <label>Пароль<input name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов"></label>
+            <label class="check"><input type="checkbox" name="pdConsent"><span>Даю <a href="privacy.html" target="_blank">согласие на обработку персональных данных</a> для участия в Тайном Санте</span></label>
             <div class="form-err" data-err></div>
             <button class="btn btn-primary btn-block" type="submit">Создать кабинет</button>
           </form>
@@ -85,6 +86,10 @@
           <div class="card span2">
             <h3>☕ Профиль</h3>
             <dl class="kv" data-profile></dl>
+            <div class="actions">
+              <a class="btn btn-ghost btn-sm" href="privacy.html" target="_blank">🔒 Политика обработки данных</a>
+              <button class="btn btn-danger btn-sm" data-delete-me hidden>Удалить аккаунт и мои данные</button>
+            </div>
           </div>
         </div>
       </section>
@@ -101,8 +106,8 @@
         <div class="form-section">📦 Данные для доставки</div>
         <label>ФИО получателя<small>Так, как в паспорте — для выдачи в ПВЗ</small><input name="fullName" autocomplete="name" placeholder="Кофеманов Сергей Иванович"></label>
         <label>Телефон для посылки<small>Если поменяете — обновится и в профиле</small><input name="phone" type="tel" autocomplete="tel"></label>
-        <label>Адрес пункта выдачи Ozon
-          <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно свой адрес — отправят в ближайший ПВЗ"></textarea>
+        <label>Адрес ближайшего пункта выдачи Ozon<small>🔒 Только адрес ПВЗ — не домашний адрес. Так безопаснее: Санта не узнает, где вы живёте</small>
+          <textarea name="address" rows="2" placeholder="ПВЗ Ozon, г. Москва, ул. Тверская, 7"></textarea>
         </label>
         <div class="form-section">🎁 О подарке</div>
         <label>Что хочется получить<textarea name="wishes" rows="3" placeholder="Светлая обжарка, дрипы, подставка под дрипы, свечка…"></textarea></label>
@@ -129,10 +134,10 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261103h"></script>
-  <script src="js/core.js?v=20261103h"></script>
-  <script src="js/api.js?v=20261103h"></script>
-  <script src="js/fx.js?v=20261103h"></script>
-  <script src="js/cabinet.js?v=20261103h"></script>
+  <script src="js/config.js?v=20261108b"></script>
+  <script src="js/core.js?v=20261108b"></script>
+  <script src="js/api.js?v=20261108b"></script>
+  <script src="js/fx.js?v=20261108b"></script>
+  <script src="js/cabinet.js?v=20261108b"></script>
 </body>
 </html>

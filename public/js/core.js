@@ -92,8 +92,15 @@
     return { id: u.id, name: u.name, phone: u.phone, tg: u.tg, createdAt: u.createdAt, banned: !!u.banned };
   }
 
+  // Статус модерации анкеты: pending — ждёт проверки, approved — допущена к жеребьёвке, rejected — отклонена.
+  const modStatus = (p) => (p && p.moderation) || 'pending';
+  // Все анкеты в игре (для счётчика): не забаненные и не отклонённые.
   function activeParticipants(db) {
-    return db.users.filter((u) => !u.banned && db.participations[u.id]);
+    return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) !== 'rejected');
+  }
+  // Допущенные модерацией — только они попадают в жеребьёвку.
+  function approvedParticipants(db) {
+    return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) === 'approved');
   }
 
   function notify(db, ctx, userId, text, kind) {
@@ -112,9 +119,10 @@
     const tg = normTg(body.tg);
     const password = String(body.password || '');
     if (password.length < 6) fail(400, 'Пароль — минимум 6 символов');
+    if (!body.pdConsent) fail(400, 'Нужно согласие на обработку персональных данных');
     if (db.users.some((u) => u.phone === phone)) fail(409, 'Этот телефон уже зарегистрирован — войдите в кабинет');
     if (db.users.some((u) => u.tg === tg)) fail(409, 'Этот Telegram уже зарегистрирован — войдите в кабинет');
-    const user = { id: newId(ctx), name, phone, tg, passHash: ctx.hash(password), createdAt: ctx.now(), banned: false };
+    const user = { id: newId(ctx), name, phone, tg, passHash: ctx.hash(password), createdAt: ctx.now(), banned: false, pdConsentAt: ctx.now() };
     db.users.push(user);
     notify(db, ctx, user.id, 'Добро пожаловать к Кофеманьякам! Заполните анкету, чтобы попасть в жеребьёвку ☕', 'info');
     return user;
@@ -151,10 +159,18 @@
       }
     }
     const address = str(body.address, 400);
-    if (address.length < 5) fail(400, 'Укажите адрес ПВЗ Ozon или свой адрес');
+    if (address.length < 5) fail(400, 'Укажите адрес ближайшего пункта выдачи Ozon');
+    // Только ПВЗ, никаких личных адресов — защищаем участников.
+    if (/(^|[\s,.])(кв|квартира|кв-ра|апарт)(\.|\s|\d|$)|подъезд|домофон|этаж/i.test(address)) {
+      fail(400, 'Укажите только адрес пункта выдачи Ozon — без квартиры, подъезда и домашнего адреса');
+    }
     if (!body.agree) fail(400, 'Подтвердите участие и дальнейшую отправку подарка');
     const prefs = PREFS[body.prefs] ? body.prefs : 'any';
+    // Новая анкета (и отклонённая после правок) уходит на модерацию; одобренная остаётся одобренной.
+    const moderation = existing && modStatus(existing) === 'approved' ? 'approved' : 'pending';
     db.participations[userId] = {
+      moderation,
+      moderatedAt: existing && moderation === 'approved' ? existing.moderatedAt : null,
       fullName,
       address,
       wishes: str(body.wishes, 1000),
@@ -163,7 +179,8 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
-    if (!existing) notify(db, ctx, userId, 'Вы в игре! Ждите жеребьёвку — мы сообщим, кому дарить 🎅', 'success');
+    if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info');
+    else if (modStatus(existing) === 'rejected') notify(db, ctx, userId, 'Анкета исправлена и снова отправлена на модерацию', 'info');
     return db.participations[userId];
   }
 
@@ -176,8 +193,8 @@
 
   // ---------- draw ----------
   function shuffle(db, ctx, body) {
-    const people = activeParticipants(db);
-    if (people.length < 2) fail(400, 'Нужно минимум 2 участника');
+    const people = approvedParticipants(db);
+    if (people.length < 2) fail(400, 'Нужно минимум 2 участника, одобренных модерацией');
     if (db.pairs.some((p) => p.status !== 'assigned') && !(body && body.force)) {
       fail(409, 'Кто-то уже отправил подарок. Перемешать заново можно только принудительно.');
     }
@@ -252,7 +269,8 @@
   function me(db, ctx, userId) {
     const user = getUser(db, userId);
     const now = ctx.now();
-    const out = { user: publicUser(user), participation: db.participations[userId] || null, drawn: !!db.drawnAt };
+    const part = db.participations[userId];
+    const out = { user: publicUser(user), participation: part ? Object.assign({}, part, { moderation: modStatus(part) }) : null, drawn: !!db.drawnAt };
     const mine = db.pairs.find((p) => p.santaId === userId);
     if (mine) {
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
@@ -293,7 +311,10 @@
     return {
       settings: db.settings,
       drawnAt: db.drawnAt,
-      users: db.users.map((u) => Object.assign(publicUser(u), { participation: db.participations[u.id] || null })),
+      users: db.users.map((u) => {
+        const part = db.participations[u.id];
+        return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modStatus(part) }) : null });
+      }),
       pairs: db.pairs.map((p) => Object.assign({}, p, {
         santa: byId[p.santaId] ? byId[p.santaId].name + ' @' + byId[p.santaId].tg : '—',
         recipient: byId[p.recipientId] ? byId[p.recipientId].name + ' @' + byId[p.recipientId].tg : '—',
@@ -301,6 +322,8 @@
       stats: {
         users: db.users.length,
         participants: activeParticipants(db).length,
+        approved: approvedParticipants(db).length,
+        pending: db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) === 'pending').length,
         banned: db.users.filter((u) => u.banned).length,
         sent: db.pairs.filter((p) => p.status !== 'assigned').length,
         received: db.pairs.filter((p) => p.status === 'received').length,
@@ -351,6 +374,17 @@
       case 'GET /api/me': return ok(me(db, ctx, needUser()));
       case 'POST /api/participate': participate(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/leave': leave(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/account/delete': {
+        // отзыв согласия на обработку персональных данных — удаляем всё о пользователе
+        const uid = needUser();
+        if (db.pairs.some((p) => p.santaId === uid || p.recipientId === uid)) {
+          fail(409, 'Вы уже в паре после жеребьёвки — для удаления данных напишите организаторам');
+        }
+        db.users = db.users.filter((u) => u.id !== uid);
+        delete db.participations[uid];
+        db.notifications = db.notifications.filter((n) => n.userId !== uid);
+        return ok(undefined, true);
+      }
       case 'POST /api/sent': markSent(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/received': markReceived(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/notifications/read': {
@@ -371,6 +405,39 @@
         const u = getUser(db, body.userId);
         u.banned = !!body.banned;
         return ok(adminState(db), true);
+      }
+      case 'POST /api/admin/moderate': {
+        needAdmin();
+        getUser(db, body.userId);
+        const part = db.participations[body.userId];
+        if (!part) fail(404, 'У пользователя нет анкеты');
+        if (!['approved', 'rejected', 'pending'].includes(body.status)) fail(400, 'Неверный статус модерации');
+        if (body.status !== 'approved' && db.pairs.some((p) => p.santaId === body.userId || p.recipientId === body.userId)) {
+          fail(409, 'Участник уже в паре. Сначала сбросьте жеребьёвку.');
+        }
+        const prev = modStatus(part);
+        part.moderation = body.status;
+        part.moderatedAt = ctx.now();
+        part.moderationNote = str(body.note, 300);
+        if (prev !== body.status) {
+          if (body.status === 'approved') notify(db, ctx, body.userId, 'Анкета одобрена модераторами ✅ Вы участвуете в жеребьёвке!', 'success');
+          if (body.status === 'rejected') notify(db, ctx, body.userId, 'Анкета не прошла модерацию' + (part.moderationNote ? ': ' + part.moderationNote : '') + '. Исправьте её или напишите организаторам.', 'danger');
+        }
+        return ok(adminState(db), true);
+      }
+      case 'POST /api/admin/approve-all': {
+        needAdmin();
+        let n = 0;
+        db.users.forEach((u) => {
+          const part = db.participations[u.id];
+          if (!u.banned && part && modStatus(part) === 'pending') {
+            part.moderation = 'approved';
+            part.moderatedAt = ctx.now();
+            notify(db, ctx, u.id, 'Анкета одобрена модераторами ✅ Вы участвуете в жеребьёвке!', 'success');
+            n++;
+          }
+        });
+        return ok(Object.assign(adminState(db), { approvedNow: n }), true);
       }
       case 'POST /api/admin/delete': {
         needAdmin();
@@ -414,5 +481,5 @@
     }
   }
 
-  return { handle, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, modStatus, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

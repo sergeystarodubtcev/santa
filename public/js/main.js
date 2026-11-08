@@ -157,7 +157,7 @@
     busy(f1, true);
     try {
       const r = authMode === 'register'
-        ? await Api.post('/api/register', { name: f1.name.value, phone: f1.phone.value, tg: f1.tg.value, password: f1.password.value })
+        ? await Api.post('/api/register', { name: f1.name.value, phone: f1.phone.value, tg: f1.tg.value, password: f1.password.value, pdConsent: f1.pdConsent.checked })
         : await Api.post('/api/login', { login: f1.login.value, password: f1.lpassword.value });
       Api.setToken(r.token);
       me = await Api.get('/api/me');

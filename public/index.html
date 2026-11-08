@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261103h">
+  <link rel="stylesheet" href="css/style.css?v=20261108b">
 </head>
 <body class="page-home">
   <div class="banners" data-banners></div>
@@ -145,12 +145,12 @@
     </div>
   </section>
 
-  <div class="info dark">
+  <div class="info-zone dark">
   <!-- ============ HOW ============ -->
   <section class="wrap section" id="how">
     <h2 class="section-title reveal">Как это работает</h2>
     <div class="steps">
-      <div class="step card reveal"><div class="step-ico">📝</div><div class="step-n">01</div><h3>Анкета</h3><p>Имя, телефон, ник в Telegram, адрес ПВЗ Ozon (или свой — отправим в ближайший), пожелания и особые пометки.</p></div>
+      <div class="step card reveal"><div class="step-ico">📝</div><div class="step-n">01</div><h3>Анкета</h3><p>Имя, телефон, ник в Telegram, адрес ближайшего ПВЗ Ozon (никаких домашних адресов), пожелания и особые пометки. Анкету проверяют модераторы.</p></div>
       <div class="step card reveal"><div class="step-ico">🎲</div><div class="step-n">02</div><h3>Жеребьёвка</h3><p>Организаторы перемешивают всех участников в одну большую цепочку. Никто не дарит сам себе.</p></div>
       <div class="step card reveal"><div class="step-ico">📦</div><div class="step-n">03</div><h3>Отправка</h3><p>В личном кабинете — кому, что и куда. Собрали посылку, отправили с 1 по 10 декабря, нажали «Отправил».</p></div>
       <div class="step card reveal"><div class="step-ico">🎁</div><div class="step-n">04</div><h3>Сюрприз</h3><p>Получатель видит в кабинете «Вам подарок от Деда Мороза!» — и ждёт заветную посылку.</p></div>
@@ -163,9 +163,11 @@
     <div class="rules">
       <div class="rule card reveal"><span>💸</span><div><h3>Бюджет</h3><p data-budget>Минимальную и максимальную сумму обсуждаем в чате — здесь появится итог.</p></div></div>
       <div class="rule card reveal"><span>📅</span><div><h3>Сроки</h3><p data-dates>Отправка подарков — с 1 по 10 декабря. Не успели — организаторы узнают.</p></div></div>
-      <div class="rule card reveal"><span>🛑</span><div><h3>Чёрный список</h3><p>Зарегистрировались, получили адрес и пропали? Мы будем понимать, кто это. Sorry not sorry.</p></div></div>
+      <div class="rule card reveal"><span>🛑</span><div><h3>Чёрный список</h3><p>Зарегистрировались, получили ПВЗ получателя и пропали? Мы будем понимать, кто это. Sorry not sorry.</p></div></div>
       <div class="rule card reveal"><span>🤧</span><div><h3>Аллергии и пометки</h3><p>Пишите в анкете всё важное: «аллергия на инфьюзы», «не пью кофе», «только decaf». Санта увидит.</p></div></div>
       <div class="rule card reveal"><span>🕯️</span><div><h3>Не только кофе</h3><p>Зерно, дрипы, а ещё мерч: свечи, подставки под дрипы, подвесы, стикеры. Или вообще некофейное — укажите в анкете.</p></div></div>
+      <div class="rule card reveal"><span>🛡️</span><div><h3>Модерация</h3><p>Перед жеребьёвкой организаторы проверяют каждую анкету. Подозрительные аккаунты в раздачу не попадут.</p></div></div>
+      <div class="rule card reveal"><span>🔒</span><div><h3>Только ПВЗ</h3><p>Указываем адрес ближайшего пункта выдачи Ozon, а не домашний. Ваш Санта не узнает, где вы живёте.</p></div></div>
       <div class="rule card reveal"><span>👥</span><div><h3>Нечётное число?</h3><p>Не страшно: цепочка замыкается сама, а если надо — организаторы тоже примут участие.</p></div></div>
     </div>
   </section>
@@ -206,6 +208,7 @@
             <label>Ник в Telegram<input name="tg" placeholder="@coffeemaniac" required></label>
           </div>
           <label>Пароль для входа в кабинет<input name="password" type="password" autocomplete="new-password" placeholder="минимум 6 символов" required></label>
+          <label class="check"><input type="checkbox" name="pdConsent"><span>Даю <a href="privacy.html" target="_blank">согласие на обработку персональных данных</a> для участия в Тайном Санте</span></label>
         </div>
         <div data-auth-pane="login" hidden>
           <label>Ник в Telegram или телефон<input name="login" autocomplete="username" placeholder="@coffeemaniac"></label>
@@ -223,8 +226,8 @@
         <label>Телефон для посылки<small>Подставили из аккаунта. Если поменяете — обновится и в личном кабинете</small>
           <input name="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" required>
         </label>
-        <label>Адрес пункта выдачи Ozon
-          <textarea name="address" rows="2" placeholder="г. Москва, ул. Кофейная, 15 — ПВЗ Ozon. Можно просто свой адрес — отправят в ближайший ПВЗ" required></textarea>
+        <label>Адрес ближайшего пункта выдачи Ozon<small>🔒 Только адрес ПВЗ — не домашний адрес. Так безопаснее: Санта не узнает, где вы живёте</small>
+          <textarea name="address" rows="2" placeholder="ПВЗ Ozon, г. Москва, ул. Тверская, 7" required></textarea>
         </label>
         <div class="form-section">🎁 О подарке</div>
         <label>Что хочется получить
@@ -249,17 +252,17 @@
 
       <div data-step="3" class="done" hidden>
         <div class="done-gift">🎁</div>
-        <h3>Вы в игре!</h3>
-        <p>Анкета сохранена. Как только организаторы проведут жеребьёвку, в личном кабинете появится имя и адрес вашего получателя.</p>
+        <h3>Анкета отправлена!</h3>
+        <p>Анкета отправлена на модерацию. Организаторы проверят её перед жеребьёвкой — статус видно в личном кабинете. После жеребьёвки там же появится имя и ПВЗ вашего получателя.</p>
         <a class="btn btn-primary btn-block" href="cabinet.html">Перейти в личный кабинет</a>
       </div>
     </div>
   </div>
 
-  <script src="js/config.js?v=20261103h"></script>
-  <script src="js/core.js?v=20261103h"></script>
-  <script src="js/api.js?v=20261103h"></script>
-  <script src="js/fx.js?v=20261103h"></script>
-  <script src="js/main.js?v=20261103h"></script>
+  <script src="js/config.js?v=20261108b"></script>
+  <script src="js/core.js?v=20261108b"></script>
+  <script src="js/api.js?v=20261108b"></script>
+  <script src="js/fx.js?v=20261108b"></script>
+  <script src="js/main.js?v=20261108b"></script>
 </body>
 </html>
