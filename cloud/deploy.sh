@@ -105,7 +105,26 @@ sleep 5
 echo "Проверка $URL/api/health"
 HEALTH="$(curl -fsS "$URL/api/health" || true)"
 echo "$HEALTH"
-curl -fsS -o /dev/null "$URL/" && echo "Главная открывается"
+check() { # метод путь ожидаемый_код [тело]
+  local code
+  if [ "$1" = POST ]; then code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "${4:-{\}}" "$URL$2")"
+  else code="$(curl -s -o /dev/null -w '%{http_code}' "$URL$2")"; fi
+  if [ "$code" = "$3" ]; then echo "✓ $1 $2 → $code"; else echo "::error::✗ $1 $2 → $code (ожидали $3)"; FAILED=1; fi
+}
+FAILED=0
+check GET / 200
+check GET /cabinet.html 200
+check GET /admin.html 200
+check GET /privacy.html 200
+check GET /css/style.css 200
+check GET /js/core.js 200
+check GET /img/logo.png 200
+check GET /api/public 200
+check POST /api/login 401 '{"login":"nobody","password":"x"}'
+check POST /api/register 400 '{"name":"x"}'
+check GET /api/me 401
+echo "Тип CSS: $(curl -sI "$URL/css/style.css" | grep -i '^content-type' || true)"
+[ "$FAILED" = 0 ] || exit 1
 {
   echo "## ☕ Тайный Санта развёрнут в Yandex Cloud"
   echo ""
