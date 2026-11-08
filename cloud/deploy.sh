@@ -123,7 +123,9 @@ check GET /api/public 200
 check POST /api/login 401 '{"login":"nobody","password":"x"}'
 check POST /api/register 400 '{"name":"x"}'
 check GET /api/me 401
-echo "Тип CSS: $(curl -sI "$URL/css/style.css" | grep -i '^content-type' || true)"
+for p in / /css/style.css /js/core.js /img/logo.png; do
+  echo "Тип $p: шлюз=$(curl -sI "$URL$p" | grep -i '^content-type' | tr -d '\r') | бакет=$(curl -sI -H "X-YaCloud-SubjectToken: $TOKEN" "https://storage.yandexcloud.net/$BUCKET/site${p%/}$( [ "$p" = / ] && echo /index.html )" | grep -i '^content-type' | tr -d '\r')"
+done
 [ "$FAILED" = 0 ] || exit 1
 {
   echo "## ☕ Тайный Санта развёрнут в Yandex Cloud"
