@@ -100,6 +100,33 @@ fi
 DOMAIN="$(yc serverless api-gateway get --name kofesanta --format json | jq -r .domain)"
 URL="https://$DOMAIN"
 
+# 4b. Свой домен (например santa.speccof.ru): сертификат Let's Encrypt через Certificate Manager.
+DNS_NOTE=""
+if [ -n "${CUSTOM_DOMAIN:-}" ]; then
+  CERT_NAME="cert-$(echo "$CUSTOM_DOMAIN" | tr '.' '-')"
+  if ! yc certificate-manager certificate get --name "$CERT_NAME" >/dev/null 2>&1; then
+    yc certificate-manager certificate request --name "$CERT_NAME" --domains "$CUSTOM_DOMAIN" --challenge dns >/dev/null
+    echo "Заказан сертификат для $CUSTOM_DOMAIN"
+    sleep 10
+  fi
+  CERT_JSON="$(yc certificate-manager certificate get --name "$CERT_NAME" --full --format json)"
+  CERT_ID="$(echo "$CERT_JSON" | jq -r .id)"
+  CERT_STATUS="$(echo "$CERT_JSON" | jq -r .status)"
+  echo "Сертификат $CERT_ID: $CERT_STATUS"
+  echo "$CERT_JSON" | jq -r '.challenges[]? | "Проверка домена: \(.status) — \(.dns_challenge.type // "") \(.dns_challenge.name // "") → \(.dns_challenge.value // "")"'
+  if [ "$CERT_STATUS" = "ISSUED" ]; then
+    if yc serverless api-gateway get --name kofesanta --format json | jq -e --arg d "$CUSTOM_DOMAIN" '[.attached_domains[]?.domain] | index($d)' >/dev/null; then
+      echo "Домен $CUSTOM_DOMAIN уже привязан к шлюзу"
+    else
+      yc serverless api-gateway add-domain --name kofesanta --domain "$CUSTOM_DOMAIN" --certificate-id "$CERT_ID" >/dev/null
+      echo "Домен $CUSTOM_DOMAIN привязан к шлюзу"
+    fi
+    URL="https://$CUSTOM_DOMAIN"
+  else
+    DNS_NOTE="$(echo "$CERT_JSON" | jq -r '.challenges[]? | "- `\(.dns_challenge.type)` **\(.dns_challenge.name)** → `\(.dns_challenge.value)`"')"
+  fi
+fi
+
 # 5. Проверка
 sleep 5
 echo "Проверка $URL/api/health"
@@ -133,6 +160,12 @@ for p in / /css/style.css /js/core.js /img/logo.png; do
 done
 [ "$FAILED" = 0 ] || exit 1
 {
+  if [ -n "$DNS_NOTE" ]; then
+    echo "## 🌐 Чтобы заработал $CUSTOM_DOMAIN, добавьте DNS-записи"
+    echo "$DNS_NOTE"
+    echo "- \`CNAME\` **$CUSTOM_DOMAIN** → \`$DOMAIN\`"
+    echo ""
+  fi
   echo "## ☕ Тайный Санта развёрнут в Yandex Cloud"
   echo ""
   echo "**Сайт:** $URL"
