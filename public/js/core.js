@@ -200,15 +200,23 @@
     }
     const ids = people.map((u) => u.id);
     const rnd = ctx.random || Math.random;
-    for (let i = ids.length - 1; i > 0; i--) {
-      const j = Math.floor(rnd() * (i + 1));
-      [ids[i], ids[j]] = [ids[j], ids[i]];
-    }
-    // Одна большая цепочка: каждый дарит следующему, последний — первому.
-    // Никто не дарит сам себе и нет «взаимных» пар при 3+ участниках.
-    db.pairs = ids.map((id, i) => ({
-      santaId: id,
-      recipientId: ids[(i + 1) % ids.length],
+    const shuffled = (arr) => {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
+    // Полностью случайная раздача: каждому — случайный получатель, никто не дарит сам себе.
+    // Перемешиваем, пока не получится перестановка без «самому себе» (в среднем ~3 попытки).
+    let recipients;
+    do { recipients = shuffled(ids); } while (recipients.some((r, i) => r === ids[i]));
+    // Порядок пар тоже случайный — по списку нельзя восстановить, кто кому дарит «по цепочке».
+    const order = shuffled(ids.map((_, i) => i));
+    db.pairs = order.map((i) => ({
+      santaId: ids[i],
+      recipientId: recipients[i],
       status: 'assigned',
       track: '',
       sentAt: null,

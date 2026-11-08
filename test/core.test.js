@@ -55,22 +55,30 @@ test('анкета требует согласия и адреса, счётчи
   assert.equal(pub.recent[0], 'Аня');
 });
 
-test('жеребьёвка: одна цепочка, без пар с самим собой, каждый дарит и получает ровно раз', () => {
+test('жеребьёвка: случайная раздача — каждый дарит и получает ровно раз, никто не дарит себе', () => {
   for (const n of [2, 3, 7, 30]) {
-    const { db, ids } = seed(n);
+    const { db } = seed(n);
     assert.throws(() => call(db, 'POST', '/api/admin/shuffle', {}), /админку/);
     call(db, 'POST', '/api/admin/shuffle', {}, admin);
     assert.equal(db.pairs.length, n);
-    const santas = new Set(db.pairs.map((p) => p.santaId));
-    const recips = new Set(db.pairs.map((p) => p.recipientId));
-    assert.equal(santas.size, n);
-    assert.equal(recips.size, n);
+    assert.equal(new Set(db.pairs.map((p) => p.santaId)).size, n);
+    assert.equal(new Set(db.pairs.map((p) => p.recipientId)).size, n);
     db.pairs.forEach((p) => assert.notEqual(p.santaId, p.recipientId));
-    // проверяем что это один цикл
-    let cur = ids[0], steps = 0;
-    do { cur = db.pairs.find((p) => p.santaId === cur).recipientId; steps++; } while (cur !== ids[0]);
-    assert.equal(steps, n);
   }
+});
+
+test('жеребьёвка действительно случайна: бывают и взаимные пары, и разные раскладки', () => {
+  const { db, ids } = seed(4);
+  const seen = new Set();
+  let mutual = 0;
+  for (let k = 0; k < 300; k++) {
+    call(db, 'POST', '/api/admin/shuffle', {}, admin);
+    const m = Object.fromEntries(db.pairs.map((p) => [p.santaId, p.recipientId]));
+    seen.add(ids.map((id) => m[id]).join(','));
+    if (ids.some((id) => m[m[id]] === id)) mutual++;
+  }
+  assert.equal(seen.size, 9); // для 4 человек существует ровно 9 раскладок без «себе»
+  assert.ok(mutual > 0);
 });
 
 test('забаненные не участвуют, после жеребьёвки новые не регистрируются', () => {
