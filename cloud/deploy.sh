@@ -101,7 +101,7 @@ if [ -n "${TG_BOT_TOKEN:-}" ]; then
 fi
 deploy_fn() {
   yc serverless function version create --function-name santa-api --runtime "$1" --entrypoint index.handler \
-    --memory 256m --execution-timeout 30s --source-path "$FN_DIR" --service-account-id "$SA_ID" "${ENV_ARGS[@]}" >/dev/null
+    --memory 256m --execution-timeout 60s --source-path "$FN_DIR" --service-account-id "$SA_ID" "${ENV_ARGS[@]}" >/dev/null
 }
 deploy_fn nodejs22 || { echo "nodejs22 недоступен, пробую nodejs18"; deploy_fn nodejs18; }
 FN_ID="$(yc serverless function get --name santa-api --format json | jq -r .id)"
@@ -165,9 +165,19 @@ fi
 if [ -n "$TG_USERNAME" ]; then
   HOOK_SECRET="$(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)"
   echo "Вебхук (было): $(curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/getWebhookInfo" | jq -c '.result | {url, pending_update_count, last_error_date, last_error_message}')"
-  curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setWebhook" \
-    --data-urlencode "url=https://$DOMAIN/api/tg/webhook" -d "secret_token=$HOOK_SECRET" \
-    --data-urlencode 'allowed_updates=["message","callback_query"]' | jq -c '{ok, description}'
+  if [ "${TG_MODE:-polling}" = "webhook" ]; then
+    curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setWebhook" \
+      --data-urlencode "url=https://$DOMAIN/api/tg/webhook" -d "secret_token=$HOOK_SECRET" \
+      --data-urlencode 'allowed_updates=["message","callback_query"]' | jq -c '{ok, description}'
+  else
+    # Режим опроса: вебхук выключаем (накопившиеся сообщения не теряются), функция забирает их сама раз в минуту
+    curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/deleteWebhook" | jq -c '{ok, description}'
+    if ! yc serverless trigger get --name santa-bot-poll >/dev/null 2>&1; then
+      yc serverless trigger create timer --name santa-bot-poll --cron-expression '* * ? * * *' --payload poll \
+        --invoke-function-id "$FN_ID" --invoke-function-service-account-id "$SA_ID" >/dev/null
+      echo "Создан таймер опроса бота (раз в минуту)"
+    fi
+  fi
   curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyCommands" -H 'Content-Type: application/json' \
     -d '{"commands":[{"command":"start","description":"Начать / привязать аккаунт"},{"command":"cancel","description":"Отменить текущий шаг"}]}' >/dev/null
   curl -fsS "https://api.telegram.org/bot$TG_BOT_TOKEN/setMyDescription" -H 'Content-Type: application/json' \
@@ -181,6 +191,15 @@ if [ -n "$TG_USERNAME" ]; then
   echo "--- последние логи функции ---"
   yc serverless function logs santa-api --since 3h --limit 60 2>/dev/null | grep -v -i 'token' | tail -60 || true
   echo "--- конец логов ---"
+fi
+
+# 4d. Видит ли облачная функция Telegram
+if [ -n "$TG_USERNAME" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then
+  ADM="$(curl -fsS -X POST "https://$DOMAIN/api/admin/login" -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg p "$ADMIN_PASSWORD" '{password:$p}')" | jq -r '.token // empty' || true)"
+  if [ -n "$ADM" ]; then
+    echo "Связь функции с Telegram: $(curl -fsS -m 40 "https://$DOMAIN/api/admin/tg-check" -H "Authorization: Bearer $ADM" | jq -c '{reachable, ms, bot, error, url: .webhook.url, pending: .webhook.pending_update_count}' || echo 'не удалось проверить')"
+  fi
 fi
 
 # 5. Проверка

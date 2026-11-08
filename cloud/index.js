@@ -135,6 +135,45 @@ function makeCtx(auth, t) {
   };
 }
 
+// ---------- Telegram: опрос вместо вебхука ----------
+// Серверы Telegram не всегда могут достучаться до российского облака (вебхук ловит «Connection timed out»),
+// поэтому функция сама раз в минуту забирает обновления. Если идёт диалог — остаётся на связи
+// (long polling) и отвечает сразу; в тишине выходит за доли секунды, чтобы укладываться в бесплатный лимит.
+async function pollTelegram(token, sec, bot) {
+  const started = Date.now();
+  const auth = makeAuth(sec.secret, sec.adminPassword);
+  let lastActivity = 0;
+  let handled = 0;
+  while (Date.now() - started < 48000) {
+    const db = await loadDb(token);
+    const wait = lastActivity && Date.now() - lastActivity < 25000 ? 10 : 0;
+    let r;
+    try {
+      r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offset: db.tgOffset || 0, timeout: wait, allowed_updates: ['message', 'callback_query'] }),
+      }).then((x) => x.json());
+    } catch (e) { console.error('getUpdates', e.message); break; }
+    if (!r.ok) { console.error('getUpdates', r.error_code, r.description); break; } // 409 — уже опрашивает другой экземпляр
+    if (!r.result.length) { if (!wait) break; continue; }
+    let out = [];
+    for (const update of r.result) {
+      db.tgOffset = update.update_id + 1;
+      try {
+        const n0 = db.notifications.length;
+        const res = bot.handleUpdate(db, makeCtx(auth, null), update);
+        out.push(...res.out, ...bot.pushNotifications(db, db.notifications.slice(n0), res.actingUid));
+      } catch (e) { console.error('tg update', e); }
+      handled++;
+    }
+    await s3('PUT', DB_KEY, token, JSON.stringify(db));
+    await tgSend(out);
+    out = [];
+    lastActivity = Date.now();
+  }
+  return { ok: true, handled };
+}
+
 // ---------- HTTP ----------
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -166,12 +205,14 @@ function routeOf(event) {
 }
 
 module.exports.handler = async function handler(event, context) {
-  // Ежедневный таймер: напоминания в Telegram
+  // Таймеры: payload "poll" — забрать сообщения бота (раз в минуту), иначе — ежедневные напоминания
   if (Array.isArray(event.messages) && !event.httpMethod) {
     const token = context && context.token && context.token.access_token;
     const sec = await getSecrets(token);
     const bot = botFor(sec);
     if (!bot) return { ok: true, skipped: 'bot not configured' };
+    const payload = ((event.messages[0] || {}).details || {}).payload || '';
+    if (payload === 'poll') return pollTelegram(token, sec, bot);
     const db = await loadDb(token);
     const out = bot.runReminders(db, makeCtx(makeAuth(sec.secret, sec.adminPassword), null));
     if (out.length) { await s3('PUT', DB_KEY, token, JSON.stringify(db)); await tgSend(out); }
@@ -228,6 +269,19 @@ module.exports.handler = async function handler(event, context) {
     }
 
     const db = await loadDb(token); // каждый раз свежая база: экземпляров функции может быть несколько
+
+    // Диагностика: видит ли функция Telegram (вызывается из деплоя)
+    if (path === '/api/admin/tg-check') {
+      if (!ctx.isAdmin) throw new core.SantaError(401, 'Нужен вход в админку');
+      const t0 = Date.now();
+      try {
+        const me = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getMe`).then((x) => x.json());
+        const hook = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo`).then((x) => x.json());
+        return reply(200, { reachable: true, ms: Date.now() - t0, bot: me.result && me.result.username, webhook: hook.result });
+      } catch (e) {
+        return reply(200, { reachable: false, ms: Date.now() - t0, error: String(e.cause && e.cause.code || e.message) });
+      }
+    }
 
     // Ручной запуск напоминаний из админки (для проверки)
     if (path === '/api/admin/run-reminders' && method === 'POST') {

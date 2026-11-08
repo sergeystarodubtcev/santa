@@ -56,3 +56,38 @@ test('полный цикл в облачной функции: регистра
   // логин работает и после «холодного старта» (новый экземпляр читает базу из бакета)
   assert.equal((await call('POST', '/api/login', { login: '@cloud_user1', password: 'qwerty1' })).status, 200);
 });
+
+test('бот в режиме опроса: забирает сообщения у Telegram, отвечает и запоминает offset', async () => {
+  // отдельный экземпляр модуля с токеном бота
+  delete require.cache[require.resolve('../cloud/index.js')];
+  process.env.TG_BOT_TOKEN = '123:abc';
+  process.env.TG_BOT_USERNAME = 'kofesanta_bot';
+  process.env.SITE_URL = 'https://santa.example';
+  const { handler: h } = require('../cloud/index.js');
+  const sent = [];
+  let served = false;
+  const s3fetch = global.fetch;
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).startsWith('https://api.telegram.org/')) {
+      const method = String(url).split('/').pop();
+      const body = opts.body ? JSON.parse(opts.body) : {};
+      if (method === 'getUpdates') {
+        const res = served ? [] : [{ update_id: 500, message: { chat: { id: 77, type: 'private' }, from: { id: 77, username: 'cloud_user1' }, text: '/start' } }];
+        served = true;
+        return { json: async () => ({ ok: true, result: body.offset > 500 ? [] : res }) };
+      }
+      sent.push({ method, body });
+      return { json: async () => ({ ok: true, result: {} }) };
+    }
+    return s3fetch(url, opts);
+  };
+  const r = await h({ messages: [{ details: { payload: 'poll' } }] }, ctx);
+  global.fetch = s3fetch;
+  assert.equal(r.handled, 1);
+  const hello = sent.find((x) => x.method === 'sendMessage' && x.body.chat_id === 77);
+  assert.match(hello.body.text, /Привет, <b>Юзер1<\/b>/);
+  const db = JSON.parse(store.get('/santa-test/data/db.json'));
+  assert.equal(db.tgOffset, 501);
+  assert.equal(db.users.find((u) => u.tg === 'cloud_user1').tgChatId, 77);
+  delete process.env.TG_BOT_TOKEN;
+});
