@@ -11,7 +11,24 @@ fi
 
 KEY_FILE="$(mktemp)"
 trap 'rm -f "$KEY_FILE"' EXIT
-printf '%s' "$YC_SA_KEY" > "$KEY_FILE"
+# Ключ часто вставляют в секрет не целиком (без первой/последней фигурной скобки, с лишними пробелами).
+# Чиним мелкие обрывы и проверяем, что это авторизованный ключ, не печатая его содержимое.
+printf '%s' "$YC_SA_KEY" | node -e '
+  let s = require("fs").readFileSync(0, "utf8").replace(/^\uFEFF/, "").trim();
+  if (!s.startsWith("{")) s = "{" + s;
+  if (!s.endsWith("}")) s = s.replace(/,\s*$/, "") + "}";
+  let k;
+  try { k = JSON.parse(s); } catch (e) {
+    console.error("::error::Секрет YC_SA_KEY — не JSON. Откройте authorized_key.json блокнотом и вставьте в секрет всё содержимое целиком, от { до }.");
+    process.exit(1);
+  }
+  const need = ["id", "service_account_id", "private_key"].filter((x) => !k[x]);
+  if (need.length) {
+    console.error("::error::В секрете YC_SA_KEY нет полей: " + need.join(", ") + ". Нужен файл авторизованного ключа (authorized_key.json), а не API-ключ или статический ключ.");
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify(k));
+' > "$KEY_FILE"
 yc config profile create santa-ci >/dev/null 2>&1 || yc config profile activate santa-ci >/dev/null
 yc config set service-account-key "$KEY_FILE"
 
