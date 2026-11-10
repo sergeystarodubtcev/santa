@@ -317,7 +317,15 @@
     if (me.settings && me.settings.announcement) items.push({ kind: 'admin', text: '📣 ' + me.settings.announcement });
     if (me.deadline) items.push({ kind: me.deadline.kind, text: '⏰ ' + me.deadline.text, href: 'cabinet.html#give' });
     if (me.incoming && me.incoming.status === 'sent') items.push({ kind: 'gift', text: '🎁 Вам подарок от Деда Мороза! Посылка уже в пути', href: 'cabinet.html#gift' });
-    host.innerHTML = items.map((i) => `<a class="banner ${i.kind}" ${i.href ? `href="${i.href}"` : ''}>${esc(i.text)}</a>`).join('');
+    host.innerHTML = items.map((i) => {
+      if (i.kind === 'admin') {
+        // объявление — бегущая бело-красная «леденцовая» строка
+        const one = `<span class="candy-item">${esc(i.text)}</span><span class="candy-sep">🍬</span>`;
+        const half = one.repeat(6);
+        return `<div class="banner candy" role="marquee" aria-label="${esc(i.text)}"><div class="candy-track">${half}${half}</div></div>`;
+      }
+      return `<a class="banner ${i.kind}" ${i.href ? `href="${i.href}"` : ''}>${esc(i.text)}</a>`;
+    }).join('');
   }
 
   window.FX = { confirmBox, checkCity, snow, burst, burstFrom, santas, toast, countdown, animateNumber, esc, fmtDate, fmtDateTime, chrome, renderBanners, reduced };
