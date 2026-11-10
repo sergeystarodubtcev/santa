@@ -87,6 +87,17 @@ test('бот спрашивает тех, кто без анкеты: запол
   msg(db, 801, '/start', { username: 'player_1' });
   msg(db, 802, '/start', { username: 'player_2' });
   assert.equal(bot.runReminders(db, ctx).length, 0, 'в первые сутки не дёргаем');
+  {
+    // кнопка «Спросить сейчас» в админке — не ждём суток; потом ежедневное напоминание не повторяет
+    const db2 = JSON.parse(JSON.stringify(db));
+    const now = bot.askNoForm(db2, ctx);
+    assert.equal(now.sent, 2);
+    assert.equal(now.total, 2);
+    assert.match(now.out[0].text, /Будете участвовать/);
+    clock += 25 * 3600e3;
+    assert.equal(bot.runReminders(db2, ctx).filter((o) => /Будете участвовать/.test(o.text)).length, 0, 'второй раз не спрашиваем');
+    clock -= 25 * 3600e3;
+  }
   clock += 25 * 3600e3;
   let out = bot.runReminders(db, ctx);
   assert.equal(out.length, 2);

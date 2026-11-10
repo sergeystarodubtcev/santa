@@ -586,3 +586,6 @@ tr.banned td { opacity: .55; }
 .fold[open] > summary { margin-bottom: 16px; }
 .fold[open] .fold-arrow { transform: rotate(180deg); }
 .fold > summary:hover .fold-arrow { background: var(--card-strong); }
+.noform-ask { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border-radius: 16px; background: #fff8eb; border: 1px solid #f6d3a8; }
+.noform-ask > div { display: flex; flex-direction: column; gap: 4px; flex: 1 1 320px; }
+.noform-ask .muted { font-size: 13px; }

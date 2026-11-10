@@ -415,6 +415,23 @@ module.exports.handler = async function handler(event, context) {
       return reply(200, { sent: out.length });
     }
 
+    // «Будете участвовать?» всем без анкеты — сейчас (а не через сутки после регистрации)
+    if (path === '/api/admin/ask-noform' && method === 'POST') {
+      if (!ctx.isAdmin) throw new core.SantaError(401, 'Нужен вход в админку');
+      if (!bot) throw new core.SantaError(404, 'Бот пока не подключён');
+      const r = bot.askNoForm(db, ctx);
+      if (r.sent) {
+        db.broadcasts = (db.broadcasts || []).concat({
+          id: crypto.randomBytes(8).toString('hex'), text: '❓ «Будете участвовать?» — тем, кто без анкеты (с кнопками в боте)',
+          at: ctx.now(), site: false, tg: true, count: r.sent, to: r.users.slice(0, 40).map((u) => '@' + u.tg),
+        }).slice(-100);
+      }
+      const queued = queueOut(db, r.out);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      if (!queued) await tgSend(r.out);
+      return reply(200, { sent: r.sent, total: r.total });
+    }
+
     const n0 = db.notifications.length;
     const { data, mutated } = core.handle(db, ctx, method, path, body);
     if (mutated) {

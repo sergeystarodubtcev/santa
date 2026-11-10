@@ -484,6 +484,24 @@ function createBot({ core, secret, siteUrl, username }) {
     return out;
   }
 
+  // Вопрос «Будете участвовать?» тем, кто создал аккаунт, но не заполнил анкету
+  function noFormMsg(u) {
+    return {
+      chat_id: u.tgChatId,
+      text: `Привет, ${esc(u.name)}! 🎅 Вы создали аккаунт в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть.\n\n<b>Будете участвовать?</b>`,
+      reply_markup: ib([[['🎁 Да, заполнить анкету', 'form']], [['🙅 Не буду — удалить аккаунт', 'noform_del']]]),
+    };
+  }
+  // Кнопка в админке: спросить всех без анкеты прямо сейчас, не дожидаясь суток.
+  // Отмечаем как отправленное — ежедневное напоминание этот вопрос уже не повторит.
+  function askNoForm(db, ctx) {
+    db.tgReminders = db.tgReminders || {};
+    const noForm = db.users.filter((u) => !db.participations[u.id]);
+    const withBot = noForm.filter((u) => u.tgChatId);
+    withBot.forEach((u) => { db.tgReminders[`${u.id}:noform`] = ctx.now(); });
+    return { out: withBot.map(noFormMsg), total: noForm.length, sent: withBot.length, users: withBot };
+  }
+
   // ---------- ежедневные напоминания (таймер) ----------
   function runReminders(db, ctx) {
     const out = [];
@@ -496,11 +514,7 @@ function createBot({ core, secret, siteUrl, username }) {
     for (const u of db.users) {
       if (!u.tgChatId || db.participations[u.id] || now - (u.createdAt || 0) < DAY) continue;
       if (!once(`${u.id}:noform`)) continue;
-      out.push({
-        chat_id: u.tgChatId,
-        text: `Привет, ${esc(u.name)}! 🎅 Вы создали аккаунт в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть.\n\n<b>Будете участвовать?</b>`,
-        reply_markup: ib([[['🎁 Да, заполнить анкету', 'form']], [['🙅 Не буду — удалить аккаунт', 'noform_del']]]),
-      });
+      out.push(noFormMsg(u));
     }
 
     for (const pair of db.pairs) {
@@ -541,7 +555,7 @@ function createBot({ core, secret, siteUrl, username }) {
     return out;
   }
 
-  return { handleUpdate, pushNotifications, runReminders, linkUrl, verifyStart };
+  return { handleUpdate, pushNotifications, runReminders, askNoForm, linkUrl, verifyStart };
 }
 
 module.exports = { createBot, MAIN_KB };

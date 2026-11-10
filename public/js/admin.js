@@ -51,6 +51,9 @@
     $('[data-login]').hidden = true;
     $('[data-dash]').hidden = false;
     $('[data-logout]').hidden = false;
+    const noForm = state.users.filter((u) => !u.participation);
+    const noFormBot = noForm.filter((u) => u.tgLinked).length;
+    $('[data-noform-count]').textContent = `${noForm.length} чел. (с ботом — ${noFormBot})`;
     const s = state.stats;
     const sto = state.storage;
     $('[data-storage]').innerHTML = !sto ? '' : sto.mode === 'yandex-object-storage'
@@ -280,6 +283,24 @@
       const r = await Api.post('/api/admin/run-reminders', {}, A);
       FX.toast(r.sent ? `Отправлено напоминаний: ${r.sent}` : 'Сегодня напоминать некому — всё по плану', 'success');
     } catch (e) { FX.toast(e.message, 'error'); }
+  });
+  $('[data-noform-ask]').addEventListener('click', async (e) => {
+    const noForm = state.users.filter((u) => !u.participation);
+    const withBot = noForm.filter((u) => u.tgLinked).length;
+    if (!withBot) { FX.toast(noForm.length ? 'У тех, кто без анкеты, не подключён бот — написать некому' : 'Все заполнили анкету 🎉', 'error'); return; }
+    const okGo = await FX.confirmBox({
+      emoji: '📨', title: 'Спросить сейчас?',
+      html: `Бот напишет <b>${withBot}</b> из ${noForm.length} человек без анкеты: «Будете участвовать?» с кнопками «Заполнить анкету» и «Удалить аккаунт».` + (noForm.length > withBot ? `<br>У остальных ${noForm.length - withBot} бот не подключён.` : ''),
+      no: 'Отмена', yes: '📨 Отправить',
+    });
+    if (!okGo) return;
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const r = await Api.post('/api/admin/ask-noform', {}, A);
+      FX.toast(`Отправлено: ${r.sent} в Telegram`, 'success');
+      load();
+    } catch (err) { FX.toast(err.message, 'error'); }
+    btn.disabled = false;
   });
   // ---------- второй круг ----------
   $('[data-round2-form]').addEventListener('submit', (e) => {
