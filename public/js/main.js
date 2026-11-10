@@ -44,6 +44,16 @@
   let me = null;
   let lastCount = null;
   let cdTimers = [];
+  // иконки в бегущей строке имён: ёлка, олень, снеговик… — постоянно меняются
+  const TICKER_ICONS = ['🎄', '🦌', '⛄', '🎁', '❄️', '🎅', '⭐', '🍪'];
+  let tickerStep = 0;
+  if (!FX.reduced) setInterval(() => {
+    tickerStep++;
+    $$('.tk-ico').forEach((el) => {
+      el.classList.remove('flip'); void el.offsetWidth; el.classList.add('flip');
+      setTimeout(() => { el.textContent = TICKER_ICONS[(Number(el.dataset.i) + tickerStep) % TICKER_ICONS.length]; }, 200);
+    });
+  }, 1800);
 
   async function loadPublic() {
     try {
@@ -58,7 +68,7 @@
       }
       lastCount = p.count;
       const names = p.recent.length ? p.recent : ['тут', 'будут', 'ваши', 'имена'];
-      const html = names.map((n) => `<span>☕ ${FX.esc(n)}</span>`).join('');
+      const html = names.map((n, i) => `<span class="tk"><i class="tk-ico" data-i="${i}">${TICKER_ICONS[(i + tickerStep) % TICKER_ICONS.length]}</i>${FX.esc(n)}</span>`).join('');
       $('[data-recent]').innerHTML = html + html;
       applySettings(p.settings, p);
     } catch (e) { /* offline */ }
@@ -71,12 +81,14 @@
     settingsKey = key;
     cdTimers.forEach(clearInterval);
     cdTimers = [FX.countdown($('[data-cd1]'), s.sendStart), FX.countdown($('[data-cd2]'), s.sendEnd)];
-    $('[data-cd1-label]').textContent = 'До начала отправки подарков · ' + FX.fmtDate(s.sendStart);
-    $('[data-cd2-label]').textContent = 'До конца отправки · ' + FX.fmtDate(s.sendEnd);
+    $('[data-cd1-label]').textContent = FX.fmtDate(s.sendStart);
+    $('[data-cd2-label]').textContent = FX.fmtDate(s.sendEnd);
     $('[data-dates]').textContent = `Отправка подарков — с ${FX.fmtDate(s.sendStart)} по ${FX.fmtDate(s.sendEnd)}. Не успели — организаторы узнают.`;
     if (s.budgetMin || s.budgetMax) {
       const b = s.budgetMin && s.budgetMax ? `от ${s.budgetMin} до ${s.budgetMax} ₽` : s.budgetMin ? `от ${s.budgetMin} ₽` : `до ${s.budgetMax} ₽`;
       $('[data-budget]').innerHTML = `Сумма подарка: <b>${b}</b>. Главное — внимание и хороший кофе.`;
+      $('[data-budget-sum]').textContent = b;
+      $('[data-budget-badge]').classList.add('set');
     }
     if (s.chatUrl) $$('[data-chat-link]').forEach((a) => (a.href = s.chatUrl));
     const round2 = p.drawn && !p.drawn2 && s.round2Open && s.regOpen;

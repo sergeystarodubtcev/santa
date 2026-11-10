@@ -258,6 +258,11 @@
       const hrs = Math.floor(d / 36e5); d -= hrs * 36e5;
       const min = Math.floor(d / 6e4); d -= min * 6e4;
       const sec = Math.floor(d / 1e3);
+      if (el.classList.contains('tm')) {
+        el.innerHTML = t <= Date.now() ? '<b class="tm-done">✓ уже</b>'
+          : `<b>${days}</b><i>д</i><b>${pad(hrs)}</b><i>:</i><b>${pad(min)}</b><i>:</i><b class="tm-sec">${pad(sec)}</b>`;
+        return;
+      }
       el.innerHTML = [[days, SantaCore.plural(days, 'день', 'дня', 'дней')], [pad(hrs), 'часов'], [pad(min), 'минут'], [pad(sec), 'секунд']]
         .map(([v, l]) => `<div class="cd-cell"><b>${v}</b><span>${l}</span></div>`).join('');
     };

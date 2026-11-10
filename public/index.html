@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111a">
+  <link rel="stylesheet" href="css/style.css?v=20261111b">
 </head>
 <body class="page-home">
   <div class="banners" data-banners></div>
@@ -41,6 +41,10 @@
         <div class="pill">☕ Кофеманьяки × 🎅 Тайный Санта 2027</div>
         <h1>Тайный Санта <span class="grad">от Кофеманьяков</span></h1>
         <p class="lead">Мы несколько лет обещали — и вот оно: свой, кофеманьячный Тайный Санта. Без ботов и чужих сервисов. Регистрируетесь, пишете пожелания, получаете имя счастливчика и отправляете подарок <b>с 1 по 10 декабря</b>.</p>
+        <div class="budget-badge" data-budget-badge>
+          <span class="bb-ico">💸</span>
+          <span class="bb-text"><small>Сумма подарка</small><b data-budget-sum>обсуждаем в чате</b></span>
+        </div>
         <div class="hero-cta">
           <a class="btn btn-primary btn-lg" href="#join">🎁 Хочу участвовать</a>
           <a class="btn btn-ghost btn-lg" href="cabinet.html">Личный кабинет</a>
@@ -96,13 +100,16 @@
       <div class="big-count"><span data-count>0</span><em>☕</em></div>
       <div class="ticker"><div class="ticker-track" data-recent></div></div>
     </div>
-    <div class="card stat-card reveal">
-      <div class="stat-kicker" data-cd1-label>До начала отправки подарков · 1 декабря</div>
-      <div class="countdown" data-cd1></div>
-    </div>
-    <div class="card stat-card reveal">
-      <div class="stat-kicker" data-cd2-label>До конца отправки · 10 декабря</div>
-      <div class="countdown" data-cd2></div>
+    <div class="card stat-card timers-card reveal">
+      <div class="stat-kicker">⏳ Сроки отправки</div>
+      <div class="tm-row">
+        <div class="tm-label"><span class="tm-dot go"></span><span><b>Старт отправки</b><small data-cd1-label>1 декабря</small></span></div>
+        <div class="tm" data-cd1></div>
+      </div>
+      <div class="tm-row">
+        <div class="tm-label"><span class="tm-dot stop"></span><span><b>Финиш отправки</b><small data-cd2-label>10 декабря</small></span></div>
+        <div class="tm" data-cd2></div>
+      </div>
     </div>
   </section>
 
@@ -259,11 +266,11 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261111a"></script>
-  <script src="js/cities.js?v=20261111a"></script>
-  <script src="js/core.js?v=20261111a"></script>
-  <script src="js/api.js?v=20261111a"></script>
-  <script src="js/fx.js?v=20261111a"></script>
-  <script src="js/main.js?v=20261111a"></script>
+  <script src="js/config.js?v=20261111b"></script>
+  <script src="js/cities.js?v=20261111b"></script>
+  <script src="js/core.js?v=20261111b"></script>
+  <script src="js/api.js?v=20261111b"></script>
+  <script src="js/fx.js?v=20261111b"></script>
+  <script src="js/main.js?v=20261111b"></script>
 </body>
 </html>
