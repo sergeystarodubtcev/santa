@@ -170,6 +170,7 @@
   f2.addEventListener('submit', async (e) => {
     e.preventDefault();
     err(f2);
+    if (!(await FX.checkCity(f2.address.value))) { f2.address.focus(); return; }
     busy(f2, true);
     try {
       const wasIn = me && me.participation;

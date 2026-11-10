@@ -99,7 +99,7 @@
       return `<tr class="${u.banned ? 'banned' : ''}">
         <td><b>${esc(u.name)}</b><small>${FX.fmtDateTime(u.createdAt)}</small></td>
         <td>${esc(u.phone)}<small><a href="https://t.me/${esc(u.tg)}" target="_blank" rel="noopener">@${esc(u.tg)}</a></small></td>
-        <td>${p ? `${esc(p.address)}<small>${esc(p.fullName || '')}</small>` : '<span class="muted">анкета не заполнена</span>'}</td>
+        <td>${p ? `${esc(p.address)}<small>${esc(p.fullName || '')}</small>${p.city ? `<small>🏙️ ${esc(p.city)}</small>` : '<small class="important">⚠️ город не распознан</small>'}` : '<span class="muted">анкета не заполнена</span>'}</td>
         <td>${p ? `${esc(SantaCore.PREFS[p.prefs])}<small>${esc(p.wishes) || '—'}</small>${p.notes ? `<small class="important">⚠️ ${esc(p.notes)}</small>` : ''}` : ''}</td>
         <td>${u.banned ? '<span class="status banned">🛑 бан</span>' : !p ? '<span class="status">без анкеты</span>'
           : p.moderation === 'approved' ? '<span class="status received">✅ одобрен</span>'
@@ -110,6 +110,7 @@
           ${p && !u.banned && p.moderation !== 'approved' ? `<button class="btn btn-green btn-sm" data-mod="${u.id}" data-s="approved">✅ Одобрить</button>` : ''}
           ${p && !u.banned && p.moderation !== 'rejected' ? `<button class="btn btn-ghost btn-sm" data-mod="${u.id}" data-s="rejected">🚫 Отклонить</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Разбанить' : '🛑 В ЧС'}</button>
+          <button class="btn btn-ghost btn-sm" data-edit-user="${u.id}" title="Изменить данные">✏️</button>
           ${state.pairs.some((x) => x.santaId === u.id || x.recipientId === u.id) ? `<button class="btn btn-ghost btn-sm" data-unpair="${u.id}" title="Убрать из жеребьёвки, аккаунт оставить">✂️ Из пар</button>` : ''}
           <button class="btn btn-danger btn-sm" data-del="${u.id}" title="Удалить">✕</button>
         </td></tr>`;
@@ -140,6 +141,45 @@
     </tr>`).join('') || '<tr><td colspan="6" class="muted">Пар пока нет — нажмите «Раскидать людей».</td></tr>';
   }
 
+  // ---------- правка данных участника ----------
+  const um = $('[data-user-modal]');
+  const uf = $('[data-form=user-edit]');
+  let editingId = null;
+  const umClose = () => { um.classList.remove('open'); setTimeout(() => (um.hidden = true), 250); };
+  $$('[data-um-close]', um).forEach((b) => b.addEventListener('click', umClose));
+  function openUserEdit(id) {
+    const u = state.users.find((x) => x.id === id);
+    if (!u) return;
+    editingId = id;
+    const p = u.participation;
+    $('[data-um-title]').textContent = `${u.name} · @${u.tg}`;
+    uf.name.value = u.name; uf.tg.value = '@' + u.tg; uf.phone.value = u.phone; uf.password.value = '';
+    uf.withAnketa.checked = !!p;
+    uf.fullName.value = p ? p.fullName || '' : '';
+    uf.address.value = p ? p.address || '' : '';
+    uf.wishes.value = p ? p.wishes || '' : '';
+    uf.notes.value = p ? p.notes || '' : '';
+    uf.prefs.value = p ? p.prefs || 'any' : 'any';
+    $('[data-um-anketa]').hidden = !p;
+    $('[data-err]', uf).textContent = '';
+    um.hidden = false;
+    requestAnimationFrame(() => um.classList.add('open'));
+  }
+  uf.withAnketa.addEventListener('change', () => { $('[data-um-anketa]').hidden = !uf.withAnketa.checked; });
+  uf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('[data-err]', uf);
+    err.textContent = '';
+    const body = { userId: editingId, name: uf.name.value, tg: uf.tg.value, phone: uf.phone.value, password: uf.password.value || undefined };
+    if (uf.withAnketa.checked) body.anketa = { fullName: uf.fullName.value, address: uf.address.value, wishes: uf.wishes.value, notes: uf.notes.value, prefs: uf.prefs.value };
+    try {
+      state = await Api.post('/api/admin/user-edit', body, A);
+      render();
+      umClose();
+      FX.toast('Данные участника сохранены ✅', 'success');
+    } catch (ex) { err.textContent = ex.message; }
+  });
+
   // ---------- actions ----------
   $('[data-search]').addEventListener('input', renderUsers);
   $('[data-only-pending]').addEventListener('change', renderUsers);
@@ -167,6 +207,8 @@
         : 'Удалить пользователя навсегда?')) return;
       return act('/api/admin/delete', { userId: del.dataset.del }, 'Удалён, пары перестроены');
     }
+    const editBtn = e.target.closest('[data-edit-user]');
+    if (editBtn) return openUserEdit(editBtn.dataset.editUser);
     const unpair = e.target.closest('[data-unpair]');
     if (unpair && confirm('Убрать участника из жеребьёвки? Его Санта получит его получателя. Аккаунт останется.')) {
       return act('/api/admin/remove-from-draw', { userId: unpair.dataset.unpair }, 'Убран из пар, цепочка перестроена');

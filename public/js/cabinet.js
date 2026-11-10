@@ -76,8 +76,9 @@
   function closePart() { modal.classList.remove('open'); setTimeout(() => (modal.hidden = true), 250); }
   $$('[data-close]', modal).forEach((b) => b.addEventListener('click', closePart));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closePart(); });
-  pf.addEventListener('submit', (e) => {
+  pf.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!(await FX.checkCity(pf.address.value))) { pf.address.focus(); return; }
     submit(pf, async () => {
       const first = !me.participation;
       me = await Api.post('/api/participate', {

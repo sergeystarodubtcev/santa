@@ -155,3 +155,30 @@ test('профиль: можно исправить ник, имя и телеф
   assert.equal(call(db, 'POST', '/api/login', { login: '@anya_real', password: 'qwerty1' }).user.id, A);
   assert.ok(B);
 });
+
+test('админ: правит профиль и анкету любого участника, сбрасывает пароль; участник и журнал в курсе', () => {
+  const { db, ids } = chainDb();
+  const [A] = ids;
+  assert.throws(() => call(db, 'POST', '/api/admin/user-edit', { userId: A, name: 'U0', tg: 'user_1', phone: '+79660000000' }, {}), /админку/);
+  assert.throws(() => call(db, 'POST', '/api/admin/user-edit', { userId: A, name: 'U0', tg: 'user_1', phone: '+79660000000' }, admin), /ник уже занят/);
+  call(db, 'POST', '/api/admin/user-edit', {
+    userId: A, name: 'Анна', tg: '@anna_fix', phone: '+79660000000', password: 'newpass1',
+    anketa: { fullName: 'Анна Исправленная', address: 'ПВЗ Ozon, Казань, Баумана 1', wishes: 'чай', notes: 'без орехов', prefs: 'noncoffee' },
+  }, admin);
+  const u = db.users.find((x) => x.id === A);
+  assert.equal(u.tg, 'anna_fix');
+  assert.equal(db.participations[A].address, 'ПВЗ Ozon, Казань, Баумана 1');
+  assert.equal(db.participations[A].prefs, 'noncoffee');
+  assert.equal(call(db, 'POST', '/api/login', { login: '@anna_fix', password: 'newpass1' }).user.id, A);
+  assert.match(db.notifications.filter((n) => n.userId === A).pop().text, /Организаторы обновили ваши данные/);
+  assert.match(adminLog(db), /Организатор поправил данные @user_0 \(теперь @anna_fix\)/);
+  assert.match(adminLog(db), /ПВЗ: «ПВЗ Ozon 0» → «ПВЗ Ozon, Казань, Баумана 1»/);
+  assert.match(adminLog(db), /пароль сброшен/);
+  // Санта видит новый адрес
+  const santa = db.pairs.find((p) => p.recipientId === A).santaId;
+  assert.equal(call(db, 'GET', '/api/me', null, { userId: santa }).assignment.recipient.address, 'ПВЗ Ozon, Казань, Баумана 1');
+  // анкету можно создать тому, у кого её нет
+  const r = call(db, 'POST', '/api/register', { name: 'Без анкеты', phone: '+79660000077', tg: 'no_form', password: 'qwerty1', pdConsent: true });
+  call(db, 'POST', '/api/admin/user-edit', { userId: r.user.id, name: 'Без анкеты', tg: 'no_form', phone: '+79660000077', anketa: { fullName: 'Иван Иванов', address: 'ПВЗ Ozon 7' } }, admin);
+  assert.equal(db.participations[r.user.id].moderation, 'approved');
+});

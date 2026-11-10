@@ -9,6 +9,8 @@
  * Всё про участников (регистрация, анкета, отправка) идёт через core.handle — те же проверки, что на сайте.
  */
 const crypto = require('node:crypto');
+let Cities = null;
+try { Cities = require('./cities.js'); } catch (e) { try { Cities = require('../public/js/cities.js'); } catch (e2) { /* без проверки города */ } }
 
 const DAY = 24 * 60 * 60 * 1000;
 const MSK = 3 * 60 * 60 * 1000;
@@ -136,6 +138,16 @@ function createBot({ core, secret, siteUrl, username }) {
   }
 
   function formInput(db, ctx, out, chatId, st, value) {
+    if (st.step === 'address' && Cities && !Cities.hasLocality(value) && !st.addrConfirmed) {
+      st.pendingAddress = value;
+      out.push({
+        chat_id: chatId,
+        text: `🏙️ <b>Вы точно указали город?</b>\nНе нашёл название города в адресе: «${esc(value)}».\nБез города Санта не сможет отправить посылку. Например: «ПВЗ Ozon, Казань, ул. Баумана 1».`,
+        reply_markup: ib([[['✏️ Добавить город', 'addr_fix'], ['✅ Всё верно', 'addr_ok']]]),
+      });
+      return;
+    }
+    st.addrConfirmed = false;
     st.data[st.step] = value;
     const next = FORM_ORDER[FORM_ORDER.indexOf(st.step) + 1];
     if (next) { st.step = next; askForm(out, chatId, next); return; }
@@ -260,6 +272,11 @@ function createBot({ core, secret, siteUrl, username }) {
         whom(db, ctx, out, chatId);
       } else if (d === 'consent' && st && st.flow === 'reg') {
         regInput(db, ctx, out, chatId, st, true, from);
+      } else if (d === 'addr_ok' && st && st.flow === 'form' && st.step === 'address' && st.pendingAddress) {
+        st.addrConfirmed = true;
+        formInput(db, ctx, out, chatId, st, st.pendingAddress);
+      } else if (d === 'addr_fix' && st && st.flow === 'form' && st.step === 'address') {
+        out.push({ chat_id: chatId, text: 'Пришлите адрес ПВЗ ещё раз — вместе с городом:' });
       } else if (d === 'skip' && st && st.flow === 'form') {
         formInput(db, ctx, out, chatId, st, '');
       } else if (d.startsWith('prefs:') && st && st.flow === 'form' && st.step === 'prefs') {

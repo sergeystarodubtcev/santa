@@ -78,6 +78,7 @@ FN_DIR="$(mktemp -d)"
 cp cloud/index.js "$FN_DIR/index.js"
 cp cloud/bot.js "$FN_DIR/bot.js"
 cp public/js/core.js "$FN_DIR/core.js"
+cp public/js/cities.js "$FN_DIR/cities.js"
 echo '{"name":"kofesanta-api","private":true}' > "$FN_DIR/package.json"
 yc serverless function get --name santa-api >/dev/null 2>&1 || yc serverless function create --name santa-api >/dev/null
 ENV_ARGS=(--environment "BUCKET=$BUCKET")

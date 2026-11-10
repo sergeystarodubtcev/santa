@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261110b">
+  <link rel="stylesheet" href="css/style.css?v=20261110c">
 </head>
 <body>
   <header class="topbar">
@@ -126,6 +126,39 @@
     </div>
   </main>
 
+  <!-- правка данных участника -->
+  <div class="modal" data-user-modal hidden>
+    <div class="modal-backdrop" data-um-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-um-close aria-label="Закрыть">✕</button>
+      <div class="modal-head"><div class="modal-emoji">✏️</div><h3 data-um-title>Данные участника</h3></div>
+      <form class="form" data-form="user-edit" novalidate>
+        <div class="form-section">👤 Профиль</div>
+        <label>Имя<input name="name"></label>
+        <div class="row2">
+          <label>Ник в Telegram<input name="tg"></label>
+          <label>Телефон<input name="phone" type="tel"></label>
+        </div>
+        <label>Новый пароль<small>Заполните, только если человек забыл пароль. Сообщите ему новый пароль лично</small><input name="password" type="text" autocomplete="off" placeholder="оставьте пустым, чтобы не менять"></label>
+        <label class="check"><input type="checkbox" name="withAnketa"><span>Анкета участника (если анкеты нет — создастся и сразу будет одобрена)</span></label>
+        <div data-um-anketa style="display:flex;flex-direction:column;gap:14px">
+          <div class="form-section">📦 Анкета</div>
+          <label>ФИО получателя<input name="fullName"></label>
+          <label>Адрес ПВЗ Ozon<textarea name="address" rows="2"></textarea></label>
+          <label>Пожелания<textarea name="wishes" rows="2"></textarea></label>
+          <div class="row2">
+            <label>Тематика
+              <select name="prefs"><option value="coffee">☕ Кофейное</option><option value="noncoffee">🧸 Некофейное</option><option value="any">🎲 Удивите меня</option></select>
+            </label>
+            <label>Особые пометки<input name="notes"></label>
+          </div>
+        </div>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">Сохранить</button>
+      </form>
+    </div>
+  </div>
+
   <footer class="footer footer-mini">
     <div class="wrap footer-inner">
       <a class="madeby" href="https://t.me/speccof" target="_blank" rel="noopener" title="Specialty Кофеёк в Telegram">
@@ -135,10 +168,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261110b"></script>
-  <script src="js/core.js?v=20261110b"></script>
-  <script src="js/api.js?v=20261110b"></script>
-  <script src="js/fx.js?v=20261110b"></script>
-  <script src="js/admin.js?v=20261110b"></script>
+  <script src="js/config.js?v=20261110c"></script>
+  <script src="js/cities.js?v=20261110c"></script>
+  <script src="js/core.js?v=20261110c"></script>
+  <script src="js/api.js?v=20261110c"></script>
+  <script src="js/fx.js?v=20261110c"></script>
+  <script src="js/admin.js?v=20261110c"></script>
 </body>
 </html>

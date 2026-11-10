@@ -202,6 +202,40 @@
     });
   }
 
+  // ---------- всплывающее подтверждение (Promise<boolean>) ----------
+  function confirmBox(opts) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'cbox';
+      wrap.innerHTML = `<div class="cbox-card" role="alertdialog" aria-modal="true">
+        <div class="cbox-emoji">${opts.emoji || '🤔'}</div>
+        <h3>${esc(opts.title)}</h3>
+        <p>${opts.html || esc(opts.text || '')}</p>
+        <div class="cbox-actions">
+          <button class="btn btn-ghost" data-no>${esc(opts.no || 'Исправить')}</button>
+          <button class="btn btn-primary" data-yes>${esc(opts.yes || 'Да, всё верно')}</button>
+        </div></div>`;
+      document.body.appendChild(wrap);
+      requestAnimationFrame(() => wrap.classList.add('open'));
+      const done = (v) => { wrap.classList.remove('open'); setTimeout(() => wrap.remove(), 200); resolve(v); };
+      wrap.querySelector('[data-yes]').addEventListener('click', () => done(true));
+      wrap.querySelector('[data-no]').addEventListener('click', () => done(false));
+      wrap.addEventListener('click', (e) => { if (e.target === wrap) done(false); });
+      setTimeout(() => wrap.querySelector('[data-no]').focus(), 50);
+    });
+  }
+  // Проверка адреса: если город не распознан — спросить. true — можно сохранять.
+  async function checkCity(address) {
+    if (!window.SantaCities || window.SantaCities.hasLocality(address)) return true;
+    return confirmBox({
+      emoji: '🏙️',
+      title: 'Вы точно указали город?',
+      html: 'Мы не нашли название города в адресе: <b>' + esc(address) + '</b>.<br>Санта не сможет отправить посылку без города. Например: «ПВЗ Ozon, <b>Казань</b>, ул. Баумана 1».',
+      no: '✏️ Добавить город',
+      yes: 'Всё верно, город указан',
+    });
+  }
+
   // ---------- toast ----------
   function toast(text, kind) {
     let host = document.querySelector('.toasts');
@@ -281,5 +315,5 @@
     host.innerHTML = items.map((i) => `<a class="banner ${i.kind}" ${i.href ? `href="${i.href}"` : ''}>${esc(i.text)}</a>`).join('');
   }
 
-  window.FX = { snow, burst, burstFrom, santas, toast, countdown, animateNumber, esc, fmtDate, fmtDateTime, chrome, renderBanners, reduced };
+  window.FX = { confirmBox, checkCity, snow, burst, burstFrom, santas, toast, countdown, animateNumber, esc, fmtDate, fmtDateTime, chrome, renderBanners, reduced };
 })();

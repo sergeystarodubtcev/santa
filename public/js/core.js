@@ -22,6 +22,13 @@
     chatUrl: 'https://t.me/coffeemaniacs_channel/10490',
   };
 
+  // Распознавание города в адресе (cities.js): в Node — require, в браузере — глобальный SantaCities
+  const Cities = (function () {
+    try { if (typeof require === 'function') return require('./cities.js'); } catch (e) { /* нет файла */ }
+    return typeof self !== 'undefined' && self.SantaCities ? self.SantaCities : null;
+  })();
+  const detectCity = (address) => (Cities ? Cities.detect(address) : '');
+
   const PREFS = { coffee: 'Кофейное', noncoffee: 'Некофейное', any: 'Удивите меня' };
 
   class SantaError extends Error {
@@ -236,6 +243,7 @@
     // Новая анкета (и отклонённая после правок) уходит на модерацию; одобренная остаётся одобренной.
     const moderation = existing && modStatus(existing) === 'approved' ? 'approved' : 'pending';
     db.participations[userId] = {
+      city: detectCity(address),
       moderation,
       moderatedAt: existing && moderation === 'approved' ? existing.moderatedAt : null,
       fullName,
@@ -564,6 +572,52 @@
         notify(db, ctx, u.id, 'Организаторы исключили вас из жеребьёвки этого года. Если это ошибка — напишите им.', 'warn');
         notifyAdmins(db, ctx, [`✂️ Организатор убрал из жеребьёвки ${who(u)} (аккаунт остался).`].concat(lines).join('\n'));
         return ok(adminState(db), true);
+      }
+      case 'POST /api/admin/user-edit': {
+        // организатор правит профиль и анкету любого участника (и при необходимости задаёт новый пароль)
+        needAdmin();
+        const u = getUser(db, body.userId);
+        const changes = [];
+        const set = (obj, key, val, label) => { if ((obj[key] || '') !== (val || '')) { changes.push(`${label}: «${obj[key] || '—'}» → «${val || '—'}»`); obj[key] = val; } };
+        const name = str(body.name, 60);
+        if (name.length < 2) fail(400, 'Имя слишком короткое');
+        const tg = normTg(body.tg);
+        const phone = normPhone(body.phone);
+        if (db.users.some((x) => x.id !== u.id && x.tg === tg)) fail(409, 'Этот ник уже занят другим участником');
+        if (db.users.some((x) => x.id !== u.id && x.phone === phone)) fail(409, 'Этот телефон уже указан у другого участника');
+        const oldTg = u.tg;
+        set(u, 'name', name, 'имя');
+        set(u, 'tg', tg, 'ник');
+        set(u, 'phone', phone, 'телефон');
+        if (body.password) {
+          if (String(body.password).length < 6) fail(400, 'Пароль — минимум 6 символов');
+          u.passHash = ctx.hash(String(body.password));
+          changes.push('пароль сброшен');
+        }
+        if (body.anketa) {
+          const a = body.anketa;
+          const fullName = str(a.fullName, 120);
+          const address = str(a.address, 400);
+          if (fullName.length < 3) fail(400, 'Укажите ФИО');
+          if (address.length < 5) fail(400, 'Укажите адрес ПВЗ');
+          let p = db.participations[u.id];
+          if (!p) {
+            p = db.participations[u.id] = { moderation: 'approved', moderatedAt: ctx.now(), joinedAt: ctx.now() };
+            changes.push('анкета создана организатором');
+          }
+          set(p, 'fullName', fullName, 'ФИО');
+          set(p, 'address', address, 'ПВЗ');
+          p.city = detectCity(address);
+          set(p, 'wishes', str(a.wishes, 1000), 'пожелания');
+          set(p, 'notes', str(a.notes, 500), 'пометки');
+          set(p, 'prefs', PREFS[a.prefs] ? a.prefs : 'any', 'тематика');
+          p.updatedAt = ctx.now();
+        }
+        if (changes.length) {
+          notify(db, ctx, u.id, 'Организаторы обновили ваши данные: ' + changes.map((c) => c.split(':')[0]).join(', ') + '. Проверьте профиль и анкету.', 'info');
+          notifyAdmins(db, ctx, `✏️ Организатор поправил данные @${oldTg}${oldTg !== tg ? ' (теперь @' + tg + ')' : ''}:\n` + changes.join('\n'));
+        }
+        return ok(adminState(db), changes.length > 0);
       }
       case 'POST /api/admin/pair-set': {
         // ручная правка: кому дарит Санта

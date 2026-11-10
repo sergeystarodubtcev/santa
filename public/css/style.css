@@ -515,3 +515,15 @@ tr.banned td { opacity: .55; }
 .adm-log li { padding: 8px 12px; border-radius: 12px; background: var(--bg-soft); font-size: 13px; white-space: pre-line; }
 .adm-log time { display: block; color: var(--muted); font-size: 11px; }
 .pairs-warn { padding: 10px 14px; border-radius: 12px; background: #fff7d6; border: 1px solid #f5c542; font-size: 14px; margin-bottom: 12px; }
+
+/* всплывающее подтверждение */
+.cbox { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 16px; background: rgba(11, 16, 32, .55); opacity: 0; transition: opacity .2s; }
+.cbox.open { opacity: 1; }
+.cbox-card { width: min(440px, 100%); background: #fff; color: #111318; border-radius: 24px; padding: 26px 24px 22px; text-align: center; box-shadow: 0 30px 80px rgba(0, 0, 0, .35); transform: scale(.94); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1); --text: #111318; --muted: #5d6270; --border: rgba(17, 19, 24, .12); --card: #fff; --card-strong: #f1f3f8; }
+.cbox.open .cbox-card { transform: none; }
+.cbox-emoji { font-size: 44px; }
+.cbox-card h3 { font-size: 20px; margin: 8px 0 10px; }
+.cbox-card p { color: #5d6270; font-size: 15px; }
+.cbox-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+@media (max-width: 420px) { .cbox-actions { grid-template-columns: 1fr; } }
+.cbox-actions .btn { white-space: normal; padding-left: 12px; padding-right: 12px; }
