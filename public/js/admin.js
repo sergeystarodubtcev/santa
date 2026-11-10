@@ -344,6 +344,7 @@
     } catch (e) { FX.toast(e.message, 'error'); }
   });
   $('[data-noform-ask]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget; // запоминаем сразу: после await e.currentTarget уже null
     const noForm = state.users.filter((u) => !u.participation);
     const withBot = noForm.filter((u) => u.tgLinked).length;
     if (!withBot) { FX.toast(noForm.length ? 'У тех, кто без анкеты, не подключён бот — написать некому' : 'Все заполнили анкету 🎉', 'error'); return; }
@@ -353,7 +354,7 @@
       no: 'Отмена', yes: '📨 Отправить',
     });
     if (!okGo) return;
-    const btn = e.currentTarget; btn.disabled = true;
+    btn.disabled = true;
     try {
       const r = await Api.post('/api/admin/ask-noform', {}, A);
       FX.toast(`Отправлено: ${r.sent} в Telegram`, 'success');

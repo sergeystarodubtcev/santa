@@ -121,6 +121,19 @@ test('режим ретранслятора: апдейты через /api/tg/r
   assert.ok(q.data.out.some((o) => o.chat_id === 88 && /Жеребьёвка завтра/.test(o.text)));
   q = await post('/api/tg/outbox', {}, { 'X-Relay-Secret': 'relay-secret' });
   assert.equal(q.data.out.length, 0, 'очередь очищается после выдачи');
+  // кнопка «Спросить сейчас»: «Будете участвовать?» тем, кто без анкеты — через очередь
+  await post('/api/register', { name: 'Без Анкеты', phone: '+79990001122', tg: 'cloud_noform', password: 'secret1', pdConsent: true });
+  await post('/api/tg/relay', { update: { update_id: 2, message: { chat: { id: 89, type: 'private' }, from: { id: 89, username: 'cloud_noform' }, text: '/start' } } }, { 'X-Relay-Secret': 'relay-secret' });
+  assert.equal((await post('/api/admin/ask-noform', {})).status, 401, 'только админ');
+  const ask = await post('/api/admin/ask-noform', {}, { Authorization: 'Bearer ' + admin });
+  assert.equal(ask.status, 200);
+  assert.ok(ask.data.sent >= 1);
+  q = await post('/api/tg/outbox', {}, { 'X-Relay-Secret': 'relay-secret' });
+  const askMsg = q.data.out.find((o) => o.chat_id === 89);
+  assert.match(askMsg.text, /Будете участвовать/);
+  assert.equal(askMsg.reply_markup.inline_keyboard[0][0].callback_data, 'form');
+  const st = (await h({ httpMethod: 'GET', url: '/api/admin/state', headers: { Authorization: 'Bearer ' + admin }, body: '', isBase64Encoded: false }, ctx));
+  assert.match(JSON.parse(st.body).broadcasts[0].text, /Будете участвовать/, 'рассылка видна в «Отправленных»');
   global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });
