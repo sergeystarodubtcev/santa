@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      reset_watch:
+        description: 'Сбросить отметку «адвент уже разослан»'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ jobs:
       YC_SA_KEY: ${{ secrets.YC_SA_KEY }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      RESET_WATCH: ${{ inputs.reset_watch || 'false' }}
       CUSTOM_DOMAIN: santa.speccof.ru
       DNS_ZONE: speccof.ru
       # Из Yandex Cloud нет связи с Telegram (в обе стороны), поэтому бот работает через ретранслятор

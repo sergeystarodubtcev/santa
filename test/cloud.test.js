@@ -138,9 +138,11 @@ test('слежение за страницей: при 200 один раз пи�
   await post('/api/tg/relay', { update: { update_id: 2, message: { chat: { id: 4242, type: 'private' }, from: { id: 4242 }, text: '/admin adminpw' } } });
   const w = { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' };
   let shopStatus = 404;
+  let shopUrl = 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027';
+  let shopHtml = '<title>Страница не найдена</title>';
   const s3fetch = global.fetch;
   global.fetch = async (url, opts) => (String(url).startsWith('https://shop.tastycoffee.ru/')
-    ? { status: shopStatus, arrayBuffer: async () => new ArrayBuffer(0) } : s3fetch(url, opts));
+    ? { status: shopStatus, url: shopUrl, text: async () => shopHtml } : s3fetch(url, opts));
   assert.equal((await post('/api/tg/watch', { key: 'evil', url: 'http://169.254.169.254/' })).status, 404, 'чужие адреса не проверяем');
   assert.equal((await post('/api/tg/watch', Object.assign({ status: 200 }, w), { 'X-Relay-Secret': 'nope' })).status, 403);
   const t = await post('/api/tg/watch', Object.assign({ test: true }, w));
@@ -151,13 +153,22 @@ test('слежение за страницей: при 200 один раз пи�
   assert.equal(r.data.out.length, 0);
   assert.equal(r.data.done, false);
   assert.equal(r.data.status, 404);
-  shopStatus = 200;
+  // «мягкий 404»: код 200, но это общая страница магазина — не считается
+  shopStatus = 200; shopUrl = 'https://shop.tastycoffee.ru/'; shopHtml = '<title>Tasty Coffee — магазин</title>';
+  r = await post('/api/tg/watch', { key: w.key });
+  assert.equal(r.data.out.length, 0, 'редирект на главную — не появление товара');
+  // пробная проверка ничего не отмечает
+  shopUrl = 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027'; shopHtml = '<title>Адвент-календарь Music 2027 — Tasty Coffee</title>';
+  r = await post('/api/tg/watch', { key: w.key, dry: true });
+  assert.equal(r.data.found, true);
+  assert.equal(r.data.out, undefined);
   r = await post('/api/tg/watch', { key: w.key });
   assert.deepEqual(r.data.out.map((o) => o.chat_id), [4242], 'только админам, не участникам');
   assert.match(r.data.out[0].text, /Адвент-календарь Tasty Coffee 2027 появился/);
   r = await post('/api/tg/watch', { key: w.key });
   assert.equal(r.data.out.length, 0, 'второй раз не шлём');
   assert.equal(r.data.done, true);
+  assert.equal((await post('/api/tg/watch', { key: w.key, reset: true })).data.reset, true);
   global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });

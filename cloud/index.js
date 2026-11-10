@@ -28,7 +28,11 @@ const TG_HOOK_SECRET = TG_TOKEN ? crypto.createHash('sha256').update(TG_TOKEN).d
 const TG_RELAY_SECRET = process.env.TG_RELAY_SECRET || '';
 // Страницы, за которыми следит бот: когда начнут отвечать 200 — один раз пишем админам.
 const WATCH = [
-  { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' },
+  {
+    key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027',
+    url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027', slug: 'advent-music-calendar-2027',
+    mustContain: [/адвент/i, /advent/i],
+  },
 ];
 const WATCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const S3 = 'https://storage.yandexcloud.net';
@@ -293,19 +297,25 @@ module.exports.handler = async function handler(event, context) {
       db.tgWatch = db.tgWatch || {};
       const key = String(body.key || '').slice(0, 80);
       if (!key) throw new core.SantaError(400, 'key');
-      if (db.tgWatch[key]) return reply(200, { out: [], done: true, admins: admins.length });
+      if (body.reset) { delete db.tgWatch[key]; await s3('PUT', DB_KEY, token, JSON.stringify(db)); return reply(200, { reset: true }); }
+      if (db.tgWatch[key] && !body.dry) return reply(200, { out: [], done: true, admins: admins.length });
       // Страницу проверяем отсюда (из России): зарубежные серверы GitHub до российских магазинов не достают.
       // Проверяем только адреса из списка WATCH — чтобы эндпоинт нельзя было использовать как прокси.
       const w = WATCH.find((x) => x.key === key);
       if (!w) throw new core.SantaError(404, 'unknown watch');
       Object.assign(body, w);
-      let status = 0;
+      let status = 0, finalUrl = '', title = '', found = false;
       try {
         const r = await fetch(w.url, { headers: { 'User-Agent': WATCH_UA, Accept: 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
         status = r.status;
-        await r.arrayBuffer().catch(() => {});
+        finalUrl = r.url || '';
+        const html = await r.text().catch(() => '');
+        title = ((html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1] || '').trim().slice(0, 150);
+        // «Появился» = код 200, адрес не увёл на другую страницу, и в заголовке/шапке есть признаки товара
+        found = status === 200 && finalUrl.includes(w.slug) && w.mustContain.some((rx) => rx.test(title) || rx.test(html.slice(0, 200000).replace(/<script[\s\S]*?<\/script>/gi, '')));
       } catch (e) { return reply(200, { out: [], done: false, status: 0, error: String(e.cause && e.cause.code || e.message), admins: admins.length }); }
-      if (status !== 200) return reply(200, { out: [], done: false, status, admins: admins.length });
+      if (body.dry) return reply(200, { dry: true, status, finalUrl, title, found, alreadyNotified: !!db.tgWatch[key], admins: admins.length });
+      if (!found) return reply(200, { out: [], done: false, status, admins: admins.length });
       db.tgWatch[key] = { at: Date.now(), url: body.url };
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
       const out = admins.map((chat_id) => ({ chat_id, text: `🎄 <b>${esc(body.title)} появился!</b>\n${esc(body.url)}` }));
