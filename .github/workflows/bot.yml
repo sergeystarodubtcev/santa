@@ -5,6 +5,11 @@ name: Telegram-бот
 # так что бот работает непрерывно (concurrency не даёт запустить две смены одновременно).
 on:
   workflow_dispatch:
+    inputs:
+      test_message:
+        description: 'Отправить админам пробное сообщение при старте'
+        type: boolean
+        default: false
   schedule:
     - cron: '*/30 * * * *'
 
@@ -29,6 +34,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           SITE_API: https://santa.speccof.ru
           RUN_MINUTES: '330'
+          SEND_TEST: ${{ inputs.test_message || 'false' }}
         run: |
           if [ -z "$TG_BOT_TOKEN" ]; then echo "::warning::Нет секрета TG_BOT_TOKEN"; exit 0; fi
           node relay/bot-runner.js

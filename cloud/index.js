@@ -243,7 +243,7 @@ module.exports.handler = async function handler(event, context) {
 
     if (path === '/api/health') {
       const db = await loadDb(token);
-      return reply(200, { ok: true, storage: { mode: 'yandex-object-storage', bucket: BUCKET, error: null }, users: db.users.length });
+      return reply(200, { ok: true, storage: { mode: 'yandex-object-storage', bucket: BUCKET, error: null }, users: db.users.length, tgAdmins: (db.tgAdmins || []).length });
     }
 
     const ip = header(event, 'x-forwarded-for').split(',')[0].trim() || ((event.requestContext || {}).identity || {}).sourceIp || '';
@@ -274,6 +274,28 @@ module.exports.handler = async function handler(event, context) {
     }
 
     // Ретранслятор (GitHub Actions): апдейт от Telegram → ответы; плюс очередь исходящих
+    // Слежение за страницами (например, появление адвент-календаря): ретранслятор сообщает код ответа,
+    // функция один раз уведомляет админов бота. Флаг «уже отправлено» — в базе, переживает перезапуски.
+    if (path === '/api/tg/watch') {
+      if (!bot || !TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
+      const db = await loadDb(token);
+      const admins = db.tgAdmins || [];
+      const esc = (x) => String(x || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      if (body.test) {
+        const out = admins.map((chat_id) => ({ chat_id, text: `🧪 Пробное сообщение от Санта-бота.\nСлежу за страницей «${esc(body.title)}»: как только она появится, напишу сюда.\n${esc(body.url)}` }));
+        return reply(200, { out, admins: admins.length });
+      }
+      db.tgWatch = db.tgWatch || {};
+      const key = String(body.key || '').slice(0, 80);
+      if (!key) throw new core.SantaError(400, 'key');
+      if (db.tgWatch[key]) return reply(200, { out: [], done: true, admins: admins.length });
+      if (Number(body.status) !== 200) return reply(200, { out: [], done: false, admins: admins.length });
+      db.tgWatch[key] = { at: Date.now(), url: body.url };
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      const out = admins.map((chat_id) => ({ chat_id, text: `🎄 <b>${esc(body.title)} появился!</b>\n${esc(body.url)}` }));
+      return reply(200, { out, done: true, admins: admins.length });
+    }
+
     if (path === '/api/tg/relay' || path === '/api/tg/outbox') {
       if (!bot || !TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
       const db = await loadDb(token);

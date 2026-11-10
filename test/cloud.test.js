@@ -124,3 +124,32 @@ test('режим ретранслятора: апдейты через /api/tg/r
   global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });
+
+test('слежение за страницей: при 200 один раз пишем только админам; пробное — тоже админам', async () => {
+  delete require.cache[require.resolve('../cloud/index.js')];
+  process.env.TG_BOT_USERNAME = 'kofesanta_bot';
+  process.env.TG_RELAY_SECRET = 'relay-secret';
+  const { handler: h } = require('../cloud/index.js');
+  const post = async (url, body, headers = { 'X-Relay-Secret': 'relay-secret' }) => {
+    const r = await h({ httpMethod: 'POST', url, headers: Object.assign({ 'Content-Type': 'application/json' }, headers), body: JSON.stringify(body), isBase64Encoded: false }, ctx);
+    return { status: r.statusCode, data: JSON.parse(r.body) };
+  };
+  // делаем админа через бота
+  await post('/api/tg/relay', { update: { update_id: 2, message: { chat: { id: 4242, type: 'private' }, from: { id: 4242 }, text: '/admin adminpw' } } });
+  const w = { key: 'advent', title: 'Адвент', url: 'https://shop.example/advent' };
+  assert.equal((await post('/api/tg/watch', Object.assign({ status: 200 }, w), { 'X-Relay-Secret': 'nope' })).status, 403);
+  const t = await post('/api/tg/watch', Object.assign({ test: true }, w));
+  assert.equal(t.data.admins, 1);
+  assert.deepEqual(t.data.out.map((o) => o.chat_id), [4242]);
+  assert.match(t.data.out[0].text, /Пробное сообщение/);
+  let r = await post('/api/tg/watch', Object.assign({ status: 404 }, w));
+  assert.equal(r.data.out.length, 0);
+  assert.equal(r.data.done, false);
+  r = await post('/api/tg/watch', Object.assign({ status: 200 }, w));
+  assert.deepEqual(r.data.out.map((o) => o.chat_id), [4242], 'только админам, не участникам');
+  assert.match(r.data.out[0].text, /Адвент появился/);
+  r = await post('/api/tg/watch', Object.assign({ status: 200 }, w));
+  assert.equal(r.data.out.length, 0, 'второй раз не шлём');
+  assert.equal(r.data.done, true);
+  delete process.env.TG_RELAY_SECRET;
+});

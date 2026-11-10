@@ -218,6 +218,7 @@ if [ "$TG_MODE" = "relay" ] && [ -n "$TG_USERNAME" ]; then
   RELAY_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/tg/outbox" -H "X-Relay-Secret: $(printf '%s' "$TG_BOT_TOKEN" | sha256sum | cut -c1-32)" -H 'Content-Type: application/json' -d '{}')"
   BAD_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/tg/outbox" -H 'X-Relay-Secret: wrong' -d '{}')"
   echo "Ретранслятор: с секретом → $RELAY_CODE, с чужим секретом → $BAD_CODE"
+  echo "Адвент Tasty Coffee с GitHub: $(curl -s -o /dev/null -w '%{http_code}' -L -m 15 -A 'Mozilla/5.0 Chrome/130' https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027)"
   [ "$RELAY_CODE" = 200 ] && [ "$BAD_CODE" = 403 ] || { echo "::error::Эндпоинт ретранслятора отвечает не так, как ожидалось"; exit 1; }
 fi
 echo "Проверка $URL/api/health"
