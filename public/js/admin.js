@@ -81,6 +81,7 @@
       f.announcement.value = st.announcement || '';
       f.chatUrl.value = st.chatUrl || '';
       f.regOpen.checked = !!st.regOpen;
+      f.moderation.checked = !!st.moderation;
     }
     renderUsers();
     renderPairs();
@@ -256,7 +257,7 @@
       sendStart: f.sendStart.value + ':00+03:00',
       sendEnd: f.sendEnd.value + ':59+03:00',
       budgetMin: f.budgetMin.value, budgetMax: f.budgetMax.value,
-      announcement: f.announcement.value, chatUrl: f.chatUrl.value, regOpen: f.regOpen.checked,
+      announcement: f.announcement.value, chatUrl: f.chatUrl.value, regOpen: f.regOpen.checked, moderation: f.moderation.checked,
     }, 'Настройки сохранены');
   });
 

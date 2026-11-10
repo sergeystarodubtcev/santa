@@ -20,6 +20,8 @@
     budgetMax: null,
     announcement: '',
     chatUrl: 'https://t.me/coffeemaniacs_channel/10490',
+    // модерация анкет: выключена — все анкеты сразу в игре; включена — ждут решения организаторов
+    moderation: false,
   };
 
   // Распознавание города в адресе (cities.js): в Node — require, в браузере — глобальный SantaCities
@@ -106,12 +108,14 @@
   // Статус модерации анкеты: pending — ждёт проверки, approved — допущена к жеребьёвке, rejected — отклонена.
   const modStatus = (p) => (p && p.moderation) || 'pending';
   // Все анкеты в игре (для счётчика): не забаненные и не отклонённые.
+  // С учётом переключателя: при выключенной модерации «ожидающие» считаются одобренными
+  const modEff = (db, p) => { const m = modStatus(p); return m === 'pending' && !db.settings.moderation ? 'approved' : m; };
   function activeParticipants(db) {
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) !== 'rejected');
   }
   // Допущенные модерацией — только они попадают в жеребьёвку.
   function approvedParticipants(db) {
-    return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) === 'approved');
+    return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved');
   }
 
   // action — подсказка для Telegram-бота, какую кнопку приложить (whom, gift, moderation, …)
@@ -241,7 +245,8 @@
     if (!body.agree) fail(400, 'Подтвердите участие и дальнейшую отправку подарка');
     const prefs = PREFS[body.prefs] ? body.prefs : 'any';
     // Новая анкета (и отклонённая после правок) уходит на модерацию; одобренная остаётся одобренной.
-    const moderation = existing && modStatus(existing) === 'approved' ? 'approved' : 'pending';
+    const auto = !db.settings.moderation;
+    const moderation = (existing && modStatus(existing) === 'approved') || auto ? 'approved' : 'pending';
     db.participations[userId] = {
       city: detectCity(address),
       moderation,
@@ -254,7 +259,8 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
-    if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info', 'moderation');
+    if (!existing && auto) notify(db, ctx, userId, 'Анкета принята! 🎅 Вы участвуете в жеребьёвке — мы сообщим, кому дарить.', 'success', 'new-anketa');
+    else if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info', 'moderation');
     else if (modStatus(existing) === 'rejected') notify(db, ctx, userId, 'Анкета исправлена и снова отправлена на модерацию', 'info');
     return db.participations[userId];
   }
@@ -353,7 +359,7 @@
     const user = getUser(db, userId);
     const now = ctx.now();
     const part = db.participations[userId];
-    const out = { user: publicUser(user), participation: part ? Object.assign({}, part, { moderation: modStatus(part) }) : null, drawn: !!db.drawnAt };
+    const out = { user: publicUser(user), participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null, drawn: !!db.drawnAt };
     const mine = db.pairs.find((p) => p.santaId === userId);
     if (mine) {
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
@@ -373,7 +379,29 @@
 
   function publicSettings(db) {
     const s = db.settings;
-    return { regOpen: s.regOpen, sendStart: s.sendStart, sendEnd: s.sendEnd, budgetMin: s.budgetMin, budgetMax: s.budgetMax, announcement: s.announcement, chatUrl: s.chatUrl };
+    return { regOpen: s.regOpen, sendStart: s.sendStart, sendEnd: s.sendEnd, budgetMin: s.budgetMin, budgetMax: s.budgetMax, announcement: s.announcement, chatUrl: s.chatUrl, moderation: !!s.moderation };
+  }
+
+  // Включить/выключить модерацию. При выключении все ожидающие сразу одобряются.
+  function setModeration(db, ctx, on) {
+    on = !!on;
+    if (!!db.settings.moderation === on) return 0;
+    db.settings.moderation = on;
+    let n = 0;
+    if (!on) {
+      db.users.forEach((u) => {
+        const p = db.participations[u.id];
+        if (!u.banned && p && modStatus(p) === 'pending') {
+          Object.assign(p, { moderation: 'approved', moderatedAt: ctx.now() });
+          notify(db, ctx, u.id, 'Анкета одобрена ✅ Вы участвуете в жеребьёвке!', 'success');
+          n++;
+        }
+      });
+    }
+    notifyAdmins(db, ctx, on
+      ? '🛡 Модерация ВКЛЮЧЕНА: новые анкеты ждут вашего решения.'
+      : '🛡 Модерация ВЫКЛЮЧЕНА: все анкеты сразу в игре.' + (n ? ` Одобрено ожидавших: ${n}.` : ''));
+    return n;
   }
 
   function publicStats(db) {
@@ -396,7 +424,7 @@
       drawnAt: db.drawnAt,
       users: db.users.map((u) => {
         const part = db.participations[u.id];
-        return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modStatus(part) }) : null });
+        return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null });
       }),
       pairs: db.pairs.map((p) => Object.assign({}, p, {
         santa: byId[p.santaId] ? '@' + byId[p.santaId].tg : '—',
@@ -408,7 +436,7 @@
         users: db.users.length,
         participants: activeParticipants(db).length,
         approved: approvedParticipants(db).length,
-        pending: db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) === 'pending').length,
+        pending: db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'pending').length,
         banned: db.users.filter((u) => u.banned).length,
         sent: db.pairs.filter((p) => p.status !== 'assigned').length,
         received: db.pairs.filter((p) => p.status === 'received').length,
@@ -416,8 +444,9 @@
     };
   }
 
-  function updateSettings(db, body) {
+  function updateSettings(db, body, ctx) {
     const s = db.settings;
+    if ('moderation' in body && ctx) setModeration(db, ctx, body.moderation);
     if ('regOpen' in body) s.regOpen = !!body.regOpen;
     for (const k of ['sendStart', 'sendEnd']) {
       if (body[k]) {
@@ -515,7 +544,8 @@
       case 'GET /api/admin/state': needAdmin(); return ok(adminState(db));
       case 'POST /api/admin/shuffle': needAdmin(); shuffle(db, ctx, body); return ok(adminState(db), true);
       case 'POST /api/admin/reset': needAdmin(); resetDraw(db); return ok(adminState(db), true);
-      case 'POST /api/admin/settings': needAdmin(); updateSettings(db, body); return ok(adminState(db), true);
+      case 'POST /api/admin/settings': needAdmin(); updateSettings(db, body, ctx); return ok(adminState(db), true);
+      case 'POST /api/admin/moderation': needAdmin(); setModeration(db, ctx, body.enabled); return ok(adminState(db), true);
       case 'POST /api/admin/ban': {
         needAdmin();
         const u = getUser(db, body.userId);

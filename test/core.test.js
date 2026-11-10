@@ -153,6 +153,7 @@ test('согласие на ПДн обязательно, адрес — тол
 
 test('модерация: в жеребьёвку попадают только одобренные', () => {
   const db = core.emptyDb();
+  db.settings.moderation = true;
   const ids = [];
   for (let i = 0; i < 4; i++) {
     const r = call(db, 'POST', '/api/register', { name: 'M' + i, phone: '+7911000000' + i, tg: 'mod_user' + i, password: 'secret1', pdConsent: true });

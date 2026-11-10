@@ -27,6 +27,7 @@ const BTN = {
   done: '✅ Готово',
 };
 const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.help }]], resize_keyboard: true };
+const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: '🛡 Модерация' }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
@@ -64,12 +65,24 @@ function createBot({ core, secret, siteUrl, username }) {
     return 'Анкета на модерации ⏳ Организаторы проверят её перед жеребьёвкой.';
   }
 
+  function modPanel(db, out, chatId) {
+    const on = !!db.settings.moderation;
+    const pending = db.users.filter((u) => !u.banned && db.participations[u.id] && core.modStatus(db.participations[u.id]) === 'pending').length;
+    out.push({
+      chat_id: chatId,
+      text: `🛡 <b>Модерация анкет: ${on ? 'ВКЛЮЧЕНА' : 'ВЫКЛЮЧЕНА'}</b>\n` + (on
+        ? `Новые анкеты ждут вашего решения — я пришлю их с кнопками «Одобрить / Отклонить».${pending ? `\nСейчас ждут: ${pending}.` : ''}`
+        : 'Все анкеты сразу попадают в игру. О каждой новой я всё равно напишу — с кнопкой «Отклонить», если что-то не так.'),
+      reply_markup: ib([[on ? ['🔓 Выключить модерацию', 'modset:off'] : ['🔒 Включить модерацию', 'modset:on']]]),
+    });
+  }
+
   function greet(out, db, chatId, u) {
     const p = db.participations[u.id];
     out.push({
       chat_id: chatId,
       text: `Привет, <b>${esc(u.name)}</b>! ☕\nЯ бот Тайного Санты Кофеманьяков. Напомню, когда начнётся жеребьёвка, подскажу, кому дарить, и не дам пропустить сроки отправки.\n\n${statusLine(db, u)}`,
-      reply_markup: MAIN_KB,
+      reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB,
     });
     if (!p) out.push({ chat_id: chatId, text: 'Заполним анкету прямо здесь?', reply_markup: ib([[['🎁 Заполнить анкету', 'form']]]) });
   }
@@ -298,6 +311,9 @@ function createBot({ core, secret, siteUrl, username }) {
           try { call(db, ctx, 'POST', '/api/received', {}, { userId: u0.id }); out.push({ chat_id: chatId, text: '🥳 Ура! Отметил, что подарок получен. С наступающим!' }); }
           catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
         }
+      } else if (d.startsWith('modset:') && isAdmin(db, chatId)) {
+        call(db, ctx, 'POST', '/api/admin/moderation', { enabled: d === 'modset:on' }, { isAdmin: true });
+        modPanel(db, out, chatId);
       } else if (d.startsWith('mod:') && isAdmin(db, chatId)) {
         const [, status, uid] = d.split(':');
         try {
@@ -335,7 +351,7 @@ function createBot({ core, secret, siteUrl, username }) {
       const pw = text.split(/\s+/).slice(1).join(' ');
       if (ctx.checkAdmin(pw)) {
         if (!db.tgAdmins.includes(chatId)) db.tgAdmins.push(chatId);
-        out.push({ chat_id: chatId, text: '🔐 Готово, вы админ. Буду присылать сюда новые анкеты на модерацию, всё про удаление аккаунтов и перестройку пар, обращения в «Помощь администратора» и тех, кто не успевает отправить подарок.\nОтветить человеку: /reply @ник текст' });
+        out.push({ chat_id: chatId, reply_markup: ADMIN_KB, text: '🔐 Готово, вы админ. Буду присылать сюда новые анкеты на модерацию, всё про удаление аккаунтов и перестройку пар, обращения в «Помощь администратора» и тех, кто не успевает отправить подарок.\nОтветить человеку: /reply @ник текст' });
       } else out.push({ chat_id: chatId, text: 'Неверный пароль администратора.' });
       return { out, actingUid };
     }
@@ -349,6 +365,7 @@ function createBot({ core, secret, siteUrl, username }) {
       out.push({ chat_id: chatId, text: `✅ Отправил @${esc(key)}.` });
       return { out, actingUid };
     }
+    if ((text === '🛡 Модерация' || text === '/moderation') && isAdmin(db, chatId)) { modPanel(db, out, chatId); return { out, actingUid }; }
     if (text === '/help' || text === BTN.help) { startHelp(db, out, chatId, from); return { out, actingUid }; }
     if (st && st.flow === 'help') {
       if (text === BTN.done || text === '/cancel') {
@@ -425,6 +442,16 @@ function createBot({ core, secret, siteUrl, username }) {
           text: '🔔 ' + esc(n.text),
           reply_markup: n.action === 'whom' ? WHOM_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : undefined,
         });
+      }
+      if (n.action === 'new-anketa') {
+        const p = db.participations[u.id] || {};
+        for (const a of db.tgAdmins || []) {
+          out.push({
+            chat_id: a,
+            text: `📝 <b>Новая анкета</b> (модерация выключена — уже в игре)\n${esc(u.name)} · @${esc(u.tg)} · ${esc(u.phone)}\nФИО: ${esc(p.fullName)}\nПВЗ: ${esc(p.address)}${p.city ? '' : '\n⚠️ город не распознан'}`,
+            reply_markup: ib([[['🚫 Отклонить', `mod:rejected:${u.id}`]]]),
+          });
+        }
       }
       if (n.action === 'moderation') {
         const p = db.participations[u.id] || {};

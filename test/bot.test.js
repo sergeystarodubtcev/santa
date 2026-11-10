@@ -57,16 +57,17 @@ test('регистрация и анкета прямо в боте', () => {
   press(db, 100, 'prefs:noncoffee');
   msg(db, 100, 'аллергия на инфьюзы');
   r = press(db, 100, 'agree');
-  assert.match(texts(r), /Анкета сохранена[\s\S]*на модерации/);
+  assert.match(texts(r), /Анкета сохранена[\s\S]*одобрена/); // модерация по умолчанию выключена
   const p = db.participations[u.id];
   assert.equal(p.address, 'ПВЗ Ozon, Москва, Тверская 7');
   assert.equal(p.prefs, 'noncoffee');
   assert.equal(p.notes, 'аллергия на инфьюзы');
-  assert.equal(p.moderation, 'pending');
+  assert.equal(p.moderation, 'approved');
 });
 
 test('привязка: по нику автоматически и по ссылке из личного кабинета; админ и модерация кнопками', () => {
   const db = core.emptyDb();
+  db.settings.moderation = true;
   const a = site(db, 'POST', '/api/register', { name: 'Аня', phone: '+79000000001', tg: 'anya_v60', password: 'qwerty1', pdConsent: true });
   const b = site(db, 'POST', '/api/register', { name: 'Боря', phone: '+79000000002', tg: 'borya_site', password: 'qwerty1', pdConsent: true });
   // по нику
@@ -170,4 +171,33 @@ test('напоминания: старт отправки, за 7/5/3/2 дня, 
   assert.equal(out.length, 2);
   assert.ok(out.every((o) => o.chat_id === 999 && /Срок отправки прошёл/.test(o.text)));
   clock = Date.parse('2026-11-20T12:00:00+03:00');
+});
+
+test('переключатель модерации: по умолчанию выключена, кнопка в боте у админа, при выключении ожидающие одобряются', () => {
+  const db = core.emptyDb();
+  msg(db, 999, '/admin adminpw');
+  // выключена: анкета сразу в игре, админу — сообщение с кнопкой «Отклонить»
+  const a = site(db, 'POST', '/api/register', { name: 'Ира', phone: '+79000000071', tg: 'ira_auto', password: 'qwerty1', pdConsent: true });
+  let n0 = db.notifications.length;
+  site(db, 'POST', '/api/participate', { fullName: 'Ира Авто', address: 'ПВЗ Ozon, Казань', agree: true }, { userId: a.user.id });
+  assert.equal(db.participations[a.user.id].moderation, 'approved');
+  let pushed = bot.pushNotifications(db, db.notifications.slice(n0), null);
+  const info = pushed.find((o) => o.chat_id === 999);
+  assert.match(info.text, /Новая анкета.*модерация выключена/);
+  assert.equal(info.reply_markup.inline_keyboard[0][0].callback_data, `mod:rejected:${a.user.id}`);
+  // кнопка «🛡 Модерация» у админа и включение
+  let r = msg(db, 999, '🛡 Модерация');
+  assert.match(texts(r), /Модерация анкет: ВЫКЛЮЧЕНА/);
+  assert.match(texts(msg(db, 5, '🛡 Модерация')), /не знаю, кто вы|Привет|Зарегистр/i, 'не-админу панель не показываем');
+  r = press(db, 999, 'modset:on');
+  assert.match(texts(r), /ВКЛЮЧЕНА/);
+  assert.equal(db.settings.moderation, true);
+  const b = site(db, 'POST', '/api/register', { name: 'Олег', phone: '+79000000072', tg: 'oleg_mod', password: 'qwerty1', pdConsent: true });
+  site(db, 'POST', '/api/participate', { fullName: 'Олег Мод', address: 'ПВЗ Ozon, Казань', agree: true }, { userId: b.user.id });
+  assert.equal(db.participations[b.user.id].moderation, 'pending');
+  // выключаем — ожидающий одобряется
+  r = press(db, 999, 'modset:off');
+  assert.match(texts(r), /ВЫКЛЮЧЕНА/);
+  assert.equal(db.participations[b.user.id].moderation, 'approved');
+  assert.ok(db.notifications.some((x) => x.userId === '@admins' && /Модерация ВЫКЛЮЧЕНА[\s\S]*Одобрено ожидавших: 1/.test(x.text)));
 });
