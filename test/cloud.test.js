@@ -172,6 +172,10 @@ test('слежение за страницей: при 200 один раз пи�
   assert.equal(r.data.out.length, 0, 'второй раз не шлём');
   assert.equal(r.data.done, true);
   assert.equal((await post('/api/tg/watch', { key: w.key, reset: true })).data.reset, true);
+  // второй адрес (секретный адвент) отслеживается отдельно
+  shopUrl = 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027'; shopHtml = '<title>Секретный адвент-календарь 2027 — Tasty Coffee</title>';
+  r = await post('/api/tg/watch', { key: 'tastycoffee-advent-secret-2027', dry: true });
+  assert.equal(r.data.found, true, 'секретный адвент находится');
   global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });

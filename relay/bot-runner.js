@@ -62,7 +62,10 @@ async function deliver(out) {
 
 // Слежение за страницами: проверку делает облако (из России — российские магазины закрыты для зарубежных
 // серверов). Раз в минуту спрашиваем; когда страница появится, облако один раз пришлёт сообщение админам.
-const WATCH = [{ key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' }];
+const WATCH = [
+  { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' },
+  { key: 'tastycoffee-advent-secret-2027', title: 'Секретный адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027' },
+];
 const watchDone = new Set();
 async function checkWatch() {
   for (const w of WATCH) {

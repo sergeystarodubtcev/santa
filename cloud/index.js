@@ -33,6 +33,11 @@ const WATCH = [
     url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027', slug: 'advent-music-calendar-2027',
     mustContain: [/адвент/i, /advent/i],
   },
+  {
+    key: 'tastycoffee-advent-secret-2027', title: 'Секретный адвент-календарь Tasty Coffee 2027',
+    url: 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027', slug: 'advent-secret-calendar-2027',
+    mustContain: [/адвент/i, /advent/i],
+  },
 ];
 const WATCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const S3 = 'https://storage.yandexcloud.net';
