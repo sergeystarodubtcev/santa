@@ -26,6 +26,11 @@ const TG_HOOK_SECRET = TG_TOKEN ? crypto.createHash('sha256').update(TG_TOKEN).d
 // Он забирает апдейты у Telegram, передаёт их сюда (/api/tg/relay) и отправляет ответы; исходящие уведомления
 // копятся в очереди db.tgOutbox и забираются через /api/tg/outbox. Секрет общий: sha256(токен бота).
 const TG_RELAY_SECRET = process.env.TG_RELAY_SECRET || '';
+// Страницы, за которыми следит бот: когда начнут отвечать 200 — один раз пишем админам.
+const WATCH = [
+  { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' },
+];
+const WATCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const S3 = 'https://storage.yandexcloud.net';
 const DB_KEY = 'data/db.json';
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 60;
@@ -289,7 +294,18 @@ module.exports.handler = async function handler(event, context) {
       const key = String(body.key || '').slice(0, 80);
       if (!key) throw new core.SantaError(400, 'key');
       if (db.tgWatch[key]) return reply(200, { out: [], done: true, admins: admins.length });
-      if (Number(body.status) !== 200) return reply(200, { out: [], done: false, admins: admins.length });
+      // Страницу проверяем отсюда (из России): зарубежные серверы GitHub до российских магазинов не достают.
+      // Проверяем только адреса из списка WATCH — чтобы эндпоинт нельзя было использовать как прокси.
+      const w = WATCH.find((x) => x.key === key);
+      if (!w) throw new core.SantaError(404, 'unknown watch');
+      Object.assign(body, w);
+      let status = 0;
+      try {
+        const r = await fetch(w.url, { headers: { 'User-Agent': WATCH_UA, Accept: 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+        status = r.status;
+        await r.arrayBuffer().catch(() => {});
+      } catch (e) { return reply(200, { out: [], done: false, status: 0, error: String(e.cause && e.cause.code || e.message), admins: admins.length }); }
+      if (status !== 200) return reply(200, { out: [], done: false, status, admins: admins.length });
       db.tgWatch[key] = { at: Date.now(), url: body.url };
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
       const out = admins.map((chat_id) => ({ chat_id, text: `🎄 <b>${esc(body.title)} появился!</b>\n${esc(body.url)}` }));

@@ -52,34 +52,17 @@ async function site(path, body) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Слежение за страницами: когда страница начинает отвечать 200 — облако один раз пишет админам бота.
-const WATCH = [
-  { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' },
-];
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+// Слежение за страницами: проверку делает облако (из России — российские магазины закрыты для зарубежных
+// серверов). Раз в минуту спрашиваем; когда страница появится, облако один раз пришлёт сообщение админам.
+const WATCH = [{ key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' }];
 const watchDone = new Set();
 async function checkWatch() {
   for (const w of WATCH) {
     if (watchDone.has(w.key)) continue;
-    let status = 0;
-    try {
-      const r = await fetch(w.url, { headers: { 'User-Agent': UA, Accept: 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
-      status = r.status;
-      await r.arrayBuffer().catch(() => {});
-    } catch (e) { log('watch', w.key, 'network', e.message); continue; }
-    if (status !== 200) continue;
-    log('watch', w.key, 'страница ответила 200 — сообщаю админам');
-    const res = await site('/api/tg/watch', Object.assign({ status }, w));
-    if (res.done) watchDone.add(w.key);
+    const res = await site('/api/tg/watch', { key: w.key });
+    if (res.done) { watchDone.add(w.key); log('watch', w.key, 'готово'); }
+    if (res.error) log('watch', w.key, 'ошибка проверки:', res.error);
     await deliver(res.out);
-  }
-}
-
-async function deliver(out) {
-  for (const item of out || []) {
-    const { method = 'sendMessage', ...payload } = item;
-    if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
-    await tg(method, payload);
   }
 }
 
@@ -97,8 +80,6 @@ async function deliver(out) {
     log('пробное сообщение админам:', t.admins, 'чат(ов)');
     await deliver(t.out);
   }
-  // если уже разослано раньше — не проверяем
-  for (const w of WATCH) { const r = await site('/api/tg/watch', { key: w.key, status: 0 }); if (r.done) watchDone.add(w.key); }
 
   const stopAt = Date.now() + RUN_MS;
   let lastWatch = 0;
@@ -106,7 +87,7 @@ async function deliver(out) {
   let lastOutbox = 0;
   let handled = 0;
   while (Date.now() < stopAt) {
-    if (Date.now() - lastWatch > 30000) { lastWatch = Date.now(); await checkWatch(); }
+    if (Date.now() - lastWatch > 60000) { lastWatch = Date.now(); await checkWatch(); }
     if (Date.now() - lastOutbox > 20000) {
       lastOutbox = Date.now();
       const q = await site('/api/tg/outbox');

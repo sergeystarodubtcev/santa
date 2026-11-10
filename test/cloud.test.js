@@ -136,20 +136,28 @@ test('слежение за страницей: при 200 один раз пи�
   };
   // делаем админа через бота
   await post('/api/tg/relay', { update: { update_id: 2, message: { chat: { id: 4242, type: 'private' }, from: { id: 4242 }, text: '/admin adminpw' } } });
-  const w = { key: 'advent', title: 'Адвент', url: 'https://shop.example/advent' };
+  const w = { key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' };
+  let shopStatus = 404;
+  const s3fetch = global.fetch;
+  global.fetch = async (url, opts) => (String(url).startsWith('https://shop.tastycoffee.ru/')
+    ? { status: shopStatus, arrayBuffer: async () => new ArrayBuffer(0) } : s3fetch(url, opts));
+  assert.equal((await post('/api/tg/watch', { key: 'evil', url: 'http://169.254.169.254/' })).status, 404, 'чужие адреса не проверяем');
   assert.equal((await post('/api/tg/watch', Object.assign({ status: 200 }, w), { 'X-Relay-Secret': 'nope' })).status, 403);
   const t = await post('/api/tg/watch', Object.assign({ test: true }, w));
   assert.equal(t.data.admins, 1);
   assert.deepEqual(t.data.out.map((o) => o.chat_id), [4242]);
   assert.match(t.data.out[0].text, /Пробное сообщение/);
-  let r = await post('/api/tg/watch', Object.assign({ status: 404 }, w));
+  let r = await post('/api/tg/watch', { key: w.key });
   assert.equal(r.data.out.length, 0);
   assert.equal(r.data.done, false);
-  r = await post('/api/tg/watch', Object.assign({ status: 200 }, w));
+  assert.equal(r.data.status, 404);
+  shopStatus = 200;
+  r = await post('/api/tg/watch', { key: w.key });
   assert.deepEqual(r.data.out.map((o) => o.chat_id), [4242], 'только админам, не участникам');
-  assert.match(r.data.out[0].text, /Адвент появился/);
-  r = await post('/api/tg/watch', Object.assign({ status: 200 }, w));
+  assert.match(r.data.out[0].text, /Адвент-календарь Tasty Coffee 2027 появился/);
+  r = await post('/api/tg/watch', { key: w.key });
   assert.equal(r.data.out.length, 0, 'второй раз не шлём');
   assert.equal(r.data.done, true);
+  global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });
