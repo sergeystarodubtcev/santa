@@ -69,7 +69,21 @@
       : `Жеребьёвка ещё не проводилась. В раздачу попадут только одобренные: <b>${s.approved}</b>.` + (s.pending ? ` <span class="important">Ждут модерации: ${s.pending}</span> — проверьте их в таблице участников.` : '');
     $('[data-approve-all]').hidden = !s.pending;
     $('[data-approve-all]').textContent = `✅ Одобрить всех ожидающих (${s.pending})`;
-    $('[data-shuffle]').textContent = state.drawnAt ? '🎲 Перемешать заново' : '🎲 Раскидать людей';
+    $('[data-shuffle]').textContent = state.drawnAt ? '🎲 Перемешать первый круг заново' : '🎲 Раскидать людей';
+    $('[data-round2]').hidden = !state.drawnAt;
+    if (state.drawnAt) {
+      $('[data-round2-info]').innerHTML = state.drawn2At
+        ? `✅ Жеребьёвка второго круга проведена ${FX.fmtDateTime(state.drawn2At)}: <b>${state.pairs.filter((p) => p.round === 2).length}</b> пар.`
+        : `Записались во второй круг (одобрены): <b>${s.round2 || 0}</b>. ${state.settings.round2Open ? 'Запись открыта — на сайте пишем «Первая жеребьёвка прошла, запишитесь во второй круг».' : 'Запись закрыта.'}`;
+      $('[data-shuffle2]').textContent = state.drawn2At ? '🎲 Перемешать второй круг заново' : '🎲 Раскидать второй круг';
+      const r2 = $('[data-round2-form]');
+      if (!r2.contains(document.activeElement)) {
+        r2.round2Open.checked = !!state.settings.round2Open;
+        r2.round2SendStart.value = toLocalInput(state.settings.round2SendStart);
+        r2.round2SendEnd.value = toLocalInput(state.settings.round2SendEnd);
+      }
+    }
+    renderBroadcast();
 
     const st = state.settings;
     const f = $('[data-settings]');
@@ -135,7 +149,7 @@
     $('[data-pair-add-rec]').innerHTML = opt('', null);
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     $('[data-pairs]').innerHTML = state.pairs.map((p) => `<tr>
-      <td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}">${opt(p.recipientId, p.santaId)}</select></td>
+      <td>${p.round === 2 ? '2️⃣' : '1️⃣'}</td><td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}">${opt(p.recipientId, p.santaId)}</select></td>
       <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}</td>
       <td>${esc(p.track) || '—'}</td>
       <td><select data-pair="${p.santaId}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select></td>
@@ -267,14 +281,104 @@
       FX.toast(r.sent ? `Отправлено напоминаний: ${r.sent}` : 'Сегодня напоминать некому — всё по плану', 'success');
     } catch (e) { FX.toast(e.message, 'error'); }
   });
-  $('[data-broadcast]').addEventListener('submit', async (e) => {
+  // ---------- второй круг ----------
+  $('[data-round2-form]').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
+    act('/api/admin/settings', {
+      round2Open: f.round2Open.checked,
+      round2SendStart: f.round2SendStart.value + ':00+03:00',
+      round2SendEnd: f.round2SendEnd.value + ':59+03:00',
+    }, 'Настройки второго круга сохранены');
+  });
+  $('[data-shuffle2]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const again = !!state.drawn2At;
+    if (!confirm(again ? 'Перемешать второй круг заново? Пары второго круга будут заменены.' : `Раскидать второй круг (${state.stats.round2 || 0} чел.)? Все увидят своих получателей.`)) return;
+    let force = false;
+    if (again && state.pairs.some((p) => p.round === 2 && p.status !== 'assigned')) {
+      if (!confirm('Во втором круге кто-то уже отправил подарок! Всё равно перемешать?')) return;
+      force = true;
+    }
+    const ok = await act('/api/admin/shuffle', { round: 2, force }, 'Пары второго круга сформированы! 🎅');
+    if (ok) FX.burstFrom(btn, { count: 60, power: 15 });
+  });
+  $('[data-reset2]').addEventListener('click', () => {
+    if (confirm('Сбросить пары второго круга?')) act('/api/admin/reset', { round: 2 }, 'Пары второго круга сброшены');
+  });
+
+  // ---------- центр уведомлений ----------
+  const BC_FILTERS = [
+    ['form', '📝 С анкетой', (u) => !!u.participation],
+    ['noform', '🚫 Без анкеты', (u) => !u.participation],
+    ['pending', '⏳ На модерации', (u) => u.participation && u.participation.moderation === 'pending'],
+    ['approved', '✅ Одобрены', (u) => u.participation && u.participation.moderation === 'approved'],
+    ['r1', '1️⃣ Первый круг', (u) => u.participation && u.participation.round !== 2],
+    ['r2', '2️⃣ Второй круг', (u) => u.participation && u.participation.round === 2],
+    ['notsent', '📦 Ещё не отправили подарок', (u) => state.pairs.some((p) => p.santaId === u.id && p.status === 'assigned')],
+    ['sent', '🚚 Уже отправили', (u) => state.pairs.some((p) => p.santaId === u.id && p.status !== 'assigned')],
+    ['waiting', '🎁 Ждут свой подарок', (u) => state.pairs.some((p) => p.recipientId === u.id && p.status !== 'received')],
+    ['got', '🥳 Получили подарок', (u) => state.pairs.some((p) => p.recipientId === u.id && p.status === 'received')],
+    ['tg', '✈️ Подключили бота', (u) => u.tgLinked],
+    ['notg', '🔕 Без бота', (u) => !u.tgLinked],
+    ['banned', '🛑 В чёрном списке', (u) => u.banned],
+  ];
+  const bcActive = new Set();
+  const bcPicked = new Set();
+  let bcTouched = false; // пока галочки не трогали руками — список следует за фильтрами
+  $('[data-bc-filters]').innerHTML = BC_FILTERS.map(([k, label]) => `<label class="chip"><input type="checkbox" data-bc-f="${k}"><span>${label}</span></label>`).join('');
+  const bcMatch = () => state.users.filter((u) => BC_FILTERS.every(([k, , fn]) => !bcActive.has(k) || fn(u)));
+  function bcSyncFromFilters() { bcPicked.clear(); bcMatch().forEach((u) => bcPicked.add(u.id)); bcTouched = false; }
+  function renderBroadcast() {
+    if (!bcTouched) bcSyncFromFilters();
+    [...bcPicked].forEach((id) => { if (!state.users.some((u) => u.id === id)) bcPicked.delete(id); });
+    const q = $('[data-bc-search]').value.trim().toLowerCase();
+    const match = new Set(bcMatch().map((u) => u.id));
+    const list = state.users
+      .filter((u) => !q || (u.name + ' ' + u.tg).toLowerCase().includes(q))
+      .sort((a, b) => (match.has(b.id) - match.has(a.id)) || a.name.localeCompare(b.name));
+    $('[data-bc-people]').innerHTML = list.map((u) => `<label class="bc-person ${match.has(u.id) ? '' : 'dim'}">
+      <input type="checkbox" data-bc-u="${u.id}" ${bcPicked.has(u.id) ? 'checked' : ''}>
+      <span>${esc(u.name)} <small>@${esc(u.tg)}${u.tgLinked ? ' ✈️' : ''}</small></span></label>`).join('') || '<p class="muted">Никого нет</p>';
+    const n = bcPicked.size;
+    $('[data-bc-count]').textContent = `Выбрано: ${n} ${SantaCore.plural(n, 'человек', 'человека', 'человек')}`;
+    $('[data-bc-send]').textContent = n ? `📣 Отправить ${n} ${SantaCore.plural(n, 'человеку', 'людям', 'людям')}` : 'Никто не выбран';
+    $('[data-bc-send]').disabled = !n;
+    $('[data-bc-history]').innerHTML = (state.broadcasts || []).map((b) => `<tr>
+      <td style="white-space:nowrap">${FX.fmtDateTime(b.at)}</td>
+      <td style="white-space:pre-line">${esc(b.text)}</td>
+      <td>${b.count}<small>${esc((b.to || []).slice(0, 6).join(' '))}${(b.to || []).length > 6 ? ' …' : ''}</small></td>
+      <td>${b.site ? '🌐' : ''} ${b.tg ? '✈️' : ''}</td>
+      <td><button class="btn btn-danger btn-sm" data-bc-del="${b.id}" title="Удалить из кабинетов">🗑</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">Рассылок пока не было.</td></tr>';
+  }
+  document.addEventListener('change', (e) => {
+    const f = e.target.closest('[data-bc-f]');
+    if (f) { if (f.checked) bcActive.add(f.dataset.bcF); else bcActive.delete(f.dataset.bcF); bcSyncFromFilters(); renderBroadcast(); return; }
+    const p = e.target.closest('[data-bc-u]');
+    if (p) { bcTouched = true; if (p.checked) bcPicked.add(p.dataset.bcU); else bcPicked.delete(p.dataset.bcU); renderBroadcast(); }
+  });
+  $('[data-bc-search]').addEventListener('input', renderBroadcast);
+  $('[data-bc-all]').addEventListener('click', () => { bcMatch().forEach((u) => bcPicked.add(u.id)); bcTouched = true; renderBroadcast(); });
+  $('[data-bc-none]').addEventListener('click', () => { bcPicked.clear(); bcTouched = true; renderBroadcast(); });
+  $('[data-bc-form]').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const text = f.text.value.trim();
+    if (!text) return FX.toast('Напишите текст уведомления', 'error');
+    if (!f.site.checked && !f.tg.checked) return FX.toast('Выберите, куда отправить', 'error');
+    const n = bcPicked.size;
+    if (!confirm(`Отправить уведомление ${n} ${SantaCore.plural(n, 'человеку', 'людям', 'людям')}${f.site.checked ? ' на сайт' : ''}${f.site.checked && f.tg.checked ? ' и' : ''}${f.tg.checked ? ' в Telegram' : ''}?`)) return;
     try {
-      const r = await Api.post('/api/admin/broadcast', { text: f.text.value, onlyParticipants: f.onlyParticipants.checked }, A);
+      const r = await Api.post('/api/admin/broadcast', { text, userIds: [...bcPicked], site: f.site.checked, tg: f.tg.checked }, A);
       FX.toast(`Отправлено: ${r.sent}`, 'success');
       f.text.value = '';
+      await load();
     } catch (ex) { FX.toast(ex.message, 'error'); }
+  });
+  document.addEventListener('click', (e) => {
+    const d = e.target.closest('[data-bc-del]');
+    if (d && confirm('Удалить рассылку из личных кабинетов? (В Telegram уже доставленное не отзывается.)')) act('/api/admin/broadcast-delete', { id: d.dataset.bcDel }, 'Рассылка удалена');
   });
 
   function download(name, text, type) {

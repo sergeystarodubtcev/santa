@@ -22,6 +22,10 @@
     chatUrl: 'https://t.me/coffeemaniacs_channel/10490',
     // модерация анкет: выключена — все анкеты сразу в игре; включена — ждут решения организаторов
     moderation: false,
+    // второй круг: запись после первой жеребьёвки и свои даты отправки
+    round2Open: true,
+    round2SendStart: '2026-12-11T00:00:00+03:00',
+    round2SendEnd: '2026-12-20T23:59:59+03:00',
   };
 
   // Распознавание города в адресе (cities.js): в Node — require, в браузере — глобальный SantaCities
@@ -48,7 +52,9 @@
       participations: {},
       pairs: [],
       drawnAt: null,
+      drawn2At: null,
       notifications: [],
+      broadcasts: [],
       settings: Object.assign({}, DEFAULT_SETTINGS),
       // Telegram-бот: состояние диалогов, чаты админов, отправленные напоминания
       tgState: {},
@@ -108,14 +114,22 @@
   // Статус модерации анкеты: pending — ждёт проверки, approved — допущена к жеребьёвке, rejected — отклонена.
   const modStatus = (p) => (p && p.moderation) || 'pending';
   // Все анкеты в игре (для счётчика): не забаненные и не отклонённые.
+  const roundOf = (p) => (p && p.round === 2 ? 2 : 1);
+  const pairRound = (pair) => (pair && pair.round === 2 ? 2 : 1);
+  const drawnFor = (db, round) => (round === 2 ? db.drawn2At : db.drawnAt);
+  function datesFor(db, round) {
+    const s = db.settings;
+    return round === 2 ? { start: s.round2SendStart, end: s.round2SendEnd } : { start: s.sendStart, end: s.sendEnd };
+  }
   // С учётом переключателя: при выключенной модерации «ожидающие» считаются одобренными
   const modEff = (db, p) => { const m = modStatus(p); return m === 'pending' && !db.settings.moderation ? 'approved' : m; };
   function activeParticipants(db) {
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) !== 'rejected');
   }
   // Допущенные модерацией — только они попадают в жеребьёвку.
-  function approvedParticipants(db) {
-    return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved');
+  function approvedParticipants(db, round) {
+    return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved'
+      && (!round || roundOf(db.participations[u.id]) === round));
   }
 
   // action — подсказка для Telegram-бота, какую кнопку приложить (whom, gift, moderation, …)
@@ -174,7 +188,7 @@
   // Проблемы распределения после ручных правок
   function pairsCheck(db) {
     if (!db.pairs.length) return { noRecipient: [], noSanta: [], doubleSanta: [] };
-    const players = approvedParticipants(db).map((u) => u.id);
+    const players = approvedParticipants(db).filter((u) => drawnFor(db, roundOf(db.participations[u.id]))).map((u) => u.id);
     const giving = new Set(db.pairs.map((p) => p.santaId));
     const recvCount = {};
     db.pairs.forEach((p) => { recvCount[p.recipientId] = (recvCount[p.recipientId] || 0) + 1; });
@@ -225,8 +239,14 @@
     const user = getUser(db, userId);
     if (user.banned) fail(403, 'Вы в чёрном списке. Напишите организаторам.');
     const existing = db.participations[userId];
-    if (!existing && db.drawnAt) fail(409, 'Жеребьёвка уже проведена — регистрация закрыта');
     if (!existing && !db.settings.regOpen) fail(409, 'Регистрация закрыта');
+    // после первой жеребьёвки новые участники записываются во второй круг
+    let round = existing ? roundOf(existing) : 1;
+    if (!existing && db.drawnAt) {
+      if (db.drawn2At) fail(409, 'Обе жеребьёвки уже прошли — запись закрыта');
+      if (!db.settings.round2Open) fail(409, 'Первая жеребьёвка уже прошла, а запись во второй круг пока закрыта');
+      round = 2;
+    }
     const fullName = str(body.fullName, 120);
     if (fullName.length < 3) fail(400, 'Укажите ФИО получателя посылки');
     if (body.phone != null && String(body.phone).trim()) {
@@ -248,6 +268,7 @@
     const auto = !db.settings.moderation;
     const moderation = (existing && modStatus(existing) === 'approved') || auto ? 'approved' : 'pending';
     db.participations[userId] = {
+      round,
       city: detectCity(address),
       moderation,
       moderatedAt: existing && moderation === 'approved' ? existing.moderatedAt : null,
@@ -259,7 +280,8 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
-    if (!existing && auto) notify(db, ctx, userId, 'Анкета принята! 🎅 Вы участвуете в жеребьёвке — мы сообщим, кому дарить.', 'success', 'new-anketa');
+    if (!existing && round === 2) notify(db, ctx, userId, 'Вы записались во второй круг Тайного Санты! 🎅 ' + (auto ? 'Анкета принята — ждём жеребьёвку второго круга.' : 'Анкета на модерации.'), 'success', auto ? 'new-anketa' : 'moderation');
+    else if (!existing && auto) notify(db, ctx, userId, 'Анкета принята! 🎅 Вы участвуете в жеребьёвке — мы сообщим, кому дарить.', 'success', 'new-anketa');
     else if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info', 'moderation');
     else if (modStatus(existing) === 'rejected') notify(db, ctx, userId, 'Анкета исправлена и снова отправлена на модерацию', 'info');
     return db.participations[userId];
@@ -274,9 +296,11 @@
 
   // ---------- draw ----------
   function shuffle(db, ctx, body) {
-    const people = approvedParticipants(db);
-    if (people.length < 2) fail(400, 'Нужно минимум 2 участника, одобренных модерацией');
-    if (db.pairs.some((p) => p.status !== 'assigned') && !(body && body.force)) {
+    const round = body && Number(body.round) === 2 ? 2 : 1;
+    if (round === 2 && !db.drawnAt) fail(400, 'Сначала проведите первую жеребьёвку');
+    const people = approvedParticipants(db, round);
+    if (people.length < 2) fail(400, `Нужно минимум 2 участника${round === 2 ? ' второго круга' : ''}, одобренных модерацией`);
+    if (db.pairs.some((p) => pairRound(p) === round && p.status !== 'assigned') && !(body && body.force)) {
       fail(409, 'Кто-то уже отправил подарок. Перемешать заново можно только принудительно.');
     }
     const ids = people.map((u) => u.id);
@@ -295,7 +319,8 @@
     do { recipients = shuffled(ids); } while (recipients.some((r, i) => r === ids[i]));
     // Порядок пар тоже случайный — по списку нельзя восстановить, кто кому дарит «по цепочке».
     const order = shuffled(ids.map((_, i) => i));
-    db.pairs = order.map((i) => ({
+    const fresh = order.map((i) => ({
+      round,
       santaId: ids[i],
       recipientId: recipients[i],
       status: 'assigned',
@@ -303,16 +328,18 @@
       sentAt: null,
       receivedAt: null,
     }));
-    db.drawnAt = ctx.now();
+    db.pairs = db.pairs.filter((p) => pairRound(p) !== round).concat(fresh);
+    if (round === 2) db.drawn2At = ctx.now(); else db.drawnAt = ctx.now();
     for (const id of ids) {
-      notify(db, ctx, id, 'Жеребьёвка проведена! Загляните в «Кому я дарю» — там имя и адрес получателя 🎁', 'success', 'whom');
+      notify(db, ctx, id, (round === 2 ? 'Жеребьёвка второго круга проведена!' : 'Жеребьёвка проведена!') + ' Загляните в «Кому я дарю» — там имя и адрес получателя 🎁', 'success', 'whom');
     }
-    return { pairs: db.pairs.length };
+    return { pairs: fresh.length };
   }
 
-  function resetDraw(db) {
-    db.pairs = [];
-    db.drawnAt = null;
+  function resetDraw(db, body) {
+    const round = body && Number(body.round) === 2 ? 2 : 1;
+    db.pairs = db.pairs.filter((p) => pairRound(p) !== round);
+    if (round === 2) db.drawn2At = null; else db.drawnAt = null;
   }
 
   function markSent(db, ctx, userId, body) {
@@ -338,8 +365,9 @@
   // ---------- views ----------
   function deadlineNotice(db, now, pair) {
     if (!pair || pair.status !== 'assigned') return null;
-    const start = Date.parse(db.settings.sendStart);
-    const end = Date.parse(db.settings.sendEnd);
+    const dates = datesFor(db, pairRound(pair));
+    const start = Date.parse(dates.start);
+    const end = Date.parse(dates.end);
     if (now < start) {
       const d = Math.ceil((start - now) / DAY);
       return { kind: 'info', text: `Отправка подарков начнётся через ${d} ${plural(d, 'день', 'дня', 'дней')} — успейте собрать посылку!` };
@@ -359,7 +387,14 @@
     const user = getUser(db, userId);
     const now = ctx.now();
     const part = db.participations[userId];
-    const out = { user: publicUser(user), participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null, drawn: !!db.drawnAt };
+    const round = part ? roundOf(part) : (db.drawnAt ? 2 : 1);
+    const out = {
+      user: publicUser(user),
+      participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null,
+      round,
+      drawn: !!drawnFor(db, round),
+      dates: datesFor(db, round),
+    };
     const mine = db.pairs.find((p) => p.santaId === userId);
     if (mine) {
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
@@ -372,14 +407,15 @@
     const incoming = db.pairs.find((p) => p.recipientId === userId);
     if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt };
     out.deadline = deadlineNotice(db, now, mine);
-    out.notifications = db.notifications.filter((n) => n.userId === userId || n.userId === '*').slice(-30).reverse();
+    out.notifications = db.notifications.filter((n) => (n.userId === userId || n.userId === '*') && !n.hideOnSite).slice(-30).reverse();
     out.settings = publicSettings(db);
     return out;
   }
 
   function publicSettings(db) {
     const s = db.settings;
-    return { regOpen: s.regOpen, sendStart: s.sendStart, sendEnd: s.sendEnd, budgetMin: s.budgetMin, budgetMax: s.budgetMax, announcement: s.announcement, chatUrl: s.chatUrl, moderation: !!s.moderation };
+    return { regOpen: s.regOpen, sendStart: s.sendStart, sendEnd: s.sendEnd, budgetMin: s.budgetMin, budgetMax: s.budgetMax, announcement: s.announcement, chatUrl: s.chatUrl, moderation: !!s.moderation,
+      round2Open: !!s.round2Open, round2SendStart: s.round2SendStart, round2SendEnd: s.round2SendEnd };
   }
 
   // Включить/выключить модерацию. При выключении все ожидающие сразу одобряются.
@@ -412,6 +448,7 @@
       count: people.length,
       recent: people.slice(0, 15).map((p) => p.name),
       drawn: !!db.drawnAt,
+      drawn2: !!db.drawn2At,
       sent: db.pairs.filter((p) => p.status !== 'assigned').length,
       settings: publicSettings(db),
     };
@@ -431,10 +468,14 @@
         recipient: byId[p.recipientId] ? '@' + byId[p.recipientId].tg : '—',
       })),
       pairsCheck: pairsCheck(db),
+      drawn2At: db.drawn2At,
+      broadcasts: (db.broadcasts || []).slice().reverse(),
       adminLog: db.notifications.filter((n) => n.userId === ADMINS).slice(-60).reverse(),
       stats: {
         users: db.users.length,
         participants: activeParticipants(db).length,
+        round1: approvedParticipants(db, 1).length,
+        round2: approvedParticipants(db, 2).length,
         approved: approvedParticipants(db).length,
         pending: db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'pending').length,
         banned: db.users.filter((u) => u.banned).length,
@@ -448,6 +489,13 @@
     const s = db.settings;
     if ('moderation' in body && ctx) setModeration(db, ctx, body.moderation);
     if ('regOpen' in body) s.regOpen = !!body.regOpen;
+    if ('round2Open' in body) s.round2Open = !!body.round2Open;
+    for (const k of ['round2SendStart', 'round2SendEnd']) {
+      if (body[k]) {
+        if (isNaN(Date.parse(body[k]))) fail(400, 'Неверная дата: ' + k);
+        s[k] = body[k];
+      }
+    }
     for (const k of ['sendStart', 'sendEnd']) {
       if (body[k]) {
         if (isNaN(Date.parse(body[k]))) fail(400, 'Неверная дата: ' + k);
@@ -526,7 +574,9 @@
           notifyAdmins(db, ctx, [`🗑 ${who(u)} удалил аккаунт ПОСЛЕ жеребьёвки.`].concat(lines).join('\n'));
         } else {
           deleteUser(db, uid);
-          notifyAdmins(db, ctx, `🗑 ${who(u)} удалил аккаунт и данные (жеребьёвки для него не было).`);
+          notifyAdmins(db, ctx, body.reason === 'noform'
+            ? `🗑 ${who(u)} не создал анкету — удалился самостоятельно (ответил боту «не буду участвовать»).`
+            : `🗑 ${who(u)} удалил аккаунт и данные (жеребьёвки для него не было).`);
         }
         return ok(undefined, true);
       }
@@ -543,7 +593,7 @@
         return ok({ token: ctx.issueToken({ admin: true }) });
       case 'GET /api/admin/state': needAdmin(); return ok(adminState(db));
       case 'POST /api/admin/shuffle': needAdmin(); shuffle(db, ctx, body); return ok(adminState(db), true);
-      case 'POST /api/admin/reset': needAdmin(); resetDraw(db); return ok(adminState(db), true);
+      case 'POST /api/admin/reset': needAdmin(); resetDraw(db, body); return ok(adminState(db), true);
       case 'POST /api/admin/settings': needAdmin(); updateSettings(db, body, ctx); return ok(adminState(db), true);
       case 'POST /api/admin/moderation': needAdmin(); setModeration(db, ctx, body.enabled); return ok(adminState(db), true);
       case 'POST /api/admin/ban': {
@@ -681,11 +731,35 @@
       }
       case 'POST /api/admin/broadcast': {
         needAdmin();
-        const text = str(body.text, 500);
+        const text = str(body.text, 1000);
         if (!text) fail(400, 'Пустое сообщение');
-        const targets = body.onlyParticipants ? activeParticipants(db) : db.users;
-        targets.forEach((u) => notify(db, ctx, u.id, text, 'admin'));
-        return ok({ sent: targets.length }, true);
+        const site = body.site !== false;
+        const tg = body.tg !== false;
+        if (!site && !tg) fail(400, 'Выберите, куда отправить: на сайт и/или в Telegram');
+        const targets = Array.isArray(body.userIds)
+          ? db.users.filter((u) => body.userIds.includes(u.id))
+          : (body.onlyParticipants ? activeParticipants(db) : db.users);
+        if (!targets.length) fail(400, 'Никто не выбран');
+        const id = newId(ctx);
+        targets.forEach((u) => {
+          notify(db, ctx, u.id, text, 'admin');
+          const n = db.notifications[db.notifications.length - 1];
+          n.broadcastId = id;
+          if (!site) n.hideOnSite = true;
+          if (!tg) n.noTg = true;
+        });
+        db.broadcasts = (db.broadcasts || []).concat({
+          id, text, at: ctx.now(), site, tg, count: targets.length, to: targets.slice(0, 40).map((u) => '@' + u.tg),
+        }).slice(-100);
+        return ok({ sent: targets.length, id }, true);
+      }
+      case 'POST /api/admin/broadcast-delete': {
+        needAdmin();
+        const b = (db.broadcasts || []).find((x) => x.id === body.id);
+        if (!b) fail(404, 'Рассылка не найдена');
+        db.notifications = db.notifications.filter((n) => n.broadcastId !== b.id);
+        db.broadcasts = db.broadcasts.filter((x) => x.id !== b.id);
+        return ok(adminState(db), true);
       }
       case 'GET /api/admin/export': needAdmin(); return ok(db);
       case 'POST /api/admin/import': {
@@ -701,5 +775,5 @@
     }
   }
 
-  return { handle, modStatus, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, modStatus, roundOf, pairRound, datesFor, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

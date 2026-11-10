@@ -79,8 +79,13 @@
       $('[data-budget]').innerHTML = `Сумма подарка: <b>${b}</b>. Главное — внимание и хороший кофе.`;
     }
     if (s.chatUrl) $$('[data-chat-link]').forEach((a) => (a.href = s.chatUrl));
-    const closed = p.drawn || !s.regOpen;
-    if (closed && !(me && me.participation)) {
+    const round2 = p.drawn && !p.drawn2 && s.round2Open && s.regOpen;
+    const closed = !s.regOpen || (p.drawn && !round2);
+    if (round2 && !(me && me.participation)) {
+      $('[data-join-label]').innerHTML = 'Записаться<br>во 2-й круг';
+      $('.join-sub').innerHTML = `Первая жеребьёвка уже прошла — но ещё не поздно! Записывайтесь во <b>второй круг</b>: отправка подарков с ${FX.fmtDate(s.round2SendStart)} по ${FX.fmtDate(s.round2SendEnd)}.`;
+      $('[data-join-note]').textContent = 'Участники второго круга дарят подарки друг другу — отдельная жеребьёвка.';
+    } else if (closed && !(me && me.participation)) {
       $('[data-join-label]').innerHTML = p.drawn ? 'Жеребьёвка<br>проведена' : 'Регистрация<br>закрыта';
       $('[data-join-note]').textContent = p.drawn ? 'Пары сформированы! Участники — загляните в личный кабинет.' : 'Регистрация временно закрыта. Следите за чатом.';
     }

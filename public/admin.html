@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261110e">
+  <link rel="stylesheet" href="css/style.css?v=20261111a">
 </head>
 <body>
   <header class="topbar">
@@ -50,7 +50,23 @@
               <button class="btn btn-primary shuffle-btn" data-shuffle>🎲 Раскидать людей</button>
               <button class="btn btn-danger btn-sm" data-reset>Сбросить пары</button>
             </div>
-            <p class="muted" style="font-size:13px;margin-top:12px">Сначала проверьте анкеты (модерация), затем раскидайте. Раздача полностью случайная: каждому достаётся случайный получатель, никто не дарит сам себе. Забаненные в жеребьёвку не попадают. После жеребьёвки новая регистрация закрывается автоматически.</p>
+            <p class="muted" style="font-size:13px;margin-top:12px">Раздача полностью случайная: каждому достаётся случайный получатель, никто не дарит сам себе. Забаненные в жеребьёвку не попадают. После первой жеребьёвки регистрация не закрывается — новые участники записываются во второй круг.</p>
+            <div class="round2" data-round2 hidden>
+              <h3>🎄 Второй круг</h3>
+              <p class="muted" data-round2-info></p>
+              <form class="form" data-round2-form>
+                <label class="check"><input type="checkbox" name="round2Open"><span>Запись во второй круг открыта</span></label>
+                <div class="row2">
+                  <label>Начало отправки (МСК)<input type="datetime-local" name="round2SendStart"></label>
+                  <label>Конец отправки (МСК)<input type="datetime-local" name="round2SendEnd"></label>
+                </div>
+                <button class="btn btn-gold btn-sm" type="submit">Сохранить настройки второго круга</button>
+              </form>
+              <div class="actions">
+                <button class="btn btn-primary" data-shuffle2>🎲 Раскидать второй круг</button>
+                <button class="btn btn-danger btn-sm" data-reset2>Сбросить пары второго круга</button>
+              </div>
+            </div>
           </div>
 
           <form class="card form" data-settings>
@@ -70,14 +86,11 @@
             <button class="btn btn-gold" type="submit">Сохранить настройки</button>
           </form>
 
-          <form class="card form" data-broadcast>
-            <h3>📣 Уведомление участникам</h3>
-            <textarea name="text" rows="3" placeholder="Например: У вас 3 дня, чтобы успеть отправить подарок!"></textarea>
-            <label class="check"><input type="checkbox" name="onlyParticipants" checked><span>Только тем, кто заполнил анкету</span></label>
-            <button class="btn btn-primary" type="submit">Отправить в личные кабинеты</button>
-            <p class="muted" style="font-size:13px;margin:6px 0 0">Подписчикам бота сообщение придёт и в Telegram. Чтобы бот присылал вам новые анкеты и тех, кто не успевает отправить подарок, напишите ему <code>/admin пароль-админки</code>.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-run-reminders>⏰ Прислать напоминания в Telegram сейчас</button>
-          </form>
+          <div class="card">
+            <h3>🤖 Telegram-бот</h3>
+            <p class="muted" style="font-size:14px">Чтобы бот присылал вам новые анкеты, удаления, обращения в «Помощь» и тех, кто не успевает отправить подарок, напишите ему <code>/admin пароль-админки</code>. Рассылки — в блоке «📣 Уведомления» ниже.</p>
+            <div class="actions"><button class="btn btn-ghost btn-sm" type="button" data-run-reminders>⏰ Прислать напоминания в Telegram сейчас</button></div>
+          </div>
 
           <div class="card">
             <h3>💾 Данные</h3>
@@ -88,6 +101,38 @@
               <label class="btn btn-ghost btn-sm">⬆️ Восстановить<input type="file" accept="application/json" data-import hidden></label>
             </div>
           </div>
+        </div>
+
+        <div class="card bc" style="margin-top:18px">
+          <h3>📣 Уведомления</h3>
+          <form class="form" data-bc-form>
+            <textarea name="text" rows="3" placeholder="Текст уведомления. Например: «У вас 3 дня, чтобы успеть отправить подарок!»"></textarea>
+            <div class="bc-row">
+              <span class="field-label">Куда:</span>
+              <label class="chip"><input type="checkbox" name="site" checked><span>🌐 На сайт (личный кабинет)</span></label>
+              <label class="chip"><input type="checkbox" name="tg" checked><span>✈️ В Telegram (кто подключил бота)</span></label>
+            </div>
+            <div class="bc-row">
+              <span class="field-label">Кому (все отмеченные условия сразу):</span>
+              <div class="chips" data-bc-filters></div>
+            </div>
+            <div class="toolbar">
+              <b data-bc-count></b>
+              <div class="actions" style="margin:0">
+                <input type="search" placeholder="Найти человека" data-bc-search style="max-width:220px">
+                <button class="btn btn-ghost btn-sm" type="button" data-bc-all>Отметить всех по фильтру</button>
+                <button class="btn btn-ghost btn-sm" type="button" data-bc-none>Снять всех</button>
+              </div>
+            </div>
+            <div class="bc-people" data-bc-people></div>
+            <button class="btn btn-primary" type="submit" data-bc-send>Отправить</button>
+          </form>
+          <h3 style="margin-top:22px">🗂 Отправленные</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Когда</th><th>Текст</th><th>Кому</th><th>Куда</th><th></th></tr></thead>
+            <tbody data-bc-history></tbody>
+          </table></div>
+          <p class="muted" style="font-size:12px">«Удалить» убирает уведомление из личных кабинетов. Уже доставленное сообщение в Telegram отозвать нельзя.</p>
         </div>
 
         <div class="card" style="margin-top:18px">
@@ -107,7 +152,7 @@
           <p class="muted" style="font-size:13px;margin-top:-4px">Получателя можно поменять вручную — выберите в списке. Санта сразу получит уведомление с новым адресом. Форс-мажоры, удаления и обращения в «Помощь администратора» приходят вам в Telegram-бот.</p>
           <div data-pairs-warn></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr></thead>
+            <thead><tr><th>Круг</th><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr></thead>
             <tbody data-pairs></tbody>
           </table></div>
           <div class="actions" data-pair-add-wrap hidden>
@@ -169,11 +214,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261110e"></script>
-  <script src="js/cities.js?v=20261110e"></script>
-  <script src="js/core.js?v=20261110e"></script>
-  <script src="js/api.js?v=20261110e"></script>
-  <script src="js/fx.js?v=20261110e"></script>
-  <script src="js/admin.js?v=20261110e"></script>
+  <script src="js/config.js?v=20261111a"></script>
+  <script src="js/cities.js?v=20261111a"></script>
+  <script src="js/core.js?v=20261111a"></script>
+  <script src="js/api.js?v=20261111a"></script>
+  <script src="js/fx.js?v=20261111a"></script>
+  <script src="js/admin.js?v=20261111a"></script>
 </body>
 </html>

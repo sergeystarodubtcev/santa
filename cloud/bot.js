@@ -232,7 +232,7 @@ function createBot({ core, secret, siteUrl, username }) {
         `👤 ФИО: <code>${esc(r.fullName)}</code>\n📦 ПВЗ Ozon: <code>${esc(r.address)}</code>\n📱 Телефон: <code>${esc(r.phone)}</code>\n💬 Telegram: @${esc(r.tg)}\n` +
         `🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}\n🎁 Хочет: ${esc(r.wishes) || 'не написал(а) — сюрприз!'}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
-        `\n\n📅 Отправка: до ${new Date(Date.parse(me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
+        `\n\n📅 Отправка: до ${new Date(Date.parse((me.dates && me.dates.end) || me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
       reply_markup: a.status === 'assigned' ? ib([[['📦 Я отправил подарок', 'sent']]]) : undefined,
     });
   }
@@ -305,6 +305,22 @@ function createBot({ core, secret, siteUrl, username }) {
       } else if (d === 'skip' && st && st.flow === 'sent') {
         delete db.tgState[chatId];
         markSent(db, ctx, out, chatId, '');
+      } else if (d === 'noform_del') {
+        if (!u0) notLinked(out, chatId);
+        else if (db.participations[u0.id]) out.push({ chat_id: chatId, text: 'У вас уже есть анкета — вы в игре 🎅 Удалить аккаунт можно в личном кабинете на сайте.' });
+        else out.push({
+          chat_id: chatId,
+          text: '⚠️ <b>Точно удалить аккаунт?</b>\nИмя, телефон и ник будут стёрты навсегда. Вернуться можно в любой момент — просто зарегистрируйтесь заново.',
+          reply_markup: ib([[['🗑 Да, удалить и стереть данные', 'noform_del_yes']], [['🎁 Нет, заполню анкету', 'form']]]),
+        });
+      } else if (d === 'noform_del_yes') {
+        if (!u0) notLinked(out, chatId);
+        else if (db.participations[u0.id]) out.push({ chat_id: chatId, text: 'У вас уже есть анкета — удалить аккаунт можно в личном кабинете на сайте.' });
+        else {
+          call(db, ctx, 'POST', '/api/account/delete', { reason: 'noform' }, { userId: u0.id });
+          delete db.tgState[chatId];
+          out.push({ chat_id: chatId, text: '🗑 Готово: аккаунт удалён, данные стёрты. Спасибо, что заглянули к Кофеманьякам ☕ Если передумаете — нажмите /start.', reply_markup: { remove_keyboard: true } });
+        }
       } else if (d === 'received') {
         if (!u0) notLinked(out, chatId);
         else {
@@ -430,6 +446,7 @@ function createBot({ core, secret, siteUrl, username }) {
   function pushNotifications(db, list, exceptUid) {
     const out = [];
     for (const n of list) {
+      if (n.noTg) continue;
       if (n.userId === '@admins') {
         (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text: '📋 ' + esc(n.text) }));
         continue;
@@ -472,14 +489,25 @@ function createBot({ core, secret, siteUrl, username }) {
     const out = [];
     db.tgReminders = db.tgReminders || {};
     const now = ctx.now();
-    const s = db.settings;
-    const toStart = mskDay(Date.parse(s.sendStart)) - mskDay(now);
-    const toEnd = mskDay(Date.parse(s.sendEnd)) - mskDay(now);
     const once = (key) => { if (db.tgReminders[key]) return false; db.tgReminders[key] = now; return true; };
     const toAdmins = (text) => (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text }));
 
+    // Аккаунт есть, анкеты нет (прошли сутки) — спросить, будет ли участвовать
+    for (const u of db.users) {
+      if (!u.tgChatId || db.participations[u.id] || now - (u.createdAt || 0) < DAY) continue;
+      if (!once(`${u.id}:noform`)) continue;
+      out.push({
+        chat_id: u.tgChatId,
+        text: `Привет, ${esc(u.name)}! 🎅 Вы создали аккаунт в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть.\n\n<b>Будете участвовать?</b>`,
+        reply_markup: ib([[['🎁 Да, заполнить анкету', 'form']], [['🙅 Не буду — удалить аккаунт', 'noform_del']]]),
+      });
+    }
+
     for (const pair of db.pairs) {
       if (pair.status !== 'assigned') continue;
+      const dates = core.datesFor(db, core.pairRound(pair));
+      const toStart = mskDay(Date.parse(dates.start)) - mskDay(now);
+      const toEnd = mskDay(Date.parse(dates.end)) - mskDay(now);
       const u = db.users.find((x) => x.id === pair.santaId);
       if (!u) continue;
       const chat = u.tgChatId;

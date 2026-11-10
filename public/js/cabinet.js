@@ -102,7 +102,8 @@
     $('[data-name]').textContent = u.name.split(' ')[0];
     const mod = me.participation && me.participation.moderation;
     $('[data-sub]').textContent = !me.participation ? 'Вы ещё не заполнили анкету участника.'
-      : me.assignment ? 'Жеребьёвка проведена — пора собирать посылку!'
+      : me.assignment ? (me.round === 2 ? 'Жеребьёвка второго круга проведена — пора собирать посылку!' : 'Жеребьёвка проведена — пора собирать посылку!')
+      : me.round === 2 && mod === 'approved' ? `Вы во втором круге ✅ Ждём жеребьёвку второго круга. Отправка: ${FX.fmtDate(me.dates.start)} — ${FX.fmtDate(me.dates.end)}`
       : mod === 'approved' ? 'Анкета одобрена ✅ Ждём жеребьёвку ☕'
       : mod === 'rejected' ? 'Анкета не прошла модерацию — исправьте её или напишите организаторам.'
       : 'Анкета на модерации ⏳ Организаторы проверят её перед жеребьёвкой.';
@@ -111,7 +112,7 @@
     // big deadline notice
     const n = me.deadline;
     $('[data-notice]').innerHTML = n
-      ? `<div class="big-notice ${n.kind}">⏰ ${esc(n.text)}<small>Отправка: ${FX.fmtDate(me.settings.sendStart)} — ${FX.fmtDate(me.settings.sendEnd)}</small></div>`
+      ? `<div class="big-notice ${n.kind}">⏰ ${esc(n.text)}<small>Отправка: ${FX.fmtDate((me.dates || me.settings).start || me.settings.sendStart)} — ${FX.fmtDate((me.dates || me.settings).end || me.settings.sendEnd)}</small></div>`
       : (me.settings.announcement ? `<div class="big-notice info">📣 ${esc(me.settings.announcement)}</div>` : '');
 
     renderGive();

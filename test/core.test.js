@@ -89,7 +89,13 @@ test('забаненные не участвуют, после жеребьёв�
   assert.equal(db.pairs.length, 3);
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
   const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1', pdConsent: true });
-  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /Жеребьёвка/);
+  // после первой жеребьёвки — запись во второй круг
+  call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id));
+  assert.equal(db.participations[r.user.id].round, 2);
+  assert.equal(call(db, 'GET', '/api/me', null, as(r.user.id)).drawn, false, 'для второго круга жеребьёвки ещё не было');
+  const r2 = call(db, 'POST', '/api/register', { name: 'Later', phone: '+79995550001', tg: 'later_one', password: 'secret1', pdConsent: true });
+  call(db, 'POST', '/api/admin/settings', { round2Open: false }, admin);
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Later One', address: 'ПВЗ Ozon', agree: true }, as(r2.user.id)), /второй круг пока закрыта/);
 });
 
 test('полный цикл: получатель, дедлайн, отправка, «Вам подарок от Деда Мороза», получение', () => {
