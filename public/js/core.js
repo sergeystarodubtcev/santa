@@ -53,6 +53,8 @@
       pairs: [],
       drawnAt: null,
       drawn2At: null,
+      // Второй круг — отдельная «подтаблица» участников: { [userId]: { status, reason, priority, addedAt, confirmedAt } }
+      wave2: {},
       notifications: [],
       broadcasts: [],
       settings: Object.assign({}, DEFAULT_SETTINGS),
@@ -68,11 +70,17 @@
     for (const k of Object.keys(base)) if (db[k] === undefined) db[k] = base[k];
     db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings || {});
     if (db.settings.chatUrl === 'https://t.me/c/1641902727/156432') db.settings.chatUrl = DEFAULT_SETTINGS.chatUrl;
+    // те, кто записался во второй круг до появления подтверждения, — ждут подтверждения
+    for (const uid of Object.keys(db.participations)) {
+      const p = db.participations[uid];
+      if (p && p.round === 2 && !db.wave2[uid]) db.wave2[uid] = { status: 'invited', reason: 'new', priority: 0, addedAt: p.joinedAt || 0 };
+    }
     return db;
   }
 
   // ---------- helpers ----------
   const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max || 500);
+  const fmtDay = (iso) => { try { return new Date(Date.parse(iso)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' }); } catch (e) { return String(iso).slice(0, 10); } };
 
   function normPhone(v) {
     let d = String(v || '').replace(/\D/g, '');
@@ -126,10 +134,27 @@
   function activeParticipants(db) {
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modStatus(db.participations[u.id]) !== 'rejected');
   }
-  // Допущенные модерацией — только они попадают в жеребьёвку.
+  // Второй круг — подтаблица db.wave2. status: invited (ждём подтверждения) | confirmed (участвует) | declined (отказался).
+  // reason: new (записался после 1-й жеребьёвки) | victim (его Санта не отправил подарок) | admin (пригласил организатор).
+  // priority: чем выше, тем раньше ему подбирают надёжного Санту (пострадавшим — максимальный).
+  const W2_PRIORITY = 100;
+  const wave2Of = (db, uid) => (db.wave2 || {})[uid] || null;
+  const inWave2 = (db, uid) => { const w = wave2Of(db, uid); return !!w && w.status === 'confirmed'; };
+  const w2prio = (db, uid) => (wave2Of(db, uid) || {}).priority || 0;
+  // Допущенные модерацией — только они попадают в жеребьёвку. Во второй круг — только подтвердившие участие.
   function approvedParticipants(db, round) {
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved'
-      && (!round || roundOf(db.participations[u.id]) === round));
+      && (!round || (round === 2 ? inWave2(db, u.id) : roundOf(db.participations[u.id]) === 1)));
+  }
+  // У «пострадавшего» пары могут быть в обоих кругах — берём актуальную.
+  const byRoundDesc = (a, b) => pairRound(b) - pairRound(a);
+  function outPair(db, uid) {
+    const list = db.pairs.filter((p) => p.santaId === uid).sort(byRoundDesc);
+    return list.find((p) => p.status === 'assigned') || list[0] || null;
+  }
+  function inPair(db, uid) {
+    const list = db.pairs.filter((p) => p.recipientId === uid).sort(byRoundDesc);
+    return list.find((p) => !p.failed) || list[0] || null;
   }
 
   // action — подсказка для Telegram-бота, какую кнопку приложить (whom, gift, moderation, …)
@@ -147,20 +172,20 @@
 
   // Можно ли уйти самому: ни своя посылка, ни посылка для тебя ещё не отправлены.
   function selfRemovalBlock(db, uid) {
-    const out = db.pairs.find((p) => p.santaId === uid);
-    const inc = db.pairs.find((p) => p.recipientId === uid);
-    if (out && out.status !== 'assigned') return 'Вы уже отправили свой подарок';
-    if (inc && inc.status !== 'assigned') return 'Ваш Тайный Санта уже отправил вам посылку';
+    if (db.pairs.some((p) => p.santaId === uid && p.status !== 'assigned')) return 'Вы уже отправили свой подарок';
+    if (db.pairs.some((p) => p.recipientId === uid && p.status !== 'assigned')) return 'Ваш Тайный Санта уже отправил вам посылку';
     return null;
   }
 
   // Убрать участника из жеребьёвки с перестройкой цепочки: его Санта начинает дарить его получателю.
   // Возвращает текстовый отчёт для админов.
   function removeFromDraw(db, ctx, uid) {
-    const out = db.pairs.find((p) => p.santaId === uid);
-    const inc = db.pairs.find((p) => p.recipientId === uid);
     const lines = [];
-    db.pairs = db.pairs.filter((p) => p.santaId !== uid);
+    for (const round of [1, 2]) {
+    const same = (p) => pairRound(p) === round;
+    const out = db.pairs.find((p) => same(p) && p.santaId === uid);
+    const inc = db.pairs.find((p) => same(p) && p.recipientId === uid);
+    db.pairs = db.pairs.filter((p) => !(same(p) && p.santaId === uid));
     if (inc) {
       const santaId = inc.santaId;
       const newRecipient = out ? out.recipientId : null;
@@ -175,28 +200,35 @@
         notify(db, ctx, santaId, 'Ваш получатель вышел из игры. Организаторы скоро назначат вам нового — мы напишем.', 'warn');
       }
     }
+    }
+    if (db.wave2 && db.wave2[uid]) delete db.wave2[uid];
     return lines;
   }
 
   function deleteUser(db, uid) {
     db.users = db.users.filter((u) => u.id !== uid);
     delete db.participations[uid];
+    if (db.wave2) delete db.wave2[uid];
     db.notifications = db.notifications.filter((n) => n.userId !== uid);
     if (db.tgState) Object.keys(db.tgState).forEach((k) => { if (db.tgState[k] && db.tgState[k].uid === uid) delete db.tgState[k]; });
   }
 
   // Проблемы распределения после ручных правок
   function pairsCheck(db) {
-    if (!db.pairs.length) return { noRecipient: [], noSanta: [], doubleSanta: [] };
-    const players = approvedParticipants(db).filter((u) => drawnFor(db, roundOf(db.participations[u.id]))).map((u) => u.id);
-    const giving = new Set(db.pairs.map((p) => p.santaId));
-    const recvCount = {};
-    db.pairs.forEach((p) => { recvCount[p.recipientId] = (recvCount[p.recipientId] || 0) + 1; });
-    return {
-      noRecipient: players.filter((id) => !giving.has(id)).map((id) => nick(db, id)),
-      noSanta: players.filter((id) => !recvCount[id]).map((id) => nick(db, id)),
-      doubleSanta: Object.keys(recvCount).filter((id) => recvCount[id] > 1).map((id) => nick(db, id)),
-    };
+    const res = { noRecipient: [], noSanta: [], doubleSanta: [] };
+    for (const round of [1, 2]) {
+      if (!drawnFor(db, round)) continue;
+      const tag = round === 2 ? ' (2-й круг)' : '';
+      const pairs = db.pairs.filter((p) => pairRound(p) === round);
+      const players = approvedParticipants(db, round).map((u) => u.id);
+      const giving = new Set(pairs.map((p) => p.santaId));
+      const recvCount = {};
+      pairs.forEach((p) => { recvCount[p.recipientId] = (recvCount[p.recipientId] || 0) + 1; });
+      players.filter((id) => !giving.has(id)).forEach((id) => res.noRecipient.push(nick(db, id) + tag));
+      players.filter((id) => !recvCount[id]).forEach((id) => res.noSanta.push(nick(db, id) + tag));
+      Object.keys(recvCount).filter((id) => recvCount[id] > 1).forEach((id) => res.doubleSanta.push(nick(db, id) + tag));
+    }
+    return res;
   }
 
   function firstName(name) {
@@ -263,6 +295,7 @@
       fail(400, 'Укажите только адрес пункта выдачи Ozon — без квартиры, подъезда и домашнего адреса');
     }
     if (!body.agree) fail(400, 'Подтвердите участие и дальнейшую отправку подарка');
+    if (round === 2 && !existing && !body.wave2) fail(400, 'Первая жеребьёвка уже прошла — подтвердите участие во втором круге');
     const prefs = PREFS[body.prefs] ? body.prefs : 'any';
     // Новая анкета (и отклонённая после правок) уходит на модерацию; одобренная остаётся одобренной.
     const auto = !db.settings.moderation;
@@ -280,6 +313,9 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
+    if (round === 2 && body.wave2 && !inWave2(db, userId)) {
+      db.wave2[userId] = Object.assign({ reason: 'new', priority: 0, addedAt: ctx.now() }, wave2Of(db, userId) || {}, { status: 'confirmed', confirmedAt: ctx.now() });
+    }
     if (!existing && round === 2) notify(db, ctx, userId, 'Вы записались во второй круг Тайного Санты! 🎅 ' + (auto ? 'Анкета принята — ждём жеребьёвку второго круга.' : 'Анкета на модерации.'), 'success', auto ? 'new-anketa' : 'moderation');
     else if (!existing && auto) notify(db, ctx, userId, 'Анкета принята! 🎅 Вы участвуете в жеребьёвке — мы сообщим, кому дарить.', 'success', 'new-anketa');
     else if (!existing) notify(db, ctx, userId, 'Анкета отправлена на модерацию. Как только организаторы её проверят, вы попадёте в жеребьёвку 🎅', 'info', 'moderation');
@@ -317,12 +353,14 @@
     // Перемешиваем, пока не получится перестановка без «самому себе» (в среднем ~3 попытки).
     let recipients;
     do { recipients = shuffled(ids); } while (recipients.some((r, i) => r === ids[i]));
+    if (round === 2) prioritize(db, ids, recipients);
     // Порядок пар тоже случайный — по списку нельзя восстановить, кто кому дарит «по цепочке».
     const order = shuffled(ids.map((_, i) => i));
     const fresh = order.map((i) => ({
       round,
       santaId: ids[i],
       recipientId: recipients[i],
+      priority: round === 2 && w2prio(db, recipients[i]) > 0 ? true : undefined,
       status: 'assigned',
       track: '',
       sentAt: null,
@@ -330,10 +368,41 @@
     }));
     db.pairs = db.pairs.filter((p) => pairRound(p) !== round).concat(fresh);
     if (round === 2) db.drawn2At = ctx.now(); else db.drawnAt = ctx.now();
-    for (const id of ids) {
-      notify(db, ctx, id, (round === 2 ? 'Жеребьёвка второго круга проведена!' : 'Жеребьёвка проведена!') + ' Загляните в «Кому я дарю» — там имя и адрес получателя 🎁', 'success', 'whom');
+    for (const p of fresh) {
+      notify(db, ctx, p.santaId, (round === 2 ? 'Жеребьёвка второго круга проведена!' : 'Жеребьёвка проведена!') + ' Загляните в «Кому я дарю» — там имя и адрес получателя 🎁'
+        + (p.priority ? ' ⭐ Ваш получатель в приоритете: в первом круге он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : ''), 'success', 'whom');
     }
     return { pairs: fresh.length };
+  }
+
+  // Второй круг: участникам с приоритетом (пострадавшим) — надёжных Сант, тех, кто уже отправил подарок в первом круге.
+  // recipients[i] — получатель Санты ids[i]; меняем получателей местами, не допуская «самому себе».
+  function prioritize(db, ids, recipients) {
+    const reliable = (id) => db.pairs.some((p) => pairRound(p) === 1 && p.santaId === id && p.status !== 'assigned');
+    const locked = new Set();
+    const order = ids.filter((id) => w2prio(db, id) > 0).sort((a, b) => w2prio(db, b) - w2prio(db, a));
+    for (const p of order) {
+      const i = recipients.indexOf(p);
+      if (reliable(ids[i])) { locked.add(i); continue; }
+      const free = (s, k) => k !== i && !locked.has(k) && reliable(s) && s !== p && w2prio(db, recipients[k]) === 0;
+      let j = ids.findIndex((s, k) => free(s, k) && recipients[k] !== ids[i]);
+      if (j >= 0) {
+        [recipients[i], recipients[j]] = [recipients[j], recipients[i]];
+        locked.add(j);
+        continue;
+      }
+      // надёжный Санта дарит как раз тому, кто дарит пострадавшему (H→X→p): перестраиваем через третьего (Z→r):
+      // H→p, X→r, Z→X
+      j = ids.findIndex(free);
+      if (j < 0) continue;
+      const z = ids.findIndex((s, k) => k !== i && k !== j && !locked.has(k) && recipients[k] !== ids[i]);
+      if (z < 0) continue;
+      const x = ids[i];
+      recipients[i] = recipients[z];
+      recipients[z] = x;
+      recipients[j] = p;
+      locked.add(j);
+    }
   }
 
   function resetDraw(db, body) {
@@ -343,7 +412,7 @@
   }
 
   function markSent(db, ctx, userId, body) {
-    const pair = db.pairs.find((p) => p.santaId === userId);
+    const pair = outPair(db, userId);
     if (!pair) fail(404, 'У вас пока нет получателя');
     pair.status = pair.status === 'received' ? 'received' : 'sent';
     pair.track = str(body && body.track, 80);
@@ -353,7 +422,7 @@
   }
 
   function markReceived(db, ctx, userId) {
-    const pair = db.pairs.find((p) => p.recipientId === userId);
+    const pair = db.pairs.filter((p) => p.recipientId === userId).sort(byRoundDesc).find((p) => p.status === 'sent') || inPair(db, userId);
     if (!pair) fail(404, 'Подарок не найден');
     if (pair.status === 'assigned') fail(409, 'Ваш Санта ещё не отметил отправку');
     pair.status = 'received';
@@ -387,7 +456,8 @@
     const user = getUser(db, userId);
     const now = ctx.now();
     const part = db.participations[userId];
-    const round = part ? roundOf(part) : (db.drawnAt ? 2 : 1);
+    const w2 = wave2Of(db, userId);
+    const round = w2 && w2.status === 'confirmed' ? 2 : part ? roundOf(part) : (db.drawnAt ? 2 : 1);
     const out = {
       user: publicUser(user),
       participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null,
@@ -395,17 +465,20 @@
       drawn: !!drawnFor(db, round),
       dates: datesFor(db, round),
     };
-    const mine = db.pairs.find((p) => p.santaId === userId);
+    out.wave2 = w2 ? { status: w2.status, reason: w2.reason, priority: w2.priority || 0, dates: datesFor(db, 2), drawn: !!db.drawn2At } : null;
+    const mine = outPair(db, userId);
     if (mine) {
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
       const rp = db.participations[mine.recipientId] || {};
       out.assignment = {
         recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
+        round: pairRound(mine), priority: !!mine.priority,
       };
+      out.dates = datesFor(db, pairRound(mine));
     }
-    const incoming = db.pairs.find((p) => p.recipientId === userId);
-    if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt };
+    const incoming = inPair(db, userId);
+    if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt, failed: !!incoming.failed && incoming.status === 'assigned', round: pairRound(incoming) };
     out.deadline = deadlineNotice(db, now, mine);
     out.notifications = db.notifications.filter((n) => (n.userId === userId || n.userId === '*') && !n.hideOnSite).slice(-30).reverse();
     out.settings = publicSettings(db);
@@ -469,6 +542,15 @@
       })),
       pairsCheck: pairsCheck(db),
       drawn2At: db.drawn2At,
+      wave2: Object.keys(db.wave2 || {}).map((id) => {
+        const u = byId[id];
+        if (!u) return null;
+        const part = db.participations[id];
+        const give = db.pairs.find((p) => pairRound(p) === 2 && p.santaId === id);
+        const get = db.pairs.find((p) => pairRound(p) === 2 && p.recipientId === id);
+        return Object.assign({ userId: id, name: u.name, tg: u.tg, banned: !!u.banned, tgLinked: !!u.tgChatId, hasAnketa: !!part,
+          moderation: part ? modEff(db, part) : null, giving: give ? give.status : null, receiving: get ? get.status : null }, db.wave2[id]);
+      }).filter(Boolean).sort((a, b) => (b.priority || 0) - (a.priority || 0) || (a.addedAt || 0) - (b.addedAt || 0)),
       broadcasts: (db.broadcasts || []).slice().reverse(),
       adminLog: db.notifications.filter((n) => n.userId === ADMINS).slice(-60).reverse(),
       stats: {
@@ -476,6 +558,7 @@
         participants: activeParticipants(db).length,
         round1: approvedParticipants(db, 1).length,
         round2: approvedParticipants(db, 2).length,
+        wave2Invited: Object.values(db.wave2 || {}).filter((w) => w.status === 'invited').length,
         approved: approvedParticipants(db).length,
         pending: db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'pending').length,
         banned: db.users.filter((u) => u.banned).length,
@@ -554,6 +637,26 @@
         return ok(me(db, ctx, u.id), changes.length > 0);
       }
       case 'POST /api/participate': participate(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/wave2': {
+        // участник подтверждает (или отклоняет) участие во втором круге
+        const uid = needUser();
+        const u = getUser(db, uid);
+        const w = wave2Of(db, uid);
+        if (!w) fail(404, 'Вас не приглашали во второй круг');
+        if (db.drawn2At) fail(409, 'Жеребьёвка второго круга уже прошла');
+        if (body.join) {
+          if (!db.participations[uid]) fail(400, 'Сначала заполните анкету');
+          if (w.status !== 'confirmed') {
+            Object.assign(w, { status: 'confirmed', confirmedAt: ctx.now() });
+            notify(db, ctx, uid, 'Вы участвуете во втором круге ✅ Мы напишем, когда пройдёт его жеребьёвка.', 'success');
+            notifyAdmins(db, ctx, `🎄 ${who(u)} подтвердил участие во втором круге` + (w.priority ? ' (⭐ приоритет)' : '') + '.');
+          }
+        } else if (w.status !== 'declined') {
+          Object.assign(w, { status: 'declined', confirmedAt: null, declinedAt: ctx.now() });
+          notifyAdmins(db, ctx, `🙅 ${who(u)} отказался от второго круга.`);
+        }
+        return ok(me(db, ctx, uid), true);
+      }
       case 'POST /api/leave': leave(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/account/delete': {
         // отзыв согласия на обработку персональных данных — удаляем всё о пользователе
@@ -699,21 +802,71 @@
         }
         return ok(adminState(db), changes.length > 0);
       }
+      case 'POST /api/admin/wave2-rescue': {
+        // Санта первого круга не отправил подарок → получатель («пострадавший») переходит во второй круг с наивысшим приоритетом
+        needAdmin();
+        const pair = db.pairs.find((p) => pairRound(p) === 1 && p.santaId === body.santaId);
+        if (!pair) fail(404, 'Пара не найдена');
+        if (pair.status !== 'assigned') fail(409, 'Санта уже отметил отправку — переводить некого');
+        if (db.drawn2At) fail(409, 'Второй круг уже разыгран — назначьте пострадавшему Санту вручную в таблице пар');
+        const victim = getUser(db, pair.recipientId);
+        Object.assign(pair, { failed: true, failedAt: ctx.now() });
+        const prev = wave2Of(db, victim.id);
+        db.wave2[victim.id] = Object.assign({ addedAt: ctx.now() }, prev || {}, {
+          reason: 'victim', priority: W2_PRIORITY, status: prev && prev.status === 'confirmed' ? 'confirmed' : 'invited',
+        });
+        const d = datesFor(db, 2);
+        if (db.wave2[victim.id].status !== 'confirmed') {
+          notify(db, ctx, victim.id, `Ваш Тайный Санта так и не отправил подарок 😢 Нам очень жаль! Приглашаем вас во второй круг: там вам отправят подарок в первую очередь ⭐ (вы тоже дарите подарок одному участнику, отправка ${fmtDay(d.start)} — ${fmtDay(d.end)}). Подтвердите участие.`, 'warn', 'wave2');
+        }
+        notifyAdmins(db, ctx, `😢 ${nick(db, pair.santaId)} не отправил подарок ${nick(db, victim.id)}. Получатель переведён во второй круг с наивысшим приоритетом ⭐` + (db.wave2[victim.id].status === 'confirmed' ? '.' : ' — ждём его подтверждения.'));
+        return ok(adminState(db), true);
+      }
+      case 'POST /api/admin/wave2-set': {
+        // организатор управляет подтаблицей второго круга
+        needAdmin();
+        const u = getUser(db, body.userId);
+        let w = wave2Of(db, u.id);
+        const d = datesFor(db, 2);
+        if (body.action === 'invite') {
+          if (!db.drawnAt) fail(400, 'Второй круг начинается после первой жеребьёвки');
+          if (db.drawn2At) fail(409, 'Жеребьёвка второго круга уже прошла');
+          if (w && w.status === 'confirmed') fail(409, 'Участник уже во втором круге');
+          db.wave2[u.id] = w = Object.assign({ reason: 'admin', priority: 0, addedAt: ctx.now() }, w || {}, { status: 'invited' });
+          notify(db, ctx, u.id, `Организаторы приглашают вас во второй круг Тайного Санты 🎄 Отправка подарков ${fmtDay(d.start)} — ${fmtDay(d.end)}. Подтвердите участие.`, 'info', 'wave2');
+        } else {
+          if (!w) fail(404, 'Участника нет во втором круге');
+          if (body.action === 'confirm') {
+            if (!db.participations[u.id]) fail(400, 'У участника нет анкеты');
+            Object.assign(w, { status: 'confirmed', confirmedAt: ctx.now(), byAdmin: true });
+          } else if (body.action === 'decline') Object.assign(w, { status: 'declined', confirmedAt: null, declinedAt: ctx.now() });
+          else if (body.action === 'priority') w.priority = w.priority ? 0 : W2_PRIORITY;
+          else if (body.action === 'remove') {
+            if (db.pairs.some((p) => pairRound(p) === 2 && (p.santaId === u.id || p.recipientId === u.id))) fail(409, 'Участник уже в парах второго круга — сначала уберите его из пар');
+            delete db.wave2[u.id];
+          } else fail(400, 'Неизвестное действие');
+        }
+        return ok(adminState(db), true);
+      }
       case 'POST /api/admin/pair-set': {
         // ручная правка: кому дарит Санта
         needAdmin();
         const santa = getUser(db, body.santaId);
+        const r = Number(body.round) === 2 ? 2 : body.round ? 1
+          : (db.drawn2At && inWave2(db, santa.id) && !db.pairs.some((x) => x.santaId === santa.id && pairRound(x) === 2)) ? 2 : null;
+        const ofSanta = (x) => x.santaId === santa.id && (!r || pairRound(x) === r);
         if (!body.recipientId) {
-          db.pairs = db.pairs.filter((p) => p.santaId !== santa.id);
+          db.pairs = db.pairs.filter((p) => !ofSanta(p));
           notifyAdmins(db, ctx, `✏️ Вручную: у @${santa.tg} больше нет получателя.`);
           return ok(adminState(db), true);
         }
         const rec = getUser(db, body.recipientId);
         if (rec.id === santa.id) fail(400, 'Нельзя дарить самому себе');
-        let p = db.pairs.find((x) => x.santaId === santa.id);
+        let p = db.pairs.find(ofSanta);
         if (p && p.recipientId === rec.id) return ok(adminState(db));
-        if (!p) { p = { santaId: santa.id }; db.pairs.push(p); }
-        Object.assign(p, { recipientId: rec.id, status: 'assigned', track: '', sentAt: null, receivedAt: null });
+        if (!p) { p = r === 2 ? { round: 2, santaId: santa.id } : { santaId: santa.id }; db.pairs.push(p); }
+        Object.assign(p, { recipientId: rec.id, status: 'assigned', track: '', sentAt: null, receivedAt: null, failed: undefined, failedAt: undefined,
+          priority: pairRound(p) === 2 && w2prio(db, rec.id) > 0 ? true : undefined });
         if (!db.drawnAt) db.drawnAt = ctx.now();
         notify(db, ctx, santa.id, 'Организаторы назначили вам получателя подарка 🎁 Загляните в «Кому я дарю».', 'warn', 'whom');
         notifyAdmins(db, ctx, `✏️ Вручную: @${santa.tg} теперь дарит @${rec.tg}.`);
@@ -721,7 +874,8 @@
       }
       case 'POST /api/admin/pair-status': {
         needAdmin();
-        const p = db.pairs.find((x) => x.santaId === body.santaId);
+        const r = Number(body.round) === 2 ? 2 : body.round ? 1 : null;
+        const p = db.pairs.find((x) => x.santaId === body.santaId && (!r || pairRound(x) === r));
         if (!p) fail(404, 'Пара не найдена');
         if (!['assigned', 'sent', 'received'].includes(body.status)) fail(400, 'Неверный статус');
         p.status = body.status;

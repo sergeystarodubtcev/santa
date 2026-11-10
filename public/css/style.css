@@ -589,3 +589,11 @@ tr.banned td { opacity: .55; }
 .noform-ask { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border-radius: 16px; background: #fff8eb; border: 1px solid #f6d3a8; }
 .noform-ask > div { display: flex; flex-direction: column; gap: 4px; flex: 1 1 320px; }
 .noform-ask .muted { font-size: 13px; }
+
+.row-failed td { background: #fff1f2; }
+td small.bad, .bad { color: #b91c1c; }
+td small { display: block; }
+
+.w2-check { padding: 12px 14px; border-radius: 14px; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.w2-card { margin-bottom: 18px; border: 2px solid #34d399; background: linear-gradient(135deg, #f0fdf4, #ffffff); }
+.w2-card h3 { margin-top: 0; }

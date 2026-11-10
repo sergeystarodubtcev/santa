@@ -16,7 +16,7 @@ const press = (db, chat, data) => bot.handleUpdate(db, ctx, { update_id: ++n, ca
 const texts = (r) => r.out.filter((o) => o.text).map((o) => o.text).join('\n');
 function user(db, i, form = true) {
   const r = call(db, 'POST', '/api/register', { name: 'P' + i, phone: '+7955100000' + i, tg: 'player_' + i, password: 'qwerty1', pdConsent: true });
-  if (form) call(db, 'POST', '/api/participate', { fullName: 'Игрок ' + i, address: 'ПВЗ Ozon, Казань ' + i, agree: true }, { userId: r.user.id });
+  if (form) call(db, 'POST', '/api/participate', { fullName: 'Игрок ' + i, address: 'ПВЗ Ozon, Казань ' + i, agree: true, wave2: true }, { userId: r.user.id });
   return r.user.id;
 }
 

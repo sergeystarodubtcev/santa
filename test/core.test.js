@@ -90,8 +90,11 @@ test('забаненные не участвуют, после жеребьёв�
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
   const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1', pdConsent: true });
   // после первой жеребьёвки — запись во второй круг
-  call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id));
+  // без подтверждения второго круга не записываем
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true }, as(r.user.id)), /подтвердите участие во втором круге/);
+  call(db, 'POST', '/api/participate', { fullName: 'Late One', address: 'ПВЗ Ozon', agree: true, wave2: true }, as(r.user.id));
   assert.equal(db.participations[r.user.id].round, 2);
+  assert.equal(db.wave2[r.user.id].status, 'confirmed');
   assert.equal(call(db, 'GET', '/api/me', null, as(r.user.id)).drawn, false, 'для второго круга жеребьёвки ещё не было');
   const r2 = call(db, 'POST', '/api/register', { name: 'Later', phone: '+79995550001', tg: 'later_one', password: 'secret1', pdConsent: true });
   call(db, 'POST', '/api/admin/settings', { round2Open: false }, admin);

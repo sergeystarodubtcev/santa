@@ -44,6 +44,7 @@
   let me = null;
   let lastCount = null;
   let cdTimers = [];
+  let pub = null;
   // иконки в бегущей строке имён: ёлка, олень, снеговик… — постоянно меняются
   const TICKER_ICONS = ['🎄', '🦌', '⛄', '🎁', '❄️', '🎅', '⭐', '🍪'];
   let tickerStep = 0;
@@ -70,6 +71,7 @@
       const names = p.recent.length ? p.recent : ['тут', 'будут', 'ваши', 'имена'];
       const html = names.map((n, i) => `<span class="tk"><i class="tk-ico" data-i="${i}">${TICKER_ICONS[(i + tickerStep) % TICKER_ICONS.length]}</i>${FX.esc(n)}</span>`).join('');
       $('[data-recent]').innerHTML = html + html;
+      pub = p;
       applySettings(p.settings, p);
     } catch (e) { /* offline */ }
   }
@@ -134,7 +136,17 @@
     document.body.classList.remove('modal-open');
     setTimeout(() => (modal.hidden = true), 250);
   }
+  // После первой жеребьёвки новая анкета — это запись во второй круг: участие нужно подтвердить отдельно
+  function syncWave2(part) {
+    const need = !!(pub && pub.drawn && !pub.drawn2 && !part);
+    $('[data-w2-wrap]', f2).hidden = !need;
+    if (need) {
+      const s = pub.settings;
+      $('[data-w2-text]', f2).innerHTML = `Первая жеребьёвка уже прошла. Подтверждаю участие во <b>втором круге</b>: отправка подарков с ${FX.fmtDate(s.round2SendStart)} по ${FX.fmtDate(s.round2SendEnd)}.`;
+    }
+  }
   function fillStep2(p) {
+    syncWave2(p);
     if (me && me.user) {
       f2.phone.value = me.user.phone || '';
       if (!f2.fullName.value) f2.fullName.value = (p && p.fullName) || '';
@@ -194,7 +206,7 @@
       me = await Api.post('/api/participate', {
         fullName: f2.fullName.value, phone: f2.phone.value,
         address: f2.address.value, wishes: f2.wishes.value, notes: f2.notes.value,
-        prefs: (f2.querySelector('input[name=prefs]:checked') || {}).value, agree: f2.agree.checked,
+        prefs: (f2.querySelector('input[name=prefs]:checked') || {}).value, agree: f2.agree.checked, wave2: f2.wave2.checked,
       });
       showStep(3);
       if (wasIn) $('h3', done).textContent = 'Анкета обновлена!';

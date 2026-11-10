@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111f">
+  <link rel="stylesheet" href="css/style.css?v=20261111h">
 </head>
 <body>
   <header class="topbar">
@@ -167,6 +167,19 @@
           </div>
         </details>
 
+        <details class="card fold" style="margin-top:18px" data-w2-card hidden>
+          <summary><h3>🎄 Второй круг: участники</h3><span class="fold-hint" data-fold-w2></span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
+          <p class="muted" style="font-size:13px;margin-top:-4px">Во второй круг попадают только те, кто <b>подтвердил участие</b>: новички, записавшиеся после первой жеребьёвки, пострадавшие (их Санта не отправил подарок) и те, кого пригласили вы. ⭐ приоритет — при жеребьёвке такому участнику достаётся надёжный Санта (тот, кто уже отправил подарок в первом круге), и Санта получает просьбу отправить в первую очередь. Пострадавших добавляет кнопка «😢 Не отправил» в таблице пар.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Кто</th><th>Почему во 2-м круге</th><th>Подтверждение</th><th>Анкета / бот</th><th>Пары 2-го круга</th><th></th></tr></thead>
+            <tbody data-w2-rows></tbody>
+          </table></div>
+          <div class="actions" data-w2-invite-wrap>
+            <select data-w2-invite></select>
+            <button class="btn btn-ghost btn-sm" type="button" data-w2-invite-btn>📨 Пригласить во 2-й круг</button>
+          </div>
+        </details>
+
         <div class="card" style="margin-top:18px">
           <h3>📋 Журнал событий</h3>
           <p class="muted" style="font-size:13px;margin-top:-4px">Удаления аккаунтов, перестройка пар, ручные правки и обращения к администратору. Всё это дублируется вам в Telegram-бот.</p>
@@ -218,11 +231,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261111f"></script>
-  <script src="js/cities.js?v=20261111f"></script>
-  <script src="js/core.js?v=20261111f"></script>
-  <script src="js/api.js?v=20261111f"></script>
-  <script src="js/fx.js?v=20261111f"></script>
-  <script src="js/admin.js?v=20261111f"></script>
+  <script src="js/config.js?v=20261111h"></script>
+  <script src="js/cities.js?v=20261111h"></script>
+  <script src="js/core.js?v=20261111h"></script>
+  <script src="js/api.js?v=20261111h"></script>
+  <script src="js/fx.js?v=20261111h"></script>
+  <script src="js/admin.js?v=20261111h"></script>
 </body>
 </html>

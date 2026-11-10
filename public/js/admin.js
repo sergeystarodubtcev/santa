@@ -82,7 +82,7 @@
     if (state.drawnAt) {
       $('[data-round2-info]').innerHTML = state.drawn2At
         ? `✅ Жеребьёвка второго круга проведена ${FX.fmtDateTime(state.drawn2At)}: <b>${state.pairs.filter((p) => p.round === 2).length}</b> пар.`
-        : `Записались во второй круг (одобрены): <b>${s.round2 || 0}</b>. ${state.settings.round2Open ? 'Запись открыта — на сайте пишем «Первая жеребьёвка прошла, запишитесь во второй круг».' : 'Запись закрыта.'}`;
+        : `Подтвердили участие во втором круге: <b>${s.round2 || 0}</b>` + (s.wave2Invited ? ` · <span class="important">ждём подтверждения: ${s.wave2Invited}</span> (в жеребьёвку не попадут)` : '') + `. ${state.settings.round2Open ? 'Запись открыта — на сайте пишем «Первая жеребьёвка прошла, запишитесь во второй круг».' : 'Запись закрыта.'}`;
       $('[data-shuffle2]').textContent = state.drawn2At ? '🎲 Перемешать второй круг заново' : '🎲 Раскидать второй круг';
       const r2 = $('[data-round2-form]');
       if (!r2.contains(document.activeElement)) {
@@ -107,7 +107,58 @@
     }
     renderUsers();
     renderPairs();
+    renderWave2();
   }
+
+  // ---------- подтаблица второго круга ----------
+  const W2_REASON = { new: '🆕 записался после 1-й жеребьёвки', victim: '😢 пострадавший: Санта не отправил', admin: '📨 пригласил организатор' };
+  const W2_STATUS = { invited: '⏳ ждём подтверждения', confirmed: '✅ участвует', declined: '🙅 отказался' };
+  function renderWave2() {
+    const list = state.wave2 || [];
+    $('[data-w2-card]').hidden = !state.drawnAt;
+    const conf = list.filter((w) => w.status === 'confirmed').length;
+    const inv = list.filter((w) => w.status === 'invited').length;
+    const vic = list.filter((w) => w.reason === 'victim').length;
+    $('[data-fold-w2]').innerHTML = `${conf} участвуют` + (inv ? ` · ⏳ ждём подтверждения: ${inv}` : '') + (vic ? ` · 😢 пострадавших: ${vic}` : '');
+    const pst = (v) => (v ? STATUS[v] : '—');
+    const locked = !!state.drawn2At;
+    $('[data-w2-rows]').innerHTML = list.map((w) => `<tr>
+      <td><b>${w.priority ? '⭐ ' : ''}${esc(w.name)}</b><small>@${esc(w.tg)}</small></td>
+      <td>${W2_REASON[w.reason] || '—'}</td>
+      <td><span class="status ${w.status === 'confirmed' ? 'received' : w.status === 'declined' ? 'banned' : 'assigned'}">${W2_STATUS[w.status] || w.status}</span>${w.byAdmin ? '<small>подтвердил организатор</small>' : ''}</td>
+      <td>${w.hasAnketa ? '📝 есть' : '<span class="bad">нет анкеты</span>'}${w.tgLinked ? ' · ✈️' : ''}</td>
+      <td>${w.status === 'confirmed' && locked ? `дарит: ${pst(w.giving)}<br>получает: ${pst(w.receiving)}` : '—'}</td>
+      <td class="row-actions">
+        ${!locked && w.status !== 'confirmed' && w.hasAnketa ? `<button class="btn btn-ghost btn-sm" data-w2="confirm" data-uid="${w.userId}" title="Участник подтвердил вам лично">✅ Подтвердить за него</button>` : ''}
+        ${!locked && w.status === 'confirmed' ? `<button class="btn btn-ghost btn-sm" data-w2="decline" data-uid="${w.userId}">🙅 Отказ</button>` : ''}
+        ${!locked ? `<button class="btn btn-ghost btn-sm" data-w2="priority" data-uid="${w.userId}">${w.priority ? '☆ Снять приоритет' : '⭐ Приоритет'}</button>` : ''}
+        ${!locked && w.status === 'declined' ? `<button class="btn btn-ghost btn-sm" data-w2="invite" data-uid="${w.userId}">📨 Пригласить снова</button>` : ''}
+        <button class="btn btn-danger btn-sm" data-w2="remove" data-uid="${w.userId}" title="Убрать из второго круга">✕</button>
+      </td></tr>`).join('') || '<tr><td colspan="6" class="muted">Во втором круге пока никого.</td></tr>';
+    const inW2 = new Set(list.map((w) => w.userId));
+    const cand = state.users.filter((u) => u.participation && !u.banned && !inW2.has(u.id));
+    $('[data-w2-invite-wrap]').hidden = locked || !cand.length;
+    $('[data-w2-invite]').innerHTML = cand.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-w2]');
+    if (b) {
+      const msgs = { confirm: 'Подтверждено ✅', decline: 'Отмечен отказ', priority: 'Приоритет изменён', invite: 'Приглашение отправлено 📨', remove: 'Убран из второго круга' };
+      if (b.dataset.w2 === 'remove' && !confirm('Убрать участника из второго круга?')) return;
+      return act('/api/admin/wave2-set', { userId: b.dataset.uid, action: b.dataset.w2 }, msgs[b.dataset.w2]);
+    }
+    if (e.target.closest('[data-w2-invite-btn]')) {
+      const uid = $('[data-w2-invite]').value;
+      if (uid) return act('/api/admin/wave2-set', { userId: uid, action: 'invite' }, 'Приглашение отправлено 📨 — участник должен подтвердить');
+    }
+    const r = e.target.closest('[data-rescue]');
+    if (r) {
+      const p = state.pairs.find((x) => x.santaId === r.dataset.rescue && x.round !== 2);
+      if (!p) return;
+      if (!confirm(`${p.santa} не отправил подарок ${p.recipient}?\n\n${p.recipient} переводим во второй круг с наивысшим приоритетом ⭐: ему придёт приглашение, и после подтверждения при жеребьёвке второго круга ему достанется надёжный Санта.`)) return;
+      return act('/api/admin/wave2-rescue', { santaId: p.santaId }, `${p.recipient} переведён во второй круг ⭐`);
+    }
+  });
 
   function renderUsers() {
     const q = $('[data-search]').value.trim().toLowerCase();
@@ -157,11 +208,13 @@
     $('[data-pair-add-santa]').innerHTML = free.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
     $('[data-pair-add-rec]').innerHTML = opt('', null);
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
-    $('[data-pairs]').innerHTML = state.pairs.map((p) => `<tr>
-      <td>${p.round === 2 ? '2️⃣' : '1️⃣'}</td><td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}">${opt(p.recipientId, p.santaId)}</select></td>
-      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}</td>
+    const rnd = (p) => (p.round === 2 ? 2 : 1);
+    $('[data-pairs]').innerHTML = state.pairs.map((p) => `<tr${p.failed ? ' class="row-failed"' : ''}>
+      <td>${rnd(p) === 2 ? '2️⃣' : '1️⃣'}</td><td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
+      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
-      <td><select data-pair="${p.santaId}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select></td>
+      <td><select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>
+        ${rnd(p) === 1 && p.status === 'assigned' && !p.failed && !state.drawn2At ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" title="Санта не отправил подарок: получателя — во второй круг с наивысшим приоритетом">😢 Не отправил → получателя во 2-й круг ⭐</button>` : ''}</td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">Пар пока нет — нажмите «Раскидать людей».</td></tr>';
   }
 
@@ -249,10 +302,10 @@
       const santa = state.users.find((u) => u.id === rec.dataset.pairRec);
       const to = state.users.find((u) => u.id === rec.value);
       if (!confirm(to ? `@${santa.tg} будет дарить @${to.tg}. Санта получит уведомление с новым адресом. Продолжить?` : `Убрать получателя у @${santa.tg}?`)) { renderPairs(); return; }
-      return act('/api/admin/pair-set', { santaId: rec.dataset.pairRec, recipientId: rec.value || null }, 'Пара изменена');
+      return act('/api/admin/pair-set', { santaId: rec.dataset.pairRec, round: rec.dataset.round, recipientId: rec.value || null }, 'Пара изменена');
     }
     const sel = e.target.closest('[data-pair]');
-    if (sel) act('/api/admin/pair-status', { santaId: sel.dataset.pair, status: sel.value }, 'Статус обновлён');
+    if (sel) act('/api/admin/pair-status', { santaId: sel.dataset.pair, round: sel.dataset.round, status: sel.value }, 'Статус обновлён');
   });
 
   $('[data-shuffle]').addEventListener('click', async (e) => {
@@ -321,7 +374,7 @@
   $('[data-shuffle2]').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const again = !!state.drawn2At;
-    if (!confirm(again ? 'Перемешать второй круг заново? Пары второго круга будут заменены.' : `Раскидать второй круг (${state.stats.round2 || 0} чел.)? Все увидят своих получателей.`)) return;
+    if (!confirm(again ? 'Перемешать второй круг заново? Пары второго круга будут заменены.' : `Раскидать второй круг (${state.stats.round2 || 0} чел.)? Все увидят своих получателей.` + (state.stats.wave2Invited ? `\n\n⚠️ ${state.stats.wave2Invited} чел. ещё не подтвердили участие — в жеребьёвку они НЕ попадут.` : ''))) return;
     let force = false;
     if (again && state.pairs.some((p) => p.round === 2 && p.status !== 'assigned')) {
       if (!confirm('Во втором круге кто-то уже отправил подарок! Всё равно перемешать?')) return;

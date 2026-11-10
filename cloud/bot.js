@@ -15,6 +15,7 @@ try { Cities = require('./cities.js'); } catch (e) { try { Cities = require('../
 const DAY = 24 * 60 * 60 * 1000;
 const MSK = 3 * 60 * 60 * 1000;
 const mskDay = (t) => Math.floor((t + MSK) / DAY);
+const fmtDay = (iso) => new Date(Date.parse(iso)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const plural = (n, a, b, c) => { const x = Math.abs(n) % 100, y = x % 10; return x > 10 && x < 20 ? c : y > 1 && y < 5 ? b : y === 1 ? a : c; };
 
@@ -33,6 +34,7 @@ const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) =>
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
 const PREFS_BTN = ib([[['☕ Кофейное', 'prefs:coffee'], ['🧸 Некофейное', 'prefs:noncoffee']], [['🎲 Удивите меня', 'prefs:any']]]);
 const SKIP_BTN = ib([[['Пропустить →', 'skip']]]);
+const W2_BTN = ib([[['✅ Да, участвую во 2-м круге', 'w2:yes']], [['🙅 Нет, не буду', 'w2:no']]]);
 
 function createBot({ core, secret, siteUrl, username }) {
   const sign = (s) => crypto.createHmac('sha256', secret).update('tg:' + s).digest('base64url').slice(0, 16);
@@ -137,17 +139,22 @@ function createBot({ core, secret, siteUrl, username }) {
   };
   const FORM_ORDER = ['fullName', 'address', 'wishes', 'prefs', 'notes', 'agree'];
 
-  function askForm(out, chatId, step) {
+  function askForm(out, chatId, step, db) {
+    const wave2 = step === 'agree' && db && db.drawnAt && !db.participations[(userByChat(db, chatId) || {}).id];
     const markup = step === 'prefs' ? PREFS_BTN
-      : step === 'agree' ? ib([[['✅ Подтверждаю участие', 'agree']]])
+      : step === 'agree' ? ib([[[wave2 ? '✅ Участвую во втором круге' : '✅ Подтверждаю участие', 'agree']]])
       : step === 'wishes' || step === 'notes' ? SKIP_BTN : { remove_keyboard: true };
-    out.push({ chat_id: chatId, text: FORM_STEPS[step], reply_markup: markup });
+    const d = db ? core.datesFor(db, 2) : null;
+    const text = wave2
+      ? `Первая жеребьёвка уже прошла — вы записываетесь во <b>второй круг</b> 🎄\nОтправка подарков: ${fmtDay(d.start)} — ${fmtDay(d.end)}.\n\nПодтверждаете участие во втором круге и дальнейшую отправку подарка?`
+      : FORM_STEPS[step];
+    out.push({ chat_id: chatId, text, reply_markup: markup });
   }
 
   function startForm(db, out, chatId) {
     db.tgState[chatId] = { flow: 'form', step: 'fullName', data: {} };
     out.push({ chat_id: chatId, text: '📝 Заполняем анкету. В любой момент можно написать /cancel.' });
-    askForm(out, chatId, 'fullName');
+    askForm(out, chatId, 'fullName', db);
   }
 
   function formInput(db, ctx, out, chatId, st, value) {
@@ -163,10 +170,10 @@ function createBot({ core, secret, siteUrl, username }) {
     st.addrConfirmed = false;
     st.data[st.step] = value;
     const next = FORM_ORDER[FORM_ORDER.indexOf(st.step) + 1];
-    if (next) { st.step = next; askForm(out, chatId, next); return; }
+    if (next) { st.step = next; askForm(out, chatId, next, db); return; }
     const u = userByChat(db, chatId);
     try {
-      call(db, ctx, 'POST', '/api/participate', Object.assign({ phone: u.phone }, st.data, { agree: true }), { userId: u.id });
+      call(db, ctx, 'POST', '/api/participate', Object.assign({ phone: u.phone }, st.data, { agree: true, wave2: !!db.drawnAt }), { userId: u.id });
       delete db.tgState[chatId];
       out.push({ chat_id: chatId, text: '🎉 Анкета сохранена!\n\n' + statusLine(db, u), reply_markup: MAIN_KB });
     } catch (e) {
@@ -174,7 +181,7 @@ function createBot({ core, secret, siteUrl, username }) {
       // вернуться к шагу, где ошибка
       const back = /ПВЗ|адрес|пункта/i.test(e.message) ? 'address' : /ФИО/i.test(e.message) ? 'fullName' : null;
       out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
-      if (back) { st.step = back; askForm(out, chatId, back); } else delete db.tgState[chatId];
+      if (back) { st.step = back; askForm(out, chatId, back, db); } else delete db.tgState[chatId];
     }
   }
 
@@ -232,6 +239,7 @@ function createBot({ core, secret, siteUrl, username }) {
         `👤 ФИО: <code>${esc(r.fullName)}</code>\n📦 ПВЗ Ozon: <code>${esc(r.address)}</code>\n📱 Телефон: <code>${esc(r.phone)}</code>\n💬 Telegram: @${esc(r.tg)}\n` +
         `🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}\n🎁 Хочет: ${esc(r.wishes) || 'не написал(а) — сюрприз!'}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
+        (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в первом круге он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
         `\n\n📅 Отправка: до ${new Date(Date.parse((me.dates && me.dates.end) || me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
       reply_markup: a.status === 'assigned' ? ib([[['📦 Я отправил подарок', 'sent']]]) : undefined,
     });
@@ -305,6 +313,16 @@ function createBot({ core, secret, siteUrl, username }) {
       } else if (d === 'skip' && st && st.flow === 'sent') {
         delete db.tgState[chatId];
         markSent(db, ctx, out, chatId, '');
+      } else if (d === 'w2:yes' || d === 'w2:no') {
+        if (!u0) notLinked(out, chatId);
+        else {
+          try {
+            call(db, ctx, 'POST', '/api/wave2', { join: d === 'w2:yes' }, { userId: u0.id });
+            out.push({ chat_id: chatId, text: d === 'w2:yes'
+              ? '🎄 Отлично, вы во втором круге! Я напишу, когда пройдёт его жеребьёвка.'
+              : 'Понял, во втором круге вас не будет. Спасибо, что были с нами ☕' });
+          } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
+        }
       } else if (d === 'noform_del') {
         if (!u0) notLinked(out, chatId);
         else if (db.participations[u0.id]) out.push({ chat_id: chatId, text: 'У вас уже есть анкета — вы в игре 🎅 Удалить аккаунт можно в личном кабинете на сайте.' });
@@ -457,7 +475,7 @@ function createBot({ core, secret, siteUrl, username }) {
         out.push({
           chat_id: u.tgChatId,
           text: '🔔 ' + esc(n.text),
-          reply_markup: n.action === 'whom' ? WHOM_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : undefined,
+          reply_markup: n.action === 'whom' ? WHOM_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : undefined,
         });
       }
       if (n.action === 'new-anketa') {
