@@ -125,8 +125,7 @@
       <dt>С нами с</dt><dd>${FX.fmtDate(u.createdAt)}</dd>
       ${u.banned ? '<dt>Статус</dt><dd><span class="status banned">🛑 чёрный список</span></dd>' : ''}`;
     renderTg();
-    const del = $('[data-delete-me]');
-    del.hidden = !!(me.assignment || me.incoming);
+    $('[data-delete-me]').hidden = false;
   }
 
   function renderGive() {
@@ -270,15 +269,70 @@
     setTimeout(() => Api.get('/api/me').then((m) => { me = m; renderTg(); }).catch(() => {}), 8000);
   });
 
-  // Отзыв согласия на обработку ПДн = удаление аккаунта и всех данных
+  // ---------- удаление аккаунта (отзыв согласия на обработку ПДн) ----------
+  const dm = $('[data-del-modal]');
+  const delStep = (n) => $$('[data-del-step]', dm).forEach((el) => (el.hidden = el.dataset.delStep !== String(n)));
+  function delOpen() { dm.hidden = false; requestAnimationFrame(() => dm.classList.add('open')); }
+  function delClose() { dm.classList.remove('open'); setTimeout(() => (dm.hidden = true), 250); }
+  $$('[data-del-close]', dm).forEach((b) => b.addEventListener('click', delClose));
+  function showNeedAdmin(text) {
+    if (text) $('[data-del-admin-text]').textContent = text;
+    const a = $('[data-del-help]');
+    if (tgLink && tgLink.helpUrl) a.href = tgLink.helpUrl;
+    else { a.href = (me.settings && me.settings.chatUrl) || 'https://t.me/coffeemaniacs_channel'; a.textContent = 'Написать организаторам в Telegram'; }
+    delStep('admin');
+  }
   $('[data-delete-me]').addEventListener('click', async () => {
-    if (!confirm('Удалить аккаунт, анкету и все ваши данные? Это нельзя отменить, из Тайного Санты вы выйдете.')) return;
+    if (tgLink === null) { try { tgLink = await Api.get('/api/tg/link'); } catch (e) { tgLink = false; } }
+    $('[data-del-ack]').checked = false;
+    $('[data-del-next]').disabled = true;
+    $('[data-del-word]').value = '';
+    $('[data-del-go]').disabled = true;
+    $('[data-del-err]').textContent = '';
+    const a = me.assignment;
+    const g = me.incoming;
+    delOpen();
+    if ((a && a.status !== 'assigned') || (g && g.status !== 'assigned')) {
+      showNeedAdmin(a && a.status !== 'assigned'
+        ? 'Вы уже отправили подарок, поэтому удалить аккаунт самостоятельно нельзя.'
+        : 'Ваш Тайный Санта уже отправил вам посылку — если удалить аккаунт, подарок потеряется.');
+      return;
+    }
+    const inDraw = !!(a || g);
+    $('[data-del-text]').innerHTML = inDraw
+      ? '<p><b>Жеребьёвка уже прошла.</b> Если вы удалите аккаунт:</p>' +
+        '<ul>' +
+        '<li>вы выйдете из Тайного Санты и <b>не получите подарок</b>;</li>' +
+        '<li>ваш Тайный Санта получит <b>другого получателя</b> — ему придётся собирать посылку заново;</li>' +
+        '<li>ваш получатель получит подарок от другого участника;</li>' +
+        '<li>организаторы увидят, что вы вышли из игры;</li>' +
+        '<li>все ваши данные (имя, телефон, ФИО, адрес ПВЗ) будут удалены навсегда.</li>' +
+        '</ul>' +
+        '<p class="muted">Если что-то случилось — лучше сначала <a href="#" data-del-to-admin>напишите администратору</a>, он поможет.</p>'
+      : '<p>Будут удалены навсегда ваш аккаунт, анкета и все данные (имя, телефон, ФИО, адрес ПВЗ). Вы выйдете из Тайного Санты.</p>';
+    const toAdmin = $('[data-del-to-admin]');
+    if (toAdmin) toAdmin.addEventListener('click', (e) => { e.preventDefault(); showNeedAdmin('Опишите ситуацию администратору — возможно, выходить из игры не придётся.'); });
+    delStep(1);
+  });
+  $('[data-del-ack]').addEventListener('change', (e) => { $('[data-del-next]').disabled = !e.target.checked; });
+  $('[data-del-next]').addEventListener('click', () => { delStep(2); setTimeout(() => $('[data-del-word]').focus(), 50); });
+  $('[data-del-word]').addEventListener('input', (e) => { $('[data-del-go]').disabled = e.target.value.trim().toUpperCase() !== 'УДАЛИТЬ'; });
+  $('[data-del-go]').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.classList.add('loading');
     try {
-      await Api.post('/api/account/delete');
+      await Api.post('/api/account/delete', { confirm: 'УДАЛИТЬ' });
       Api.logout();
+      delClose();
       alert('Аккаунт и данные удалены. Спасибо, что были с нами ☕');
       location.href = './';
-    } catch (e) { FX.toast(e.message, 'error'); }
+    } catch (ex) {
+      if (ex.code === 'need_admin') showNeedAdmin(ex.message);
+      else $('[data-del-err]').textContent = ex.message;
+    }
+    btn.disabled = false;
+    btn.classList.remove('loading');
   });
 
   async function load() {

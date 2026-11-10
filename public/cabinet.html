@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261108d">
+  <link rel="stylesheet" href="css/style.css?v=20261110a">
 </head>
 <body>
   <div class="banners" data-banners></div>
@@ -142,10 +142,37 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261108d"></script>
-  <script src="js/core.js?v=20261108d"></script>
-  <script src="js/api.js?v=20261108d"></script>
-  <script src="js/fx.js?v=20261108d"></script>
-  <script src="js/cabinet.js?v=20261108d"></script>
+  <!-- удаление аккаунта: несколько предупреждений -->
+  <div class="modal" data-del-modal hidden>
+    <div class="modal-backdrop" data-del-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-del-close aria-label="Закрыть">✕</button>
+      <div data-del-step="1">
+        <div class="modal-head"><div class="modal-emoji">⚠️</div><h3>Точно удалить аккаунт?</h3></div>
+        <div class="del-warn" data-del-text></div>
+        <label class="check" style="margin:14px 0"><input type="checkbox" data-del-ack><span>Я понимаю последствия и хочу выйти из Тайного Санты</span></label>
+        <div class="row2"><button class="btn btn-ghost" data-del-close>Я передумал</button><button class="btn btn-danger" data-del-next disabled>Продолжить →</button></div>
+      </div>
+      <div data-del-step="2" hidden>
+        <div class="modal-head"><div class="modal-emoji">🗑</div><h3>Последний шаг</h3></div>
+        <p>Это нельзя отменить. Чтобы подтвердить, введите слово <b>УДАЛИТЬ</b>:</p>
+        <input data-del-word placeholder="УДАЛИТЬ" autocomplete="off" style="margin:8px 0 14px">
+        <div class="form-err" data-del-err></div>
+        <div class="row2"><button class="btn btn-ghost" data-del-close>Отмена</button><button class="btn btn-danger" data-del-go disabled>Удалить навсегда</button></div>
+      </div>
+      <div data-del-step="admin" hidden>
+        <div class="modal-head"><div class="modal-emoji">🆘</div><h3>Нужна помощь администратора</h3></div>
+        <p data-del-admin-text>Посылка уже в пути, поэтому удалить аккаунт самостоятельно нельзя — иначе подарок потеряется.</p>
+        <p class="muted">Напишите организатору в Telegram-бот: опишите ситуацию, и он всё решит — переназначит пары или удалит данные вручную.</p>
+        <a class="btn btn-primary btn-block" data-del-help target="_blank" rel="noopener">🆘 Написать администратору в Telegram</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js?v=20261110a"></script>
+  <script src="js/core.js?v=20261110a"></script>
+  <script src="js/api.js?v=20261110a"></script>
+  <script src="js/fx.js?v=20261110a"></script>
+  <script src="js/cabinet.js?v=20261110a"></script>
 </body>
 </html>

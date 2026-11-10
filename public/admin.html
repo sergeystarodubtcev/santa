@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261108d">
+  <link rel="stylesheet" href="css/style.css?v=20261110a">
 </head>
 <body>
   <header class="topbar">
@@ -103,10 +103,24 @@
 
         <div class="card" style="margin-top:18px">
           <h3>🔗 Пары</h3>
+          <p class="muted" style="font-size:13px;margin-top:-4px">Получателя можно поменять вручную — выберите в списке. Санта сразу получит уведомление с новым адресом. Форс-мажоры, удаления и обращения в «Помощь администратора» приходят вам в Telegram-бот.</p>
+          <div data-pairs-warn></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Санта</th><th></th><th>Получатель</th><th>Статус</th><th>Трек</th><th>Изменить</th></tr></thead>
+            <thead><tr><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr></thead>
             <tbody data-pairs></tbody>
           </table></div>
+          <div class="actions" data-pair-add-wrap hidden>
+            <select data-pair-add-santa></select>
+            <span>🎁→</span>
+            <select data-pair-add-rec></select>
+            <button class="btn btn-ghost btn-sm" data-pair-add>Назначить</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+          <h3>📋 Журнал событий</h3>
+          <p class="muted" style="font-size:13px;margin-top:-4px">Удаления аккаунтов, перестройка пар, ручные правки и обращения к администратору. Всё это дублируется вам в Telegram-бот.</p>
+          <ul class="adm-log" data-adm-log></ul>
         </div>
       </section>
     </div>
@@ -121,10 +135,10 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261108d"></script>
-  <script src="js/core.js?v=20261108d"></script>
-  <script src="js/api.js?v=20261108d"></script>
-  <script src="js/fx.js?v=20261108d"></script>
-  <script src="js/admin.js?v=20261108d"></script>
+  <script src="js/config.js?v=20261110a"></script>
+  <script src="js/core.js?v=20261110a"></script>
+  <script src="js/api.js?v=20261110a"></script>
+  <script src="js/fx.js?v=20261110a"></script>
+  <script src="js/admin.js?v=20261110a"></script>
 </body>
 </html>

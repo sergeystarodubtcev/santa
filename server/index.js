@@ -273,7 +273,7 @@ const server = http.createServer(async (req, res) => {
     if (mutated) save();
     send(res, 200, data);
   } catch (e) {
-    if (e instanceof core.SantaError) return send(res, e.status, { error: e.message });
+    if (e instanceof core.SantaError) return send(res, e.status, { error: e.message, code: e.code });
     console.error(e);
     send(res, 500, { error: 'Что-то пошло не так. Кофе пролился 😢' });
   }

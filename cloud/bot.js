@@ -21,8 +21,11 @@ const BTN = {
   sent: '📦 Я отправил подарок',
   form: '📝 Моя анкета',
   got: '🎉 Я получил подарок',
+  help: '🆘 Помощь администратора',
+  done: '✅ Готово',
 };
-const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }]], resize_keyboard: true };
+const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.help }]], resize_keyboard: true };
+const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
 const PREFS_BTN = ib([[['☕ Кофейное', 'prefs:coffee'], ['🧸 Некофейное', 'prefs:noncoffee']], [['🎲 Удивите меня', 'prefs:any']]]);
@@ -32,10 +35,11 @@ function createBot({ core, secret, siteUrl, username }) {
   const sign = (s) => crypto.createHmac('sha256', secret).update('tg:' + s).digest('base64url').slice(0, 16);
 
   // Ссылка для кнопки «Подписаться» в личном кабинете: t.me/bot?start=<uid>_<подпись>
-  function linkUrl(uid) {
-    return `https://t.me/${username}?start=${uid}_${sign(uid)}`;
+  function linkUrl(uid, help) {
+    return `https://t.me/${username}?start=${help ? 'help-' : ''}${uid}_${sign(uid)}`;
   }
   function verifyStart(param) {
+    param = String(param || '').replace(/^help-/, '');
     const i = String(param || '').indexOf('_');
     if (i < 1) return null;
     const uid = param.slice(0, i);
@@ -72,6 +76,39 @@ function createBot({ core, secret, siteUrl, username }) {
     db.users.forEach((x) => { if (x.tgChatId === chatId && x.id !== u.id) delete x.tgChatId; });
     u.tgChatId = chatId;
     greet(out, db, chatId, u);
+  }
+
+  // ---------- помощь администратора ----------
+  const nickOf = (db, id) => { const u = db.users.find((x) => x.id === id); return u ? '@' + u.tg : '—'; };
+  const ST = { assigned: 'ждёт отправки', sent: 'отправлено', received: 'получено' };
+  function pairInfo(db, u) {
+    if (!u) return 'аккаунта на сайте нет';
+    const out = db.pairs.find((p) => p.santaId === u.id);
+    const inc = db.pairs.find((p) => p.recipientId === u.id);
+    return `дарит: ${out ? nickOf(db, out.recipientId) + ' (' + ST[out.status] + ')' : '—'}; его Санта: ${inc ? nickOf(db, inc.santaId) + ' (' + ST[inc.status] + ')' : '—'}`;
+  }
+  function helpKey(u, from) { return u ? u.tg : String(from.username || 'id' + from.id).toLowerCase(); }
+  function startHelp(db, out, chatId, from) {
+    const u = userByChat(db, chatId);
+    const key = helpKey(u, from);
+    db.tgState[chatId] = { flow: 'help', uid: u && u.id };
+    db.tgHelpChats = db.tgHelpChats || {};
+    db.tgHelpChats[key] = chatId;
+    out.push({ chat_id: chatId, text: '🆘 Напишите, что случилось, одним или несколькими сообщениями — я передам всё организатору, он ответит здесь же. Можно прислать фото. Когда закончите, нажмите «✅ Готово».', reply_markup: HELP_KB });
+    toAdmins(db, out, `🆘 <b>@${esc(key)}</b> открыл «Помощь администратора»\n${u ? esc(u.name) + ' · ' + esc(u.phone) + '\n' : ''}${esc(pairInfo(db, u))}\n\nОтветить: <code>/reply @${esc(key)} текст</code>`);
+  }
+  function helpMessage(db, out, chatId, msg, from) {
+    const u = userByChat(db, chatId);
+    const key = helpKey(u, from);
+    if (msg.text) toAdmins(db, out, `🆘 <b>@${esc(key)}</b>${u ? ' (' + esc(u.name) + ')' : ''}:\n${esc(msg.text)}\n\n<code>/reply @${esc(key)} </code>`);
+    else {
+      toAdmins(db, out, `🆘 <b>@${esc(key)}</b> прислал вложение 👇`);
+      (db.tgAdmins || []).forEach((a) => out.push({ method: 'forwardMessage', chat_id: a, from_chat_id: chatId, message_id: msg.message_id }));
+    }
+    out.push({ chat_id: chatId, text: '📨 Передал организатору.' });
+  }
+  function toAdmins(db, out, text) {
+    (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text }));
   }
 
   // ---------- сценарии ----------
@@ -258,12 +295,16 @@ function createBot({ core, secret, siteUrl, username }) {
     // ----- команды -----
     if (text.startsWith('/start')) {
       delete db.tgState[chatId];
-      const uid = verifyStart(text.split(/\s+/)[1]);
+      const startParam = text.split(/\s+/)[1] || '';
+      const uid = verifyStart(startParam);
       const byLink = uid && db.users.find((x) => x.id === uid);
       const uname = String(from.username || '').toLowerCase();
       const byName = !byLink && uname && db.users.find((x) => x.tg === uname);
       const u = byLink || byName || u0;
-      if (u) link(db, out, chatId, u);
+      if (u) {
+        if (startParam.startsWith('help-')) { u.tgChatId = chatId; startHelp(db, out, chatId, from); }
+        else link(db, out, chatId, u);
+      } else if (startParam === 'help') startHelp(db, out, chatId, from);
       else {
         out.push({
           chat_id: chatId,
@@ -277,8 +318,28 @@ function createBot({ core, secret, siteUrl, username }) {
       const pw = text.split(/\s+/).slice(1).join(' ');
       if (ctx.checkAdmin(pw)) {
         if (!db.tgAdmins.includes(chatId)) db.tgAdmins.push(chatId);
-        out.push({ chat_id: chatId, text: '🔐 Готово, вы админ. Буду присылать сюда новые анкеты на модерацию и тех, кто не успевает отправить подарок.' });
+        out.push({ chat_id: chatId, text: '🔐 Готово, вы админ. Буду присылать сюда новые анкеты на модерацию, всё про удаление аккаунтов и перестройку пар, обращения в «Помощь администратора» и тех, кто не успевает отправить подарок.\nОтветить человеку: /reply @ник текст' });
       } else out.push({ chat_id: chatId, text: 'Неверный пароль администратора.' });
+      return { out, actingUid };
+    }
+    if (text.startsWith('/reply') && isAdmin(db, chatId)) {
+      const m = text.match(/^\/reply\s+@?(\S+)\s+([\s\S]+)/);
+      if (!m) { out.push({ chat_id: chatId, text: 'Формат: /reply @ник текст ответа' }); return { out, actingUid }; }
+      const key = m[1].toLowerCase();
+      const target = (db.tgHelpChats || {})[key] || (db.users.find((x) => x.tg === key) || {}).tgChatId;
+      if (!target) { out.push({ chat_id: chatId, text: `Не знаю чат @${esc(key)}: человек не писал в бот.` }); return { out, actingUid }; }
+      out.push({ chat_id: target, text: '💬 <b>Ответ организатора:</b>\n' + esc(m[2]) });
+      out.push({ chat_id: chatId, text: `✅ Отправил @${esc(key)}.` });
+      return { out, actingUid };
+    }
+    if (text === '/help' || text === BTN.help) { startHelp(db, out, chatId, from); return { out, actingUid }; }
+    if (st && st.flow === 'help') {
+      if (text === BTN.done || text === '/cancel') {
+        delete db.tgState[chatId];
+        out.push({ chat_id: chatId, text: 'Спасибо! Организатор ответит здесь. Если появится что-то ещё — снова нажмите «🆘 Помощь администратора».', reply_markup: u0 ? MAIN_KB : { remove_keyboard: true } });
+        return { out, actingUid };
+      }
+      helpMessage(db, out, chatId, update.message, from);
       return { out, actingUid };
     }
     if (text === '/cancel' || text.toLowerCase() === 'отмена') {
@@ -335,6 +396,10 @@ function createBot({ core, secret, siteUrl, username }) {
   function pushNotifications(db, list, exceptUid) {
     const out = [];
     for (const n of list) {
+      if (n.userId === '@admins') {
+        (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text: '📋 ' + esc(n.text) }));
+        continue;
+      }
       const u = db.users.find((x) => x.id === n.userId);
       if (!u) continue;
       if (u.tgChatId && u.id !== exceptUid) {

@@ -348,7 +348,7 @@ module.exports.handler = async function handler(event, context) {
     if (path === '/api/tg/link') {
       if (!bot) throw new core.SantaError(404, 'Бот пока не подключён');
       if (!ctx.userId) throw new core.SantaError(401, 'Войдите в личный кабинет');
-      return reply(200, { url: bot.linkUrl(ctx.userId), username: TG_USERNAME });
+      return reply(200, { url: bot.linkUrl(ctx.userId), helpUrl: bot.linkUrl(ctx.userId, true), username: TG_USERNAME });
     }
 
     const db = await loadDb(token); // каждый раз свежая база: экземпляров функции может быть несколько
@@ -396,7 +396,7 @@ module.exports.handler = async function handler(event, context) {
     }
     return reply(200, data);
   } catch (e) {
-    if (e instanceof core.SantaError) return reply(e.status, { error: e.message });
+    if (e instanceof core.SantaError) return reply(e.status, { error: e.message, code: e.code });
     console.error(e);
     return reply(500, { error: 'Что-то пошло не так. Кофе пролился 😢' });
   }

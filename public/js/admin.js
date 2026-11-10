@@ -110,14 +110,30 @@
           ${p && !u.banned && p.moderation !== 'approved' ? `<button class="btn btn-green btn-sm" data-mod="${u.id}" data-s="approved">✅ Одобрить</button>` : ''}
           ${p && !u.banned && p.moderation !== 'rejected' ? `<button class="btn btn-ghost btn-sm" data-mod="${u.id}" data-s="rejected">🚫 Отклонить</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Разбанить' : '🛑 В ЧС'}</button>
+          ${state.pairs.some((x) => x.santaId === u.id || x.recipientId === u.id) ? `<button class="btn btn-ghost btn-sm" data-unpair="${u.id}" title="Убрать из жеребьёвки, аккаунт оставить">✂️ Из пар</button>` : ''}
           <button class="btn btn-danger btn-sm" data-del="${u.id}" title="Удалить">✕</button>
         </td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">Пока никого. Киньте ссылку в чат!</td></tr>';
   }
 
   function renderPairs() {
+    const players = state.users.filter((u) => u.participation && u.participation.moderation === 'approved' && !u.banned);
+    const opt = (sel, except) => '<option value="">— нет —</option>' + players.filter((u) => u.id !== except)
+      .map((u) => `<option value="${u.id}" ${u.id === sel ? 'selected' : ''}>@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
+    const chk = state.pairsCheck || {};
+    const warn = [];
+    if ((chk.noRecipient || []).length) warn.push('🎁 Без получателя (никому не дарят): ' + chk.noRecipient.map(esc).join(', '));
+    if ((chk.noSanta || []).length) warn.push('😢 Без Санты (им никто не дарит): ' + chk.noSanta.map(esc).join(', '));
+    if ((chk.doubleSanta || []).length) warn.push('⚠️ Получают сразу от двух Сант: ' + chk.doubleSanta.map(esc).join(', '));
+    $('[data-pairs-warn]').innerHTML = warn.length ? `<div class="pairs-warn">${warn.join('<br>')}<br><small>Исправьте вручную: выберите получателя в таблице или назначьте ниже.</small></div>` : '';
+    const givers = new Set(state.pairs.map((p) => p.santaId));
+    const free = players.filter((u) => !givers.has(u.id));
+    $('[data-pair-add-wrap]').hidden = !state.pairs.length || !free.length;
+    $('[data-pair-add-santa]').innerHTML = free.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
+    $('[data-pair-add-rec]').innerHTML = opt('', null);
+    $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     $('[data-pairs]').innerHTML = state.pairs.map((p) => `<tr>
-      <td>${esc(p.santa)}</td><td>🎁→</td><td>${esc(p.recipient)}</td>
+      <td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}">${opt(p.recipientId, p.santaId)}</select></td>
       <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}</td>
       <td>${esc(p.track) || '—'}</td>
       <td><select data-pair="${p.santaId}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select></td>
@@ -144,9 +160,31 @@
     const ban = e.target.closest('[data-ban]');
     if (ban) return act('/api/admin/ban', { userId: ban.dataset.ban, banned: ban.dataset.v === '1' }, ban.dataset.v === '1' ? 'Добавлен в чёрный список' : 'Разбанен');
     const del = e.target.closest('[data-del]');
-    if (del && confirm('Удалить пользователя навсегда?')) return act('/api/admin/delete', { userId: del.dataset.del }, 'Удалён');
+    if (del) {
+      const inDraw = state.pairs.some((x) => x.santaId === del.dataset.del || x.recipientId === del.dataset.del);
+      if (!confirm(inDraw
+        ? 'Удалить участника навсегда? Он в жеребьёвке: его Санта автоматически получит его получателя (и уведомление с новым адресом).'
+        : 'Удалить пользователя навсегда?')) return;
+      return act('/api/admin/delete', { userId: del.dataset.del }, 'Удалён, пары перестроены');
+    }
+    const unpair = e.target.closest('[data-unpair]');
+    if (unpair && confirm('Убрать участника из жеребьёвки? Его Санта получит его получателя. Аккаунт останется.')) {
+      return act('/api/admin/remove-from-draw', { userId: unpair.dataset.unpair }, 'Убран из пар, цепочка перестроена');
+    }
+    if (e.target.closest('[data-pair-add]')) {
+      const santaId = $('[data-pair-add-santa]').value;
+      const recipientId = $('[data-pair-add-rec]').value;
+      if (santaId && recipientId) return act('/api/admin/pair-set', { santaId, recipientId }, 'Получатель назначен');
+    }
   });
   document.addEventListener('change', (e) => {
+    const rec = e.target.closest('[data-pair-rec]');
+    if (rec) {
+      const santa = state.users.find((u) => u.id === rec.dataset.pairRec);
+      const to = state.users.find((u) => u.id === rec.value);
+      if (!confirm(to ? `@${santa.tg} будет дарить @${to.tg}. Санта получит уведомление с новым адресом. Продолжить?` : `Убрать получателя у @${santa.tg}?`)) { renderPairs(); return; }
+      return act('/api/admin/pair-set', { santaId: rec.dataset.pairRec, recipientId: rec.value || null }, 'Пара изменена');
+    }
     const sel = e.target.closest('[data-pair]');
     if (sel) act('/api/admin/pair-status', { santaId: sel.dataset.pair, status: sel.value }, 'Статус обновлён');
   });

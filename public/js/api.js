@@ -78,6 +78,7 @@
     } catch (e) {
       const err = new Error(e.message);
       err.status = e.status || 500;
+      err.code = e.code;
       return Promise.reject(err);
     }
   }
@@ -104,6 +105,7 @@
     if (!r.ok) {
       const err = new Error(data.error || 'Ошибка ' + r.status);
       err.status = r.status;
+      err.code = data.code;
       throw err;
     }
     return data;
