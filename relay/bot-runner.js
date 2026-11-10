@@ -52,6 +52,14 @@ async function site(path, body) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function deliver(out) {
+  for (const item of out || []) {
+    const { method = 'sendMessage', ...payload } = item;
+    if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
+    await tg(method, payload);
+  }
+}
+
 // Слежение за страницами: проверку делает облако (из России — российские магазины закрыты для зарубежных
 // серверов). Раз в минуту спрашиваем; когда страница появится, облако один раз пришлёт сообщение админам.
 const WATCH = [{ key: 'tastycoffee-advent-2027', title: 'Адвент-календарь Tasty Coffee 2027', url: 'https://shop.tastycoffee.ru/coffee/advent-music-calendar-2027' }];

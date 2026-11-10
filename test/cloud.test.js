@@ -163,8 +163,11 @@ test('слежение за страницей: при 200 один раз пи�
   assert.equal(r.data.found, true);
   assert.equal(r.data.out, undefined);
   r = await post('/api/tg/watch', { key: w.key });
-  assert.deepEqual(r.data.out.map((o) => o.chat_id), [4242], 'только админам, не участникам');
-  assert.match(r.data.out[0].text, /Адвент-календарь Tasty Coffee 2027 появился/);
+  assert.equal(r.data.queued, 1);
+  const q = await post('/api/tg/outbox', {});
+  const msgs = q.data.out.filter((o) => /появился/.test(o.text));
+  assert.deepEqual(msgs.map((o) => o.chat_id), [4242], 'только админам, не участникам');
+  assert.match(msgs[0].text, /Адвент-календарь Tasty Coffee 2027 появился/);
   r = await post('/api/tg/watch', { key: w.key });
   assert.equal(r.data.out.length, 0, 'второй раз не шлём');
   assert.equal(r.data.done, true);

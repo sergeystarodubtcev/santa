@@ -317,9 +317,11 @@ module.exports.handler = async function handler(event, context) {
       if (body.dry) return reply(200, { dry: true, status, finalUrl, title, found, alreadyNotified: !!db.tgWatch[key], admins: admins.length });
       if (!found) return reply(200, { out: [], done: false, status, admins: admins.length });
       db.tgWatch[key] = { at: Date.now(), url: body.url };
-      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      // Сообщение кладём в очередь в базе (вместе с отметкой) — оно не потеряется, даже если ретранслятор упадёт.
       const out = admins.map((chat_id) => ({ chat_id, text: `🎄 <b>${esc(body.title)} появился!</b>\n${esc(body.url)}` }));
-      return reply(200, { out, done: true, admins: admins.length });
+      db.tgOutbox = (db.tgOutbox || []).concat(out);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      return reply(200, { out: [], queued: out.length, done: true, admins: admins.length });
     }
 
     if (path === '/api/tg/relay' || path === '/api/tg/outbox') {
