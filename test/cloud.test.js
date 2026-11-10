@@ -173,9 +173,27 @@ test('слежение за страницей: при 200 один раз пи�
   assert.equal(r.data.done, true);
   assert.equal((await post('/api/tg/watch', { key: w.key, reset: true })).data.reset, true);
   // второй адрес (секретный адвент) отслеживается отдельно
-  shopUrl = 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027'; shopHtml = '<title>Секретный адвент-календарь 2027 — Tasty Coffee</title>';
-  r = await post('/api/tg/watch', { key: 'tastycoffee-advent-secret-2027', dry: true });
-  assert.equal(r.data.found, true, 'секретный адвент находится');
+  // секретный адвент: ждём старта продаж, а не появления страницы
+  const nuxt = (archived, price) => `<title>ADVENT SECRET CALENDAR 2027 — Tasty Coffee</title><script type="application/json" id="__NUXT_DATA__">${JSON.stringify(
+    [{ id: 1, name: 2, slug: 3, price: 4, is_archive: 5 }, 2809, 'ADVENT SECRET CALENDAR 2027', '/coffee/advent-secret-calendar-2027', price, archived])}</script>`
+    + (archived ? '<button>Узнать о старте продаж</button>' : '<button>В корзину</button>');
+  const sk = 'tastycoffee-advent-secret-2027-sale';
+  shopUrl = 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027'; shopHtml = nuxt(true, 10000);
+  r = await post('/api/tg/watch', { key: sk });
+  assert.equal(r.data.done, false, 'страница есть, но продаж ещё нет — молчим');
+  shopHtml = '<title>ADVENT SECRET CALENDAR 2027</title>';
+  r = await post('/api/tg/watch', { key: sk });
+  assert.equal(r.data.done, false, 'нет данных о товаре — не считаем стартом продаж');
+  shopHtml = nuxt(false, 2990);
+  r = await post('/api/tg/watch', { key: sk, dry: true });
+  assert.equal(r.data.found, true, 'в продаже');
+  assert.equal(r.data.product.price, 2990);
+  r = await post('/api/tg/watch', { key: sk });
+  assert.equal(r.data.queued, 1);
+  const q2 = await post('/api/tg/outbox', {});
+  const sale = q2.data.out.filter((o) => /старт продаж/.test(o.text));
+  assert.equal(sale.length, 1);
+  assert.match(sale[0].text, /Цена: 2990 ₽/);
   global.fetch = s3fetch;
   delete process.env.TG_RELAY_SECRET;
 });

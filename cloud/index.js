@@ -34,11 +34,30 @@ const WATCH = [
     mustContain: [/адвент/i, /advent/i],
   },
   {
-    key: 'tastycoffee-advent-secret-2027', title: 'Секретный адвент-календарь Tasty Coffee 2027',
+    // ждём не появления страницы (она уже есть с кнопкой «Узнать о старте продаж»), а старта продаж
+    key: 'tastycoffee-advent-secret-2027-sale', title: 'Секретный адвент-календарь Tasty Coffee 2027',
     url: 'https://shop.tastycoffee.ru/coffee/advent-secret-calendar-2027', slug: 'advent-secret-calendar-2027',
-    mustContain: [/адвент/i, /advent/i],
+    mustContain: [/адвент/i, /advent/i], onSale: true,
   },
 ];
+
+// Состояние товара на странице магазина (Nuxt): данные лежат в <script id="__NUXT_DATA__"> массивом,
+// где поля объекта — номера ячеек. Пока продаж нет, у товара is_archive = true и на странице
+// кнопка «Узнать о старте продаж»; в продаже — is_archive = false и есть цена.
+function shopProduct(html, slug) {
+  const m = /<script[^>]*id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (!m) return null;
+  let arr;
+  try { arr = JSON.parse(m[1]); } catch (e) { return null; }
+  if (!Array.isArray(arr)) return null;
+  const val = (i) => (Number.isInteger(i) && i >= 0 && i < arr.length ? arr[i] : undefined);
+  for (const x of arr) {
+    if (!x || typeof x !== 'object' || Array.isArray(x) || !('is_archive' in x) || !('slug' in x)) continue;
+    if (!String(val(x.slug) || '').includes(slug)) continue;
+    return { name: val(x.name), price: Number(val(x.price)) || 0, archived: val(x.is_archive) === true };
+  }
+  return null;
+}
 const WATCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const S3 = 'https://storage.yandexcloud.net';
 const DB_KEY = 'data/db.json';
@@ -309,7 +328,7 @@ module.exports.handler = async function handler(event, context) {
       const w = WATCH.find((x) => x.key === key);
       if (!w) throw new core.SantaError(404, 'unknown watch');
       Object.assign(body, w);
-      let status = 0, finalUrl = '', title = '', found = false;
+      let status = 0, finalUrl = '', title = '', found = false, product = null;
       try {
         const r = await fetch(w.url, { headers: { 'User-Agent': WATCH_UA, Accept: 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
         status = r.status;
@@ -318,12 +337,17 @@ module.exports.handler = async function handler(event, context) {
         title = ((html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1] || '').trim().slice(0, 150);
         // «Появился» = код 200, адрес не увёл на другую страницу, и в заголовке/шапке есть признаки товара
         found = status === 200 && finalUrl.includes(w.slug) && w.mustContain.some((rx) => rx.test(title) || rx.test(html.slice(0, 200000).replace(/<script[\s\S]*?<\/script>/gi, '')));
+        if (found && w.onSale) {
+          product = shopProduct(html, w.slug);
+          found = !!product && !product.archived && product.price > 0 && !/узнать о старте продаж/i.test(html);
+        }
       } catch (e) { return reply(200, { out: [], done: false, status: 0, error: String(e.cause && e.cause.code || e.message), admins: admins.length }); }
-      if (body.dry) return reply(200, { dry: true, status, finalUrl, title, found, alreadyNotified: !!db.tgWatch[key], admins: admins.length });
+      if (body.dry) return reply(200, { dry: true, status, finalUrl, title, found, product, alreadyNotified: !!db.tgWatch[key], admins: admins.length });
       if (!found) return reply(200, { out: [], done: false, status, admins: admins.length });
       db.tgWatch[key] = { at: Date.now(), url: body.url };
       // Сообщение кладём в очередь в базе (вместе с отметкой) — оно не потеряется, даже если ретранслятор упадёт.
-      const out = admins.map((chat_id) => ({ chat_id, text: `🎄 <b>${esc(body.title)} появился!</b>\n${esc(body.url)}` }));
+      const head = w.onSale ? `🛒 <b>${esc(body.title)} — старт продаж!</b>${product && product.price ? `\nЦена: ${product.price} ₽` : ''}` : `🎄 <b>${esc(body.title)} появился!</b>`;
+      const out = admins.map((chat_id) => ({ chat_id, text: `${head}\n${esc(body.url)}` }));
       db.tgOutbox = (db.tgOutbox || []).concat(out);
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
       return reply(200, { out: [], queued: out.length, done: true, admins: admins.length });
