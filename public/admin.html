@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111e">
+  <link rel="stylesheet" href="css/style.css?v=20261111f">
 </head>
 <body>
   <header class="topbar">
@@ -139,9 +139,9 @@
           <p class="muted" style="font-size:12px">«Удалить» убирает уведомление из личных кабинетов. Уже доставленное сообщение в Telegram отозвать нельзя.</p>
         </details>
 
-        <div class="card" style="margin-top:18px">
+        <details class="card fold" style="margin-top:18px">
+          <summary><h3>👥 Участники</h3><span class="fold-hint" data-fold-users>Анкеты, модерация, правка данных</span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
           <div class="toolbar">
-            <h3 style="margin:0">👥 Участники</h3>
             <label class="check" style="font-size:14px;display:flex;gap:8px;align-items:center"><input type="checkbox" data-only-pending style="width:18px;height:18px">Только на модерации</label>
             <input type="search" placeholder="Поиск по имени, телефону, нику" data-search>
           </div>
@@ -149,10 +149,10 @@
             <thead><tr><th>Кто</th><th>Контакты</th><th>ПВЗ Ozon / ФИО</th><th>Пожелания / пометки</th><th>Модерация</th><th></th></tr></thead>
             <tbody data-users></tbody>
           </table></div>
-        </div>
+        </details>
 
-        <div class="card" style="margin-top:18px">
-          <h3>🔗 Пары</h3>
+        <details class="card fold" style="margin-top:18px">
+          <summary><h3>🔗 Пары</h3><span class="fold-hint" data-fold-pairs>Кто кому дарит, статусы и треки</span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
           <p class="muted" style="font-size:13px;margin-top:-4px">Получателя можно поменять вручную — выберите в списке. Санта сразу получит уведомление с новым адресом. Форс-мажоры, удаления и обращения в «Помощь администратора» приходят вам в Telegram-бот.</p>
           <div data-pairs-warn></div>
           <div class="table-wrap"><table>
@@ -165,7 +165,7 @@
             <select data-pair-add-rec></select>
             <button class="btn btn-ghost btn-sm" data-pair-add>Назначить</button>
           </div>
-        </div>
+        </details>
 
         <div class="card" style="margin-top:18px">
           <h3>📋 Журнал событий</h3>
@@ -218,11 +218,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261111e"></script>
-  <script src="js/cities.js?v=20261111e"></script>
-  <script src="js/core.js?v=20261111e"></script>
-  <script src="js/api.js?v=20261111e"></script>
-  <script src="js/fx.js?v=20261111e"></script>
-  <script src="js/admin.js?v=20261111e"></script>
+  <script src="js/config.js?v=20261111f"></script>
+  <script src="js/cities.js?v=20261111f"></script>
+  <script src="js/core.js?v=20261111f"></script>
+  <script src="js/api.js?v=20261111f"></script>
+  <script src="js/fx.js?v=20261111f"></script>
+  <script src="js/admin.js?v=20261111f"></script>
 </body>
 </html>

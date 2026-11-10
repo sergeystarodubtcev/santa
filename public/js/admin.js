@@ -53,6 +53,11 @@
     $('[data-logout]').hidden = false;
     const noForm = state.users.filter((u) => !u.participation);
     const noFormBot = noForm.filter((u) => u.tgLinked).length;
+    const pend = state.users.filter((u) => u.participation && u.participation.moderation === 'pending').length;
+    $('[data-fold-users]').textContent = `${state.users.length} аккаунтов · ${state.users.length - noForm.length} с анкетой` + (pend ? ` · ⏳ на модерации: ${pend}` : '');
+    const pairs = state.pairs || [];
+    const sentN = pairs.filter((x) => x.status && x.status !== 'assigned').length;
+    $('[data-fold-pairs]').textContent = pairs.length ? `${pairs.length} пар · отправлено: ${sentN}` : 'Жеребьёвки ещё не было';
     $('[data-noform-count]').textContent = `${noForm.length} чел. (с ботом — ${noFormBot})`;
     const s = state.stats;
     const sto = state.storage;
@@ -144,6 +149,7 @@
     if ((chk.noRecipient || []).length) warn.push('🎁 Без получателя (никому не дарят): ' + chk.noRecipient.map(esc).join(', '));
     if ((chk.noSanta || []).length) warn.push('😢 Без Санты (им никто не дарит): ' + chk.noSanta.map(esc).join(', '));
     if ((chk.doubleSanta || []).length) warn.push('⚠️ Получают сразу от двух Сант: ' + chk.doubleSanta.map(esc).join(', '));
+    if (warn.length) $('[data-fold-pairs]').innerHTML += ' · <b style="color:#c1121f">⚠️ есть проблемы — откройте</b>';
     $('[data-pairs-warn]').innerHTML = warn.length ? `<div class="pairs-warn">${warn.join('<br>')}<br><small>Исправьте вручную: выберите получателя в таблице или назначьте ниже.</small></div>` : '';
     const givers = new Set(state.pairs.map((p) => p.santaId));
     const free = players.filter((u) => !givers.has(u.id));
