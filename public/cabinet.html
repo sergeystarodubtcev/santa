@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261110a">
+  <link rel="stylesheet" href="css/style.css?v=20261110b">
 </head>
 <body>
   <div class="banners" data-banners></div>
@@ -95,6 +95,7 @@
             <h3>☕ Профиль</h3>
             <dl class="kv" data-profile></dl>
             <div class="actions">
+              <button class="btn btn-ghost btn-sm" data-edit-profile>✏️ Исправить данные</button>
               <a class="btn btn-ghost btn-sm" href="privacy.html" target="_blank">🔒 Политика обработки данных</a>
               <button class="btn btn-danger btn-sm" data-delete-me hidden>Удалить аккаунт и мои данные</button>
             </div>
@@ -142,6 +143,22 @@
     </div>
   </footer>
 
+  <!-- редактирование профиля -->
+  <div class="modal" data-prof-modal hidden>
+    <div class="modal-backdrop" data-prof-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-prof-close aria-label="Закрыть">✕</button>
+      <div class="modal-head"><div class="modal-emoji">✏️</div><h3>Исправить данные</h3></div>
+      <form class="form" data-form="profile" novalidate>
+        <label>Как вас зовут<input name="name" autocomplete="given-name"></label>
+        <label>Ник в Telegram<small>Тот, что после @ в настройках Telegram. По нему вас найдёт ваш Санта и бот</small><input name="tg" placeholder="@coffeemaniac"></label>
+        <label>Телефон<input name="phone" type="tel" autocomplete="tel"></label>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">Сохранить</button>
+      </form>
+    </div>
+  </div>
+
   <!-- удаление аккаунта: несколько предупреждений -->
   <div class="modal" data-del-modal hidden>
     <div class="modal-backdrop" data-del-close></div>
@@ -169,10 +186,10 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261110a"></script>
-  <script src="js/core.js?v=20261110a"></script>
-  <script src="js/api.js?v=20261110a"></script>
-  <script src="js/fx.js?v=20261110a"></script>
-  <script src="js/cabinet.js?v=20261110a"></script>
+  <script src="js/config.js?v=20261110b"></script>
+  <script src="js/core.js?v=20261110b"></script>
+  <script src="js/api.js?v=20261110b"></script>
+  <script src="js/fx.js?v=20261110b"></script>
+  <script src="js/cabinet.js?v=20261110b"></script>
 </body>
 </html>

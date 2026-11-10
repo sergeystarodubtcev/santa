@@ -269,6 +269,30 @@
     setTimeout(() => Api.get('/api/me').then((m) => { me = m; renderTg(); }).catch(() => {}), 8000);
   });
 
+  // ---------- исправление профиля ----------
+  const pm = $('[data-prof-modal]');
+  const pfm = $('[data-form=profile]');
+  const profClose = () => { pm.classList.remove('open'); setTimeout(() => (pm.hidden = true), 250); };
+  $$('[data-prof-close]', pm).forEach((b) => b.addEventListener('click', profClose));
+  $('[data-edit-profile]').addEventListener('click', () => {
+    pfm.name.value = me.user.name;
+    pfm.tg.value = '@' + me.user.tg;
+    pfm.phone.value = me.user.phone;
+    $('[data-err]', pfm).textContent = '';
+    pm.hidden = false;
+    requestAnimationFrame(() => pm.classList.add('open'));
+    setTimeout(() => pfm.tg.focus(), 60);
+  });
+  pfm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit(pfm, async () => {
+      me = await Api.post('/api/profile', { name: pfm.name.value, tg: pfm.tg.value, phone: pfm.phone.value });
+      profClose();
+      render();
+      FX.toast('Данные сохранены ✅', 'success');
+    });
+  });
+
   // ---------- удаление аккаунта (отзыв согласия на обработку ПДн) ----------
   const dm = $('[data-del-modal]');
   const delStep = (n) => $$('[data-del-step]', dm).forEach((el) => (el.hidden = el.dataset.delStep !== String(n)));

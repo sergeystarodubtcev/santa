@@ -449,6 +449,25 @@
         return ok({ token: ctx.issueToken({ uid: u.id }), user: publicUser(u) });
       }
       case 'GET /api/me': return ok(me(db, ctx, needUser()));
+      case 'POST /api/profile': {
+        // исправить имя, ник в Telegram или телефон (если ошиблись при регистрации)
+        const u = getUser(db, needUser());
+        const name = str(body.name, 60);
+        if (name.length < 2) fail(400, 'Как вас зовут?');
+        const tg = normTg(body.tg);
+        const phone = normPhone(body.phone);
+        if (db.users.some((x) => x.id !== u.id && x.tg === tg)) fail(409, 'Этот ник в Telegram уже занят другим участником');
+        if (db.users.some((x) => x.id !== u.id && x.phone === phone)) fail(409, 'Этот телефон уже указан у другого участника');
+        const changes = [];
+        if (u.tg !== tg) changes.push(`ник @${u.tg} → @${tg}`);
+        if (u.name !== name) changes.push(`имя «${u.name}» → «${name}»`);
+        if (u.phone !== phone) changes.push(`телефон ${u.phone} → ${phone}`);
+        Object.assign(u, { name, tg, phone });
+        if (changes.length && db.pairs.some((p) => p.santaId === u.id || p.recipientId === u.id)) {
+          notifyAdmins(db, ctx, `✏️ @${tg} исправил профиль после жеребьёвки: ${changes.join(', ')}.`);
+        }
+        return ok(me(db, ctx, u.id), changes.length > 0);
+      }
       case 'POST /api/participate': participate(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/leave': leave(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/account/delete': {

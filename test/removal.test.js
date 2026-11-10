@@ -137,3 +137,21 @@ test('бот: журнал админам, «Помощь администрат
   r = msg(db, 777, '🆘 Помощь администратора', { username: 'stranger' });
   assert.ok(r.out.some((o) => o.chat_id === 999 && /@stranger<\/b> открыл/.test(o.text)));
 });
+
+test('профиль: можно исправить ник, имя и телефон; занятые не даём; после жеребьёвки — админу в журнал', () => {
+  const { db, ids } = chainDb();
+  const [A, B] = ids;
+  assert.throws(() => call(db, 'POST', '/api/profile', { name: 'U0', tg: '@user_1', phone: '+79660000000' }, { userId: A }), /ник .* занят/);
+  assert.throws(() => call(db, 'POST', '/api/profile', { name: 'U0', tg: 'ok_nick', phone: '+79660000001' }, { userId: A }), /телефон уже указан/);
+  assert.throws(() => call(db, 'POST', '/api/profile', { name: 'U0', tg: 'a', phone: '+79660000000' }, { userId: A }), /Ник в Telegram/);
+  const me = call(db, 'POST', '/api/profile', { name: 'Аня', tg: 'https://t.me/Anya_Real', phone: '8 966 000 00 00' }, { userId: A });
+  assert.equal(me.user.tg, 'anya_real');
+  assert.equal(me.user.name, 'Аня');
+  // Санта того, кто сменил ник, видит новый ник у получателя
+  const santaOfA = db.pairs.find((p) => p.recipientId === A).santaId;
+  assert.equal(call(db, 'GET', '/api/me', null, { userId: santaOfA }).assignment.recipient.tg, 'anya_real');
+  assert.match(adminLog(db), /✏️ @anya_real исправил профиль после жеребьёвки: ник @user_0 → @anya_real, имя «U0» → «Аня»/);
+  // вход по новому нику работает
+  assert.equal(call(db, 'POST', '/api/login', { login: '@anya_real', password: 'qwerty1' }).user.id, A);
+  assert.ok(B);
+});
