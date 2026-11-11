@@ -241,7 +241,7 @@ function createBot({ core, secret, siteUrl, username }) {
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
         (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в первом круге он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
         `\n\n📅 Отправка: до ${new Date(Date.parse((me.dates && me.dates.end) || me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
-      reply_markup: a.status === 'assigned' ? ib([[['📦 Я отправил подарок', 'sent']]]) : undefined,
+      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack']]]).concat([[['📦 Я отправил подарок', 'sent']]])) : undefined,
     });
   }
 
@@ -313,6 +313,12 @@ function createBot({ core, secret, siteUrl, username }) {
       } else if (d === 'skip' && st && st.flow === 'sent') {
         delete db.tgState[chatId];
         markSent(db, ctx, out, chatId, '');
+      } else if (d === 'ack') {
+        if (!u0) notLinked(out, chatId);
+        else {
+          try { call(db, ctx, 'POST', '/api/ack', {}, { userId: u0.id }); out.push({ chat_id: chatId, text: '👍 Отлично! Отметил, что вы собираете посылку. Когда отправите — нажмите «📦 Я отправил подарок».' }); }
+          catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
+        }
       } else if (d === 'w2:yes' || d === 'w2:no') {
         if (!u0) notLinked(out, chatId);
         else {

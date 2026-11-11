@@ -189,6 +189,10 @@
             ${r.notes ? `<dt>⚠️ Важно</dt><dd><span class="important">${esc(r.notes)}</span></dd>` : ''}
             ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
           </dl>
+          ${a.status === 'assigned' && !a.ackAt ? `
+          <div class="ack-box"><p><b>Подтвердите, что участвуете и собираете посылку</b> — так организаторы будут знать, что всё в порядке.</p>
+            <button class="btn btn-primary btn-block" type="button" data-ack>✅ Участвую, собираю посылку</button></div>` : ''}
+          ${a.status === 'assigned' && a.ackAt ? '<p class="muted" style="margin-top:12px">👍 Вы подтвердили, что собираете посылку.</p>' : ''}
           ${a.status === 'assigned' ? `
           <form class="form" data-sent style="margin-top:16px">
             <label>Трек-номер (необязательно)<input name="track" placeholder="например, 0123456789-0001-1"></label>
@@ -197,6 +201,15 @@
           </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>`}
         </div>`;
       revealedOnce = true;
+      const ab = $('[data-ack]', host);
+      if (ab) ab.addEventListener('click', async () => {
+        ab.disabled = true;
+        try {
+          me = await Api.post('/api/ack', {});
+          render();
+          FX.toast('Отлично! Собирайте посылку 🎁', 'success');
+        } catch (ex) { FX.toast(ex.message, 'error'); ab.disabled = false; }
+      });
       const sf = $('[data-sent]', host);
       if (sf) sf.addEventListener('submit', (e) => {
         e.preventDefault();

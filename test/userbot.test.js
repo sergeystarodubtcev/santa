@@ -159,3 +159,31 @@ test('шифрование сессии: другой ключ не расшиф
   assert.equal(decrypt(enc, keyFrom('A')), 'abc');
   assert.throws(() => decrypt(enc, keyFrom('B')));
 });
+
+test('переключатель: выключено — рассылка с аккаунта запрещена, очередь на паузе', () => {
+  const { db, ids } = seed();
+  db.userAcc = { status: 'ready', session: 'v1:x' };
+  call(db, 'POST', '/api/admin/broadcast', { text: 'a', userIds: ids, site: false, tg: false, userTg: true }, admin);
+  call(db, 'POST', '/api/admin/settings', { userTg: false }, admin);
+  assert.equal(call(db, 'GET', '/api/admin/state', null, admin).userAcc.enabled, false);
+  assert.throws(() => call(db, 'POST', '/api/admin/broadcast', { text: 'b', userIds: ids, userTg: true }, admin), /выключена/);
+  assert.equal(userPoll(db, { want: 1 }, Date.now()).items.length, 0, 'очередь на паузе');
+  call(db, 'POST', '/api/admin/settings', { userTg: true }, admin);
+  assert.equal(userPoll(db, { want: 1 }, Date.now()).items.length, 1);
+});
+
+test('Санта подтверждает «собираю посылку» — на сайте и в боте', () => {
+  const { db, ids } = seed();
+  const { createBot } = require('../cloud/bot.js');
+  const bot = createBot({ core, secret: 's', siteUrl: 'https://x', username: 'b' });
+  assert.equal(call(db, 'GET', '/api/me', null, { userId: ids[1] }).assignment.ackAt, null);
+  call(db, 'POST', '/api/ack', {}, { userId: ids[1] });
+  assert.ok(call(db, 'GET', '/api/me', null, { userId: ids[1] }).assignment.ackAt);
+  // бот: у Санты без подтверждения — кнопка «Участвую, собираю посылку»
+  const r1 = bot.handleUpdate(db, ctx, { update_id: 1, callback_query: { id: 'c1', data: 'whom', from: { id: 500 }, message: { chat: { id: 500, type: 'private' } } } });
+  const kb = r1.out.find((o) => o.reply_markup && o.reply_markup.inline_keyboard).reply_markup.inline_keyboard;
+  assert.equal(kb[0][0].callback_data, 'ack');
+  const r2 = bot.handleUpdate(db, ctx, { update_id: 2, callback_query: { id: 'c2', data: 'ack', from: { id: 500 }, message: { chat: { id: 500, type: 'private' } } } });
+  assert.match(r2.out.map((o) => o.text).join(' '), /собираете посылку/);
+  assert.ok(db.pairs.find((p) => p.santaId === ids[0]).ackAt);
+});

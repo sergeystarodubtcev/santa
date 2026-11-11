@@ -211,7 +211,7 @@
     const rnd = (p) => (p.round === 2 ? 2 : 1);
     $('[data-pairs]').innerHTML = state.pairs.map((p) => `<tr${p.failed ? ' class="row-failed"' : ''}>
       <td>${rnd(p) === 2 ? '2️⃣' : '1️⃣'}</td><td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
-      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
+      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
       <td><select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>
         ${rnd(p) === 1 && p.status === 'assigned' && !p.failed && !state.drawn2At ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" title="Санта не отправил подарок: получателя — во второй круг с наивысшим приоритетом">😢 Не отправил → получателя во 2-й круг ⭐</button>` : ''}</td>
@@ -396,6 +396,7 @@
     ['approved', '✅ Одобрены', (u) => u.participation && u.participation.moderation === 'approved'],
     ['r1', '1️⃣ Первый круг', (u) => u.participation && u.participation.round !== 2],
     ['r2', '2️⃣ Второй круг', (u) => u.participation && u.participation.round === 2],
+    ['noack', '🤷 Не подтвердили, что собирают', (u) => state.pairs.some((p) => p.santaId === u.id && p.status === 'assigned' && !p.ackAt)],
     ['notsent', '📦 Ещё не отправили подарок', (u) => state.pairs.some((p) => p.santaId === u.id && p.status === 'assigned')],
     ['sent', '🚚 Уже отправили', (u) => state.pairs.some((p) => p.santaId === u.id && p.status !== 'assigned')],
     ['waiting', '🎁 Ждут свой подарок', (u) => state.pairs.some((p) => p.recipientId === u.id && p.status !== 'received')],
@@ -460,6 +461,7 @@
       <td><button class="btn btn-danger btn-sm" data-bc-del="${b.id}" title="Удалить из кабинетов">🗑</button></td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">Рассылок пока не было.</td></tr>';
     renderUserAcc();
+    if ($('[data-cl]').open) renderChatList();
   }
   document.addEventListener('change', (e) => {
     const f = e.target.closest('[data-bc-f]');
@@ -493,6 +495,46 @@
     if (d && confirm('Удалить рассылку из личных кабинетов? (В Telegram уже доставленное не отзывается.)')) act('/api/admin/broadcast-delete', { id: d.dataset.bcDel }, 'Рассылка удалена');
   });
 
+  // ---------- список для общего чата ----------
+  const players = () => state.users.filter((u) => u.participation && !u.banned && u.participation.moderation !== 'rejected');
+  const pendingPairs = () => state.pairs.filter((p) => p.status === 'assigned' && !p.failed);
+  const CL_SCEN = [
+    { key: 'nobot', label: '🤖 Не подключили бота',
+      who: () => players().filter((u) => !u.tgLinked),
+      text: () => `Вы не включили уведомления в боте — сделайте это, пожалуйста, чтобы мы могли напоминать вам о сроках 🙏\nДля этого перейдите в бота @${state.bot || 'coffeemaniacs_bot'} и нажмите «Старт» (или кнопку «🔔 Подписаться на уведомления» в личном кабинете на santa.speccof.ru). Спасибо!` },
+    { key: 'noack', label: '🎲 Подтвердите участие после жеребьёвки',
+      who: () => state.users.filter((u) => pendingPairs().some((p) => p.santaId === u.id && !p.ackAt)),
+      text: () => `Жеребьёвка прошла! 🎅 Подтвердите, пожалуйста, в личном кабинете на santa.speccof.ru, что вы участвуете и собираете посылку: раздел «Кому я дарю» → кнопка «✅ Участвую, собираю посылку» (или то же самое в боте @${state.bot || 'coffeemaniacs_bot'}). Спасибо!` },
+    { key: 'notsent', label: '📦 Не отметили отправку',
+      who: () => state.users.filter((u) => pendingPairs().some((p) => p.santaId === u.id)),
+      text: () => `Отметьте, пожалуйста, в личном кабинете на santa.speccof.ru, что вы отправили подарок: «Кому я дарю» → «📦 Я отправил подарок» (можно добавить трек-номер). Отправка — до ${FX.fmtDate(state.settings.sendEnd)}${state.drawn2At ? ` (второй круг — до ${FX.fmtDate(state.settings.round2SendEnd)})` : ''}. Если ещё не отправили — самое время! 🎁` },
+    { key: 'notgot', label: '🎁 Не отметили получение',
+      who: () => state.users.filter((u) => state.pairs.some((p) => p.recipientId === u.id && p.status === 'sent')),
+      text: () => 'Вам уже отправили подарки! 🎁 Когда получите посылку, отметьте это, пожалуйста, в личном кабинете на santa.speccof.ru: «Мой подарок» → «🎉 Я получил подарок». Санте будет приятно знать, что посылка дошла. Спасибо!' },
+    { key: 'picked', label: '👥 Кто отмечен ниже',
+      who: () => state.users.filter((u) => bcPicked.has(u.id)),
+      text: () => ($('[data-bc-form]').text.value.trim() || 'Ваш текст') },
+  ];
+  let clScen = 'nobot';
+  $('[data-cl-scen]').innerHTML = CL_SCEN.map((c) => `<label class="chip"><input type="radio" name="cl" value="${c.key}" ${c.key === clScen ? 'checked' : ''}><span>${c.label}</span></label>`).join('');
+  function renderChatList(force) {
+    const ta = $('[data-cl-text]');
+    if (!force && document.activeElement === ta) return; // не затираем ручную правку
+    const c = CL_SCEN.find((x) => x.key === clScen);
+    const people = c.who();
+    $('[data-cl-count]').textContent = `${people.length} ${SantaCore.plural(people.length, 'человек', 'человека', 'человек')}`;
+    ta.value = people.length ? `Ребята! 👋\n${people.map((u) => '@' + u.tg).join('\n')}\n\n${c.text()}` : 'Таких сейчас нет 🎉';
+  }
+  document.addEventListener('change', (e) => {
+    if (e.target.name === 'cl' && e.target.closest('[data-cl-scen]')) { clScen = e.target.value; renderChatList(true); }
+  });
+  $('[data-cl]').addEventListener('toggle', () => renderChatList(true));
+  $('[data-cl-copy]').addEventListener('click', async () => {
+    const ta = $('[data-cl-text]');
+    try { await navigator.clipboard.writeText(ta.value); } catch (e) { ta.select(); document.execCommand('copy'); }
+    FX.toast('Скопировано — вставьте в общий чат 📋', 'success');
+  });
+
   // ---------- аккаунт организатора (личный Telegram) ----------
   const UA_STATUS = {
     off: 'не подключён', code_requested: 'отправляем код…', code_sending: 'отправляем код…', code_sent: 'код отправлен в Telegram',
@@ -516,14 +558,24 @@
       ${a.queued ? '<button class="btn btn-ghost btn-sm" data-ua-act="clear-queue">Очистить очередь</button>' : ''}
       <button class="btn btn-danger btn-sm" data-ua-act="logout">Отключить</button></div>`;
     else body = `<div class="ua-row"><span class="muted">⏳ Подождите, ретранслятор выполняет шаг (до 20 секунд)…</span><button type="button" class="btn btn-ghost btn-sm" data-ua-act="cancel">Отмена</button></div>`;
-    host.innerHTML = `<div class="ua-head"><b>👤 Аккаунт организатора</b> <span class="status ${st === 'ready' ? 'received' : st === 'limited' || a.error ? 'banned' : 'assigned'}">${UA_STATUS[st] || st}</span>
+    const on = a.enabled !== false;
+    host.innerHTML = `<div class="ua-head"><label class="switch" title="Включить или выключить рассылку с личного аккаунта"><input type="checkbox" data-ua-toggle ${on ? 'checked' : ''}><span></span></label>
+      <b>👤 Аккаунт организатора</b> ${on ? `<span class="status ${st === 'ready' ? 'received' : st === 'limited' || a.error ? 'banned' : 'assigned'}">${UA_STATUS[st] || st}</span>` : '<span class="status">выключено</span>'}
       <span class="muted">— пишет тем, у кого не подключён бот</span></div>
-      ${a.error ? `<div class="bad">⚠️ ${esc(a.error)}</div>` : ''}${a.pausedUntil > Date.now() ? `<div class="muted">Пауза до ${FX.fmtDateTime(a.pausedUntil)}</div>` : ''}${body}`;
-    $('[data-ua-chip]').classList.toggle('dim', !(st === 'ready' || st === 'limited'));
+      ${on ? `${a.error ? `<div class="bad">⚠️ ${esc(a.error)}</div>` : ''}${a.pausedUntil > Date.now() ? `<div class="muted">Пауза до ${FX.fmtDateTime(a.pausedUntil)}</div>` : ''}${body}`
+        : `<p class="muted">Выключено: сообщения с личного аккаунта не отправляются${a.queued ? `, очередь (${a.queued}) на паузе` : ''}.${a.me ? ' Аккаунт остаётся подключён.' : ''}</p>`}`;
+    const chip = $('[data-ua-chip]');
+    chip.hidden = !on;
+    if (!on) chip.querySelector('input').checked = false;
+    chip.classList.toggle('dim', !(st === 'ready' || st === 'limited'));
     // пока идёт вход — чаще обновляем статус
     clearTimeout(uaTimer);
     if (!['off', 'ready', 'limited'].includes(st)) uaTimer = setTimeout(() => load(), 4000);
   }
+  document.addEventListener('change', (e) => {
+    const t = e.target.closest('[data-ua-toggle]');
+    if (t) act('/api/admin/settings', { userTg: t.checked }, t.checked ? 'Рассылка с аккаунта организатора включена' : 'Рассылка с аккаунта организатора выключена');
+  });
   document.addEventListener('submit', (e) => {
     const f = e.target.closest('[data-ua-form]');
     if (!f) return;

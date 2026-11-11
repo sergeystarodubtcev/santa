@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111j">
+  <link rel="stylesheet" href="css/style.css?v=20261111k">
 </head>
 <body>
   <header class="topbar">
@@ -109,6 +109,12 @@
             <div><b>❓ Без анкеты: <span data-noform-count>0</span></b><span class="muted" data-noform-sub>Бот спросит «Будете участвовать?» с кнопками «Заполнить анкету» и «Удалить аккаунт». Обычно это приходит само через сутки после регистрации.</span></div>
             <button class="btn btn-gold btn-sm" type="button" data-noform-ask>📨 Спросить сейчас</button>
           </div>
+          <details class="chat-list" data-cl>
+            <summary>📋 Список для общего чата <span class="muted">— «Ребята!», ники столбиком и текст под ними: скопировать и вставить в чат</span></summary>
+            <div class="chips" data-cl-scen></div>
+            <textarea data-cl-text rows="11" spellcheck="false"></textarea>
+            <div class="toolbar"><b data-cl-count></b><button type="button" class="btn btn-gold btn-sm" data-cl-copy>📋 Скопировать</button></div>
+          </details>
           <div class="ua-card" data-ua></div>
           <form class="form" data-bc-form>
             <div class="bc-row">
@@ -238,11 +244,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261111j"></script>
-  <script src="js/cities.js?v=20261111j"></script>
-  <script src="js/core.js?v=20261111j"></script>
-  <script src="js/api.js?v=20261111j"></script>
-  <script src="js/fx.js?v=20261111j"></script>
-  <script src="js/admin.js?v=20261111j"></script>
+  <script src="js/config.js?v=20261111k"></script>
+  <script src="js/cities.js?v=20261111k"></script>
+  <script src="js/core.js?v=20261111k"></script>
+  <script src="js/api.js?v=20261111k"></script>
+  <script src="js/fx.js?v=20261111k"></script>
+  <script src="js/admin.js?v=20261111k"></script>
 </body>
 </html>

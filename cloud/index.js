@@ -219,7 +219,7 @@ function userPoll(db, body, now) {
   const day = new Date(now + 3 * 3600e3).toISOString().slice(0, 10);
   const sentToday = a.sent && a.sent.day === day ? a.sent.n : 0;
   const want = Math.min(Number(body.want) || 0, 5, USER_DAILY_CAP - sentToday - q.filter((x) => x.status === 'sending').length);
-  if (a.status === 'ready' && a.session && !(a.pausedUntil > now) && want > 0) {
+  if (a.status === 'ready' && a.session && !(a.pausedUntil > now) && want > 0 && (db.settings || {}).userTg !== false) {
     for (const it of q.filter((x) => x.status === 'queued').slice(0, want)) {
       it.status = 'sending'; it.givenAt = now; changed = true;
       items.push({ id: it.id, tg: it.tg, text: it.text + USER_FOOTER() });
@@ -239,6 +239,7 @@ function makeCtx(auth, t) {
     storage: () => ({ mode: 'yandex-object-storage', repo: BUCKET, lastSave: null, lastError: null }),
     userId: t && t.uid ? t.uid : null,
     isAdmin: !!(t && t.admin),
+    botUsername: TG_USERNAME || null,
   };
 }
 

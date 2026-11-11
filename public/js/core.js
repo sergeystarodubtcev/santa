@@ -26,6 +26,8 @@
     round2Open: true,
     round2SendStart: '2026-12-11T00:00:00+03:00',
     round2SendEnd: '2026-12-20T23:59:59+03:00',
+    // рассылка с личного аккаунта организатора тем, у кого нет бота (можно выключить в админке)
+    userTg: true,
   };
 
   // Распознавание города в адресе (cities.js): в Node — require, в браузере — глобальный SantaCities
@@ -179,6 +181,7 @@
     const a = db.userAcc || { status: 'off' };
     const q = db.userOutbox || [];
     return {
+      enabled: db.settings.userTg !== false,
       status: a.status || 'off', error: a.error || null, me: a.me || null, updatedAt: a.updatedAt || null,
       phone: a.phone ? a.phone.replace(/^(\+?\d{2})\d+(\d{2})$/, '$1•••••$2') : null,
       pausedUntil: a.pausedUntil || null,
@@ -503,7 +506,7 @@
       out.assignment = {
         recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
-        round: pairRound(mine), priority: !!mine.priority,
+        round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null,
       };
       out.dates = datesFor(db, pairRound(mine));
     }
@@ -607,6 +610,7 @@
     if ('moderation' in body && ctx) setModeration(db, ctx, body.moderation);
     if ('regOpen' in body) s.regOpen = !!body.regOpen;
     if ('round2Open' in body) s.round2Open = !!body.round2Open;
+    if ('userTg' in body) s.userTg = !!body.userTg;
     for (const k of ['round2SendStart', 'round2SendEnd']) {
       if (body[k]) {
         if (isNaN(Date.parse(body[k]))) fail(400, 'Неверная дата: ' + k);
@@ -634,7 +638,7 @@
    */
   function handle(db, ctx, method, path, body) {
     body = body || {};
-    const adminState = (d) => Object.assign(adminStateRaw(d), { storage: ctx.storage ? ctx.storage() : null });
+    const adminState = (d) => Object.assign(adminStateRaw(d), { storage: ctx.storage ? ctx.storage() : null, bot: ctx.botUsername || null });
     const needUser = () => { if (!ctx.userId) fail(401, 'Войдите в личный кабинет'); return ctx.userId; };
     const needAdmin = () => { if (!ctx.isAdmin) fail(401, 'Нужен вход в админку'); };
     const ok = (data, mutated) => ({ data: data === undefined ? { ok: true } : data, mutated: !!mutated });
@@ -718,6 +722,13 @@
         return ok(undefined, true);
       }
       case 'POST /api/sent': markSent(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/ack': {
+        // Санта подтверждает, что участвует и собирает посылку
+        const pair = outPair(db, needUser());
+        if (!pair) fail(404, 'У вас пока нет получателя');
+        if (!pair.ackAt) pair.ackAt = ctx.now();
+        return ok(me(db, ctx, ctx.userId), true);
+      }
       case 'POST /api/received': markReceived(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/notifications/read': {
         const uid = needUser();
@@ -925,6 +936,7 @@
         const tg = body.tg !== false;
         const viaUser = !!body.userTg; // с аккаунта организатора — тем, у кого нет бота
         if (!site && !tg && !viaUser) fail(400, 'Выберите, куда отправить: на сайт и/или в Telegram');
+        if (viaUser && db.settings.userTg === false) fail(400, 'Отправка с аккаунта организатора выключена — включите её в блоке «Аккаунт организатора»');
         if (viaUser && !['ready', 'limited'].includes((db.userAcc || {}).status)) fail(400, 'Аккаунт организатора не подключён — подключите его в блоке «Аккаунт организатора»');
         const targets = Array.isArray(body.userIds)
           ? db.users.filter((u) => body.userIds.includes(u.id))

@@ -608,3 +608,16 @@ td small { display: block; }
 .bc-hint { font-size: 12px; margin: -4px 0 0; }
 .bc-hint code { background: var(--bg-soft); padding: 1px 5px; border-radius: 6px; }
 .chip-btn { background: none; border: 0; padding: 0; }
+.ack-box { margin-top: 16px; padding: 14px; border-radius: 16px; background: #eff6ff; border: 1px solid #bfdbfe; }
+.ack-box p { margin: 0 0 10px; font-size: 14px; }
+
+.chat-list { margin-bottom: 16px; padding: 12px 16px; border-radius: 16px; border: 1px dashed var(--border); background: var(--card); }
+.chat-list > summary { cursor: pointer; font-weight: 800; }
+.chat-list[open] > summary { margin-bottom: 12px; }
+.chat-list textarea { margin: 12px 0; font-family: inherit; }
+.switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: #d1d5db; transition: background .2s; cursor: pointer; }
+.switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+.switch input:checked + span { background: #22c55e; }
+.switch input:checked + span::after { transform: translateX(18px); }
