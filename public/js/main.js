@@ -81,11 +81,22 @@
     const key = JSON.stringify(s) + p.drawn;
     if (key === settingsKey) return;
     settingsKey = key;
+    // волны: на таймерах — ближайшая действующая (у которой ещё не прошёл конец отправки)
+    const waves = (s.waves && s.waves.length ? s.waves : [{ n: 1, start: s.sendStart, end: s.sendEnd, status: 'open' }]);
+    const live = waves.filter((w) => w.status !== 'closed');
+    const cur = live.find((w) => Date.parse(w.end) > Date.now()) || live[live.length - 1] || waves[0];
+    const W = (w) => (w.n === 1 ? 'Первая волна' : `${w.n}-я волна`);
+    const range = (w) => `с ${FX.fmtDate(w.start)} по ${FX.fmtDate(w.end)}`;
     cdTimers.forEach(clearInterval);
-    cdTimers = [FX.countdown($('[data-cd1]'), s.sendStart), FX.countdown($('[data-cd2]'), s.sendEnd)];
-    $('[data-cd1-label]').textContent = FX.fmtDate(s.sendStart);
-    $('[data-cd2-label]').textContent = FX.fmtDate(s.sendEnd);
-    $('[data-dates]').textContent = `Отправка подарков — с ${FX.fmtDate(s.sendStart)} по ${FX.fmtDate(s.sendEnd)}. Не успели — организаторы узнают.`;
+    cdTimers = [FX.countdown($('[data-cd1]'), cur.start), FX.countdown($('[data-cd2]'), cur.end)];
+    $('[data-tm-title]').textContent = `⏳ Сроки отправки · ${W(cur).toLowerCase()}`;
+    $('[data-cd1-label]').textContent = FX.fmtDate(cur.start);
+    $('[data-cd2-label]').textContent = FX.fmtDate(cur.end);
+    $('[data-waves-strip]').innerHTML = waves.map((w) => `<div class="wave-chip ${w === cur ? 'cur' : ''} ${w.status === 'closed' || Date.parse(w.end) < Date.now() ? 'past' : ''}">
+      <span class="wave-ico">🌊</span><span><small>${w.n}-я волна</small><b>${FX.fmtDate(w.start)} — ${FX.fmtDate(w.end)}</b></span></div>`).join('');
+    $('[data-step-dates]').textContent = waves.length > 1 ? 'в сроки своей волны' : range(waves[0]);
+    $('[data-dates]').innerHTML = waves.map((w) => `<b>${W(w)}:</b> отправка ${range(w)}.`).join('<br>')
+      + (waves.length > 1 ? '<br>Кто записался после жеребьёвки — попадает в следующую волну.' : '') + ' Не успели — организаторы узнают.';
     if (s.budgetMin || s.budgetMax) {
       const b = s.budgetMin && s.budgetMax ? `от ${s.budgetMin} до ${s.budgetMax} ₽` : s.budgetMin ? `от ${s.budgetMin} ₽` : `до ${s.budgetMax} ₽`;
       $('[data-budget]').innerHTML = `Сумма подарка: <b>${b}</b>. Главное — внимание и хороший кофе.`;
@@ -93,12 +104,20 @@
       $('[data-budget-badge]').classList.add('set');
     }
     if (s.chatUrl) $$('[data-chat-link]').forEach((a) => (a.href = s.chatUrl));
-    const round2 = p.drawn && !p.drawn2 && s.round2Open && s.regOpen;
-    const closed = !s.regOpen || (p.drawn && !round2);
-    if (round2 && !(me && me.participation)) {
-      $('[data-join-label]').innerHTML = 'Записаться<br>во 2-й круг';
-      $('.join-sub').innerHTML = `Первая жеребьёвка уже прошла — но ещё не поздно! Записывайтесь во <b>второй круг</b>: отправка подарков с ${FX.fmtDate(s.round2SendStart)} по ${FX.fmtDate(s.round2SendEnd)}.`;
-      $('[data-join-note]').textContent = 'Участники второго круга дарят подарки друг другу — отдельная жеребьёвка.';
+    // после первой жеребьёвки — запись в открытую волну или в лист ожидания следующей
+    const later = p.drawn && s.round2Open && s.regOpen;
+    const ow = later && s.openWave ? waves.find((w) => w.n === s.openWave) : null;
+    const closed = !s.regOpen || (p.drawn && !later);
+    if (later && !(me && me.participation)) {
+      if (ow) {
+        $('[data-join-label]').innerHTML = `Записаться<br>в ${ow.n}-ю волну`;
+        $('.join-sub').innerHTML = `Первая жеребьёвка уже прошла — но ещё не поздно! Записывайтесь в <b>${ow.n}-ю волну</b>: отправка подарков ${range(ow)}.`;
+        $('[data-join-note]').textContent = 'Участники волны дарят подарки друг другу — у каждой волны своя жеребьёвка.';
+      } else {
+        $('[data-join-label]').innerHTML = 'Записаться<br>в следующую волну';
+        $('.join-sub').innerHTML = 'Первая жеребьёвка уже прошла — но ещё не поздно! Заполните анкету, и когда откроется <b>следующая волна</b>, мы пришлём даты и попросим подтвердить участие.';
+        $('[data-join-note]').textContent = 'Пока волна не открыта, вы в листе ожидания.';
+      }
     } else if (closed && !(me && me.participation)) {
       $('[data-join-label]').innerHTML = p.drawn ? 'Жеребьёвка<br>проведена' : 'Регистрация<br>закрыта';
       $('[data-join-note]').textContent = p.drawn ? 'Пары сформированы! Участники — загляните в личный кабинет.' : 'Регистрация временно закрыта. Следите за чатом.';
@@ -136,13 +155,16 @@
     document.body.classList.remove('modal-open');
     setTimeout(() => (modal.hidden = true), 250);
   }
-  // После первой жеребьёвки новая анкета — это запись во второй круг: участие нужно подтвердить отдельно
+  // После первой жеребьёвки новая анкета — это запись в открытую волну (или в лист ожидания): участие подтверждается отдельно
   function syncWave2(part) {
-    const need = !!(pub && pub.drawn && !pub.drawn2 && !part);
+    const need = !!(pub && pub.drawn && !part);
     $('[data-w2-wrap]', f2).hidden = !need;
     if (need) {
       const s = pub.settings;
-      $('[data-w2-text]', f2).innerHTML = `Первая жеребьёвка уже прошла. Подтверждаю участие во <b>втором круге</b>: отправка подарков с ${FX.fmtDate(s.round2SendStart)} по ${FX.fmtDate(s.round2SendEnd)}.`;
+      const ow = s.openWave && (s.waves || []).find((w) => w.n === s.openWave);
+      $('[data-w2-text]', f2).innerHTML = ow
+        ? `Первая жеребьёвка уже прошла. Подтверждаю участие в <b>${ow.n}-й волне</b>: отправка подарков с ${FX.fmtDate(ow.start)} по ${FX.fmtDate(ow.end)}.`
+        : 'Первая жеребьёвка уже прошла. Подтверждаю участие в <b>следующей волне</b> — организаторы пришлют даты, когда она откроется.';
     }
   }
   function fillStep2(p) {

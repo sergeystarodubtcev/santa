@@ -69,10 +69,12 @@
     const r = pf.querySelector(`input[name=prefs][value="${p.prefs || 'coffee'}"]`);
     if (r) r.checked = true;
     pf.agree.checked = !!me.participation;
-    const needW2 = !me.participation && me.round === 2 && !me.drawn;
+    const needW2 = !me.participation && me.round !== 1 && !me.drawn;
     $('[data-w2-wrap]', pf).hidden = !needW2;
     pf.wave2.checked = false;
-    if (needW2) $('[data-w2-text]', pf).innerHTML = `Первая жеребьёвка уже прошла. Подтверждаю участие во <b>втором круге</b>: отправка подарков с ${FX.fmtDate(me.dates.start)} по ${FX.fmtDate(me.dates.end)}.`;
+    if (needW2) $('[data-w2-text]', pf).innerHTML = me.round
+      ? `Первая жеребьёвка уже прошла. Подтверждаю участие в <b>${me.round}-й волне</b>: отправка подарков с ${FX.fmtDate(me.dates.start)} по ${FX.fmtDate(me.dates.end)}.`
+      : 'Первая жеребьёвка уже прошла. Подтверждаю участие в <b>следующей волне</b> — организаторы пришлют даты, когда она откроется.';
     modal.hidden = false;
     requestAnimationFrame(() => modal.classList.add('open'));
     setTimeout(() => pf.address.focus(), 60);
@@ -106,9 +108,10 @@
     $('[data-name]').textContent = u.name.split(' ')[0];
     const mod = me.participation && me.participation.moderation;
     $('[data-sub]').textContent = !me.participation ? 'Вы ещё не заполнили анкету участника.'
-      : me.wave2 && me.wave2.status === 'invited' && !me.wave2.drawn ? 'Подтвердите участие во втором круге 👇'
-      : me.assignment ? (me.round === 2 ? 'Жеребьёвка второго круга проведена — пора собирать посылку!' : 'Жеребьёвка проведена — пора собирать посылку!')
-      : me.round === 2 && mod === 'approved' ? `Вы во втором круге ✅ Ждём жеребьёвку второго круга. Отправка: ${FX.fmtDate(me.dates.start)} — ${FX.fmtDate(me.dates.end)}`
+      : me.wave2 && me.wave2.status === 'invited' && !me.wave2.drawn ? `Подтвердите участие в ${me.wave2.round}-й волне 👇`
+      : me.wave2 && me.wave2.status === 'waiting' ? 'Вы в листе ожидания следующей волны — мы напишем, когда она откроется 🌊'
+      : me.assignment ? (me.assignment.round > 1 ? `Жеребьёвка ${me.assignment.round}-й волны проведена — пора собирать посылку!` : 'Жеребьёвка проведена — пора собирать посылку!')
+      : me.round > 1 && mod === 'approved' ? `Вы в ${me.round}-й волне ✅ Ждём её жеребьёвку. Отправка: ${FX.fmtDate(me.dates.start)} — ${FX.fmtDate(me.dates.end)}`
       : mod === 'approved' ? 'Анкета одобрена ✅ Ждём жеребьёвку ☕'
       : mod === 'rejected' ? 'Анкета не прошла модерацию — исправьте её или напишите организаторам.'
       : 'Анкета на модерации ⏳ Организаторы проверят её перед жеребьёвкой.';
@@ -135,28 +138,28 @@
     $('[data-delete-me]').hidden = false;
   }
 
-  // Приглашение во второй круг: участие нужно подтвердить
+  // Приглашение в следующую волну: участие нужно подтвердить
   function wave2Card() {
     const w = me.wave2;
     if (!w || w.status !== 'invited' || w.drawn) return '';
     const why = w.reason === 'victim'
-      ? '😢 Ваш Тайный Санта из первого круга так и не отправил подарок — нам очень жаль! Во втором круге вам отправят подарок <b>в первую очередь ⭐</b>. Вы тоже дарите подарок одному участнику.'
-      : w.reason === 'admin' ? 'Организаторы приглашают вас во второй круг Тайного Санты.'
-      : 'Вы записались после первой жеребьёвки — вы во втором круге.';
-    return `<div class="card w2-card"><h3>🎄 Второй круг: подтвердите участие</h3><p>${why}</p>
-      <p class="muted">Отправка подарков во втором круге: <b>${FX.fmtDate(w.dates.start)} — ${FX.fmtDate(w.dates.end)}</b>. Без подтверждения в жеребьёвку второго круга вы не попадёте.</p>
+      ? `😢 Ваш Тайный Санта из прошлой волны так и не отправил подарок — нам очень жаль! В ${w.round}-й волне вам отправят подарок <b>в первую очередь ⭐</b>. Вы тоже дарите подарок одному участнику.`
+      : w.reason === 'admin' ? `Организаторы приглашают вас в ${w.round}-ю волну Тайного Санты.`
+      : `Открылась ${w.round}-я волна Тайного Санты — вы записывались после первой жеребьёвки.`;
+    return `<div class="card w2-card"><h3>🌊 ${w.round}-я волна: подтвердите участие</h3><p>${why}</p>
+      <p class="muted">Отправка подарков: <b>${FX.fmtDate(w.dates.start)} — ${FX.fmtDate(w.dates.end)}</b>. Без подтверждения в жеребьёвку этой волны вы не попадёте.</p>
       <div class="actions"><button class="btn btn-primary" data-w2-join="1">✅ Да, участвую</button><button class="btn btn-ghost" data-w2-join="0">🙅 Не буду</button></div></div>`;
   }
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-w2-join]');
     if (!b) return;
     const join = b.dataset.w2Join === '1';
-    if (!join && !confirm('Точно отказаться от второго круга?')) return;
+    if (!join && !confirm('Точно отказаться от участия в этой волне?')) return;
     b.disabled = true;
     try {
       me = await Api.post('/api/wave2', { join });
       render();
-      FX.toast(join ? 'Вы во втором круге! 🎄' : 'Отметили: во втором круге вас не будет', 'success');
+      FX.toast(join ? 'Вы в новой волне! 🌊' : 'Отметили: в этой волне вас не будет', 'success');
       if (join) FX.burst(innerWidth / 2, innerHeight / 3, { count: 50 });
     } catch (ex) { FX.toast(ex.message, 'error'); b.disabled = false; }
   });
@@ -177,8 +180,8 @@
       const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
       host.innerHTML = `
         <div class="${revealedOnce ? '' : 'flip'}">
-          <p style="margin-bottom:14px">${a.round === 2 ? '<span class="pill">🎄 Второй круг</span> ' : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
-          ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в первом круге он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
+          <p style="margin-bottom:14px">${a.round > 1 ? `<span class="pill">🌊 ${a.round}-я волна</span> ` : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
+          ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
           <dl class="kv">
             <dt>ФИО</dt><dd><span class="copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
             <dt>ПВЗ Ozon</dt><dd><span class="copy" data-copy="${esc(r.address)}" title="Скопировать">${esc(r.address)}</span> 📋</dd>
@@ -234,7 +237,7 @@
       host.innerHTML = `<div class="sealed"><div class="env">🎄</div><p class="muted">${me.drawn ? 'Ваш Санта уже знает о вас. Ждём!' : 'После жеребьёвки кто-то станет вашим Тайным Сантой.'}</p></div>`;
     } else if (g.failed) {
       const w = me.wave2 || {};
-      host.innerHTML = `<div class="sealed"><div class="env">😢</div><p><b>Ваш Санта из первого круга не отправил подарок</b></p><p class="muted">${w.status === 'confirmed' ? 'Вы во втором круге ⭐ — там вам отправят подарок в первую очередь.' : w.status === 'declined' ? 'Вы отказались от второго круга. Если передумали — напишите организаторам.' : 'Мы пригласили вас во второй круг — подтвердите участие выше, и вам отправят подарок в первую очередь ⭐'}</p></div>`;
+      host.innerHTML = `<div class="sealed"><div class="env">😢</div><p><b>Ваш Санта не отправил подарок</b></p><p class="muted">${w.status === 'confirmed' ? `Вы в ${w.round}-й волне ⭐ — там вам отправят подарок в первую очередь.` : w.status === 'declined' ? 'Вы отказались от следующей волны. Если передумали — напишите организаторам.' : w.status === 'waiting' ? 'Мы записали вас в следующую волну с приоритетом ⭐ — когда она откроется, придёт приглашение.' : 'Мы пригласили вас в следующую волну — подтвердите участие выше, и вам отправят подарок в первую очередь ⭐'}</p></div>`;
     } else if (g.status === 'assigned') {
       host.innerHTML = `<div class="sealed"><div class="env">🛷</div><p>Ваш Тайный Санта собирает посылку.</p><p class="muted">Как только он отметит отправку — вы увидите это здесь.</p></div>`;
     } else if (g.status === 'sent') {

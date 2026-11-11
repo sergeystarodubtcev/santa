@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111k">
+  <link rel="stylesheet" href="css/style.css?v=20261111l">
 </head>
 <body>
   <header class="topbar">
@@ -19,6 +19,7 @@
       <span class="brand-name">Админка <small>Тайный Санта Кофеманьяков</small></span>
     </a>
     <nav class="nav">
+      <div class="wave-switch" data-wave-switch hidden></div>
       <a href="./">На сайт</a>
       <button class="btn btn-ghost btn-sm" data-logout hidden>Выйти</button>
     </nav>
@@ -42,39 +43,11 @@
         <div class="tiles" data-tiles></div>
 
         <div class="grid2">
-          <div class="card">
-            <h3>🎲 Жеребьёвка</h3>
-            <p class="muted" data-draw-info></p>
-            <div class="actions">
-              <button class="btn btn-green" data-approve-all hidden>✅ Одобрить всех ожидающих</button>
-              <button class="btn btn-primary shuffle-btn" data-shuffle>🎲 Раскидать людей</button>
-              <button class="btn btn-danger btn-sm" data-reset>Сбросить пары</button>
-            </div>
-            <p class="muted" style="font-size:13px;margin-top:12px">Раздача полностью случайная: каждому достаётся случайный получатель, никто не дарит сам себе. Забаненные в жеребьёвку не попадают. После первой жеребьёвки регистрация не закрывается — новые участники записываются во второй круг.</p>
-            <div class="round2" data-round2 hidden>
-              <h3>🎄 Второй круг</h3>
-              <p class="muted" data-round2-info></p>
-              <form class="form" data-round2-form>
-                <label class="check"><input type="checkbox" name="round2Open"><span>Запись во второй круг открыта</span></label>
-                <div class="row2">
-                  <label>Начало отправки (МСК)<input type="datetime-local" name="round2SendStart"></label>
-                  <label>Конец отправки (МСК)<input type="datetime-local" name="round2SendEnd"></label>
-                </div>
-                <button class="btn btn-gold btn-sm" type="submit">Сохранить настройки второго круга</button>
-              </form>
-              <div class="actions">
-                <button class="btn btn-primary" data-shuffle2>🎲 Раскидать второй круг</button>
-                <button class="btn btn-danger btn-sm" data-reset2>Сбросить пары второго круга</button>
-              </div>
-            </div>
-          </div>
+          <div class="card span2 wave-panel" data-wave-panel></div>
 
           <form class="card form" data-settings>
             <h3>⚙️ Настройки</h3>
-            <div class="row2">
-              <label>Начало отправки (МСК)<input type="datetime-local" name="sendStart"></label>
-              <label>Конец отправки (МСК)<input type="datetime-local" name="sendEnd"></label>
-            </div>
+            <p class="muted" style="font-size:13px;margin:0">Даты отправки — у каждой волны свои: переключатель волн справа вверху.</p>
             <div class="row2">
               <label>Бюджет от, ₽<input type="number" name="budgetMin" min="0" step="100" placeholder="не задан"></label>
               <label>Бюджет до, ₽<input type="number" name="budgetMax" min="0" step="100" placeholder="не задан"></label>
@@ -82,6 +55,7 @@
             <label>Объявление на сайте (баннер сверху)<input name="announcement" placeholder="Например: Жеребьёвка 25 ноября в 20:00!"></label>
             <label>Ссылка на пост в Telegram<input name="chatUrl"></label>
             <label class="check"><input type="checkbox" name="regOpen"><span>Регистрация открыта</span></label>
+            <label class="check"><input type="checkbox" name="round2Open"><span>После первой жеребьёвки можно записываться в следующие волны (в открытую волну или в лист ожидания)</span></label>
             <label class="check"><input type="checkbox" name="moderation"><span>🛡 Модерация анкет. Выключена — все анкеты сразу в игре; при выключении ожидающие одобряются. То же самое — кнопка «🛡 Модерация» в боте</span></label>
             <button class="btn btn-gold" type="submit">Сохранить настройки</button>
           </form>
@@ -181,15 +155,15 @@
         </details>
 
         <details class="card fold" style="margin-top:18px" data-w2-card hidden>
-          <summary><h3>🎄 Второй круг: участники</h3><span class="fold-hint" data-fold-w2></span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
-          <p class="muted" style="font-size:13px;margin-top:-4px">Во второй круг попадают только те, кто <b>подтвердил участие</b>: новички, записавшиеся после первой жеребьёвки, пострадавшие (их Санта не отправил подарок) и те, кого пригласили вы. ⭐ приоритет — при жеребьёвке такому участнику достаётся надёжный Санта (тот, кто уже отправил подарок в первом круге), и Санта получает просьбу отправить в первую очередь. Пострадавших добавляет кнопка «😢 Не отправил» в таблице пар.</p>
+          <summary><h3 data-w2-title>🌊 Следующие волны: участники</h3><span class="fold-hint" data-fold-w2></span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
+          <p class="muted" style="font-size:13px;margin-top:-4px">В волны 2+ попадают только те, кто <b>подтвердил участие</b>: новички, записавшиеся после первой жеребьёвки, пострадавшие (их Санта не отправил подарок) и те, кого пригласили вы. Кто записался, когда открытой волны нет, — в <b>листе ожидания</b>: приглашение придёт, как только вы создадите волну. ⭐ приоритет — такому участнику при жеребьёвке достаётся надёжный Санта (уже отправлял подарок раньше).</p>
           <div class="table-wrap"><table>
-            <thead><tr><th>Кто</th><th>Почему во 2-м круге</th><th>Подтверждение</th><th>Анкета / бот</th><th>Пары 2-го круга</th><th></th></tr></thead>
+            <thead><tr><th>Кто</th><th>Волна</th><th>Почему</th><th>Подтверждение</th><th>Анкета / бот</th><th>Пары в волне</th><th></th></tr></thead>
             <tbody data-w2-rows></tbody>
           </table></div>
           <div class="actions" data-w2-invite-wrap>
             <select data-w2-invite></select>
-            <button class="btn btn-ghost btn-sm" type="button" data-w2-invite-btn>📨 Пригласить во 2-й круг</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-w2-invite-btn>📨 Пригласить в открытую волну</button>
           </div>
         </details>
 
@@ -244,11 +218,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261111k"></script>
-  <script src="js/cities.js?v=20261111k"></script>
-  <script src="js/core.js?v=20261111k"></script>
-  <script src="js/api.js?v=20261111k"></script>
-  <script src="js/fx.js?v=20261111k"></script>
-  <script src="js/admin.js?v=20261111k"></script>
+  <script src="js/config.js?v=20261111l"></script>
+  <script src="js/cities.js?v=20261111l"></script>
+  <script src="js/core.js?v=20261111l"></script>
+  <script src="js/api.js?v=20261111l"></script>
+  <script src="js/fx.js?v=20261111l"></script>
+  <script src="js/admin.js?v=20261111l"></script>
 </body>
 </html>

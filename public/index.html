@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Тайный Санта · Кофеманьяки</title>
-  <meta name="description" content="Кофеманьячный Тайный Санта 2027: регистрируйтесь, получайте имя получателя и дарите кофейные (и не только) подарки. Отправка 1–10 декабря.">
+  <meta name="description" content="Кофеманьячный Тайный Санта 2027: регистрируйтесь, получайте имя получателя и дарите кофейные (и не только) подарки. Отправка подарков волнами — даты на сайте.">
   <meta property="og:title" content="Кофеманьячный Тайный Санта ☕🎅">
-  <meta property="og:description" content="Свой Тайный Санта от Кофеманьяков. Регистрация, жеребьёвка и отправка подарков 1–10 декабря.">
+  <meta property="og:description" content="Свой Тайный Санта от Кофеманьяков. Регистрация, жеребьёвка и отправка подарков.">
   <meta property="og:image" content="img/og.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111k">
+  <link rel="stylesheet" href="css/style.css?v=20261111l">
 </head>
 <body class="page-home">
   <div class="banners" data-banners></div>
@@ -40,7 +40,8 @@
       <div class="hero-text reveal">
         <div class="pill">☕ Кофеманьяки × 🎅 Тайный Санта 2027</div>
         <h1>Тайный Санта <span class="grad">от Кофеманьяков</span></h1>
-        <p class="lead">Мы несколько лет обещали — и вот оно: свой, кофеманьячный Тайный Санта. Без ботов и чужих сервисов. Регистрируетесь, пишете пожелания, получаете имя счастливчика и отправляете подарок <b>с 1 по 10 декабря</b>.</p>
+        <p class="lead">Мы несколько лет обещали — и вот оно: свой, кофеманьячный Тайный Санта. Без ботов и чужих сервисов. Регистрируетесь, пишете пожелания, получаете имя счастливчика и отправляете подарок.</p>
+        <div class="waves-strip" data-waves-strip></div>
         <div class="budget-badge" data-budget-badge>
           <span class="bb-ico">💸</span>
           <span class="bb-text"><small>Сумма подарка</small><b data-budget-sum>обсуждаем в чате</b></span>
@@ -101,13 +102,13 @@
       <div class="ticker"><div class="ticker-track" data-recent></div></div>
     </div>
     <div class="card stat-card timers-card reveal">
-      <div class="stat-kicker">⏳ Сроки отправки</div>
+      <div class="stat-kicker" data-tm-title>⏳ Сроки отправки</div>
       <div class="tm-row">
-        <div class="tm-label"><span class="tm-dot go"></span><span><b>Старт отправки</b><small data-cd1-label>1 декабря</small></span></div>
+        <div class="tm-label"><span class="tm-dot go"></span><span><b>Старт отправки</b><small data-cd1-label></small></span></div>
         <div class="tm" data-cd1></div>
       </div>
       <div class="tm-row">
-        <div class="tm-label"><span class="tm-dot stop"></span><span><b>Финиш отправки</b><small data-cd2-label>10 декабря</small></span></div>
+        <div class="tm-label"><span class="tm-dot stop"></span><span><b>Финиш отправки</b><small data-cd2-label></small></span></div>
         <div class="tm" data-cd2></div>
       </div>
     </div>
@@ -159,7 +160,7 @@
     <div class="steps">
       <div class="step card reveal"><div class="step-ico">📝</div><div class="step-n">01</div><h3>Анкета</h3><p>Имя, телефон, ник в Telegram, адрес ближайшего ПВЗ Ozon (никаких домашних адресов), пожелания и особые пометки. Анкету проверяют модераторы.</p></div>
       <div class="step card reveal"><div class="step-ico">🎲</div><div class="step-n">02</div><h3>Жеребьёвка</h3><p>Организаторы перемешивают всех участников: каждому достаётся случайный получатель. Никто не дарит сам себе.</p></div>
-      <div class="step card reveal"><div class="step-ico">📦</div><div class="step-n">03</div><h3>Отправка</h3><p>В личном кабинете — кому, что и куда. Собрали посылку, отправили с 1 по 10 декабря, нажали «Отправил».</p></div>
+      <div class="step card reveal"><div class="step-ico">📦</div><div class="step-n">03</div><h3>Отправка</h3><p>В личном кабинете — кому, что и куда. Собрали посылку, отправили <span data-step-dates>в сроки своей волны</span>, нажали «Отправил».</p></div>
       <div class="step card reveal"><div class="step-ico">🎁</div><div class="step-n">04</div><h3>Сюрприз</h3><p>Получатель видит в кабинете «Вам подарок от Деда Мороза!» — и ждёт заветную посылку.</p></div>
     </div>
   </section>
@@ -169,7 +170,7 @@
     <h2 class="section-title reveal">Правила игры</h2>
     <div class="rules">
       <div class="rule card reveal"><span>💸</span><div><h3>Бюджет</h3><p data-budget>Минимальную и максимальную сумму обсуждаем в чате — здесь появится итог.</p></div></div>
-      <div class="rule card reveal"><span>📅</span><div><h3>Сроки</h3><p data-dates>Отправка подарков — с 1 по 10 декабря. Не успели — организаторы узнают.</p></div></div>
+      <div class="rule card reveal"><span>📅</span><div><h3>Сроки</h3><p data-dates>Отправка подарков — в сроки своей волны. Не успели — организаторы узнают.</p></div></div>
       <div class="rule card reveal"><span>🛑</span><div><h3>Чёрный список</h3><p>Зарегистрировались, получили ПВЗ получателя и пропали? Мы будем понимать, кто это. Sorry not sorry.</p></div></div>
       <div class="rule card reveal"><span>🤧</span><div><h3>Аллергии и пометки</h3><p>Пишите в анкете всё важное: «аллергия на инфьюзы», «не пью кофе», «только decaf». Санта увидит.</p></div></div>
       <div class="rule card reveal"><span>🕯️</span><div><h3>Не только кофе</h3><p>Зерно, дрипы, а ещё мерч: свечи, подставки под дрипы, подвесы, стикеры. Или вообще некофейное — укажите в анкете.</p></div></div>
@@ -250,7 +251,7 @@
           <input name="notes" placeholder="Например: у меня аллергия на инфьюзы">
         </label>
         <label class="check"><input type="checkbox" name="agree"><span>Подтверждаю участие и дальнейшую отправку подарка. Понимаю, что моё имя будет участвовать в случайном распределении.</span></label>
-        <label class="check w2-check" data-w2-wrap hidden><input type="checkbox" name="wave2"><span data-w2-text>Подтверждаю участие во <b>втором круге</b></span></label>
+        <label class="check w2-check" data-w2-wrap hidden><input type="checkbox" name="wave2"><span data-w2-text>Подтверждаю участие в <b>следующей волне</b></span></label>
         <div class="form-err" data-err></div>
         <div class="row2">
           <button class="btn btn-ghost" type="button" data-back>← Назад</button>
@@ -267,11 +268,11 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261111k"></script>
-  <script src="js/cities.js?v=20261111k"></script>
-  <script src="js/core.js?v=20261111k"></script>
-  <script src="js/api.js?v=20261111k"></script>
-  <script src="js/fx.js?v=20261111k"></script>
-  <script src="js/main.js?v=20261111k"></script>
+  <script src="js/config.js?v=20261111l"></script>
+  <script src="js/cities.js?v=20261111l"></script>
+  <script src="js/core.js?v=20261111l"></script>
+  <script src="js/api.js?v=20261111l"></script>
+  <script src="js/fx.js?v=20261111l"></script>
+  <script src="js/main.js?v=20261111l"></script>
 </body>
 </html>

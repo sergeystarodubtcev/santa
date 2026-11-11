@@ -24,6 +24,7 @@ test('второй круг: запись после первой жеребьё
   const db = core.emptyDb();
   const first = [0, 1, 2].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const late = [3, 4, 5].map((i) => user(db, i));
   late.forEach((id) => assert.equal(db.participations[id].round, 2));
   assert.equal(call(db, 'GET', '/api/admin/state', null, admin).stats.round2, 3);
@@ -41,13 +42,36 @@ test('второй круг: запись после первой жеребьё
   clock = Date.parse('2026-12-20T12:00:00+03:00');
   assert.match(call(db, 'GET', '/api/me', null, { userId: late[0] }).deadline.text, /У ВАС 3 ДНЯ/);
   assert.match(call(db, 'GET', '/api/me', null, { userId: first[0] }).deadline.text, /Срок отправки прошёл/);
-  // после второй жеребьёвки запись закрыта
-  const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79551999999', tg: 'very_late', password: 'qwerty1', pdConsent: true });
-  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Поздний', address: 'ПВЗ Ozon, Казань', agree: true }, { userId: r.user.id }), /Обе жеребьёвки/);
-  // сброс второго круга не трогает первый
+  // сброс второй волны не трогает первую
   call(db, 'POST', '/api/admin/reset', { round: 2 }, admin);
   assert.equal(db.pairs.length, 3);
   assert.ok(db.drawnAt && !db.drawn2At);
+  call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  // после жеребьёвки второй волны открытой волны нет — новички в лист ожидания
+  const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79551999999', tg: 'very_late', password: 'qwerty1', pdConsent: true });
+  assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Поздний', address: 'ПВЗ Ozon, Казань', agree: true }, { userId: r.user.id }), /следующей волне/);
+  call(db, 'POST', '/api/participate', { fullName: 'Поздний', address: 'ПВЗ Ozon, Казань', agree: true, wave2: true }, { userId: r.user.id });
+  assert.equal(db.wave2[r.user.id].status, 'waiting');
+  assert.equal(call(db, 'GET', '/api/admin/state', null, admin).waitlist, 1);
+  assert.equal(call(db, 'GET', '/api/admin/state', null, admin).stats.round1, 3, 'лист ожидания не попадает в первую волну');
+  // нельзя сбросить вторую волну, когда создана третья; третья — только когда вторая разыграна
+  call(db, 'POST', '/api/admin/wave-create', { start: '2026-12-21T00:00:00+03:00', end: '2026-12-30T23:59:59+03:00' }, admin);
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', {}, admin), /Сначала проведите жеребьёвку или остановите/);
+  assert.throws(() => call(db, 'POST', '/api/admin/reset', { round: 2 }, admin), /следующая волна/);
+  assert.deepEqual([db.wave2[r.user.id].status, db.wave2[r.user.id].round], ['invited', 3], 'лист ожидания получил приглашение в 3-ю волну');
+  assert.equal(db.notifications.filter((x) => x.userId === r.user.id).pop().action, 'wave2');
+  call(db, 'POST', '/api/wave2', { join: true }, { userId: r.user.id });
+  assert.equal(call(db, 'GET', '/api/me', null, { userId: r.user.id }).dates.start, '2026-12-21T00:00:00+03:00');
+  // остановка волны: напоминания по ней не идут, жеребьёвка недоступна; возобновление
+  call(db, 'POST', '/api/admin/wave-set', { n: 2, action: 'close' }, admin);
+  assert.equal(db.waves[1].status, 'closed');
+  assert.throws(() => call(db, 'POST', '/api/admin/shuffle', { round: 2, force: true }, admin), /остановлена/);
+  call(db, 'POST', '/api/admin/wave-set', { n: 2, action: 'reopen' }, admin);
+  assert.equal(db.waves[1].status, 'drawn');
+  // публичные настройки — список волн с датами
+  const pub = call(db, 'GET', '/api/public');
+  assert.deepEqual(pub.settings.waves.map((w) => w.n), [1, 2, 3]);
+  assert.equal(pub.settings.openWave, 3);
   clock = Date.parse('2026-11-20T12:00:00+03:00');
 });
 
@@ -115,4 +139,26 @@ test('бот спрашивает тех, кто без анкеты: запол
   assert.match(texts(r), /ФИО получателя/);
   assert.ok(db.users.some((u) => u.id === a));
   clock = Date.parse('2026-11-20T12:00:00+03:00');
+});
+
+test('перенос старой базы: первая волна берёт даты из настроек, вторая — только если уже была', () => {
+  const old = core.emptyDb();
+  delete old.waves;
+  old.settings.sendStart = '2026-11-15T00:00:00+03:00';
+  old.settings.sendEnd = '2026-12-01T23:59:59+03:00';
+  const db = core.ensure(JSON.parse(JSON.stringify(old)));
+  assert.deepEqual(db.waves.map((w) => [w.n, w.start, w.end, w.status]), [[1, '2026-11-15T00:00:00+03:00', '2026-12-01T23:59:59+03:00', 'open']]);
+  const pub = call(db, 'GET', '/api/public');
+  assert.equal(pub.settings.sendStart, '2026-11-15T00:00:00+03:00');
+  // смена дат первой волны в админке
+  call(db, 'POST', '/api/admin/wave-set', { n: 1, start: '2026-11-20T00:00:00+03:00', end: '2026-12-05T23:59:59+03:00' }, admin);
+  assert.equal(call(db, 'GET', '/api/public').settings.waves[0].start, '2026-11-20T00:00:00+03:00');
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-set', { n: 1, end: '2026-11-01T00:00:00+03:00' }, admin), /раньше начала/);
+  // старая база, где второй круг уже был
+  const old2 = JSON.parse(JSON.stringify(old));
+  delete old2.waves;
+  old2.drawnAt = 1;
+  old2.participations.x = { round: 2 };
+  const db2 = core.ensure(old2);
+  assert.deepEqual(db2.waves.map((w) => [w.n, w.status]), [[1, 'drawn'], [2, 'open']]);
 });

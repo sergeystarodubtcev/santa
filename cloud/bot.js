@@ -34,7 +34,7 @@ const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) =>
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
 const PREFS_BTN = ib([[['☕ Кофейное', 'prefs:coffee'], ['🧸 Некофейное', 'prefs:noncoffee']], [['🎲 Удивите меня', 'prefs:any']]]);
 const SKIP_BTN = ib([[['Пропустить →', 'skip']]]);
-const W2_BTN = ib([[['✅ Да, участвую во 2-м круге', 'w2:yes']], [['🙅 Нет, не буду', 'w2:no']]]);
+const W2_BTN = ib([[['✅ Да, участвую в новой волне', 'w2:yes']], [['🙅 Нет, не буду', 'w2:no']]]);
 
 function createBot({ core, secret, siteUrl, username }) {
   const sign = (s) => crypto.createHmac('sha256', secret).update('tg:' + s).digest('base64url').slice(0, 16);
@@ -141,13 +141,14 @@ function createBot({ core, secret, siteUrl, username }) {
 
   function askForm(out, chatId, step, db) {
     const wave2 = step === 'agree' && db && db.drawnAt && !db.participations[(userByChat(db, chatId) || {}).id];
+    const ow = wave2 ? core.openWave(db) : null;
     const markup = step === 'prefs' ? PREFS_BTN
-      : step === 'agree' ? ib([[[wave2 ? '✅ Участвую во втором круге' : '✅ Подтверждаю участие', 'agree']]])
+      : step === 'agree' ? ib([[[wave2 ? (ow ? `✅ Участвую в ${ow.n}-й волне` : '✅ Участвую в следующей волне') : '✅ Подтверждаю участие', 'agree']]])
       : step === 'wishes' || step === 'notes' ? SKIP_BTN : { remove_keyboard: true };
-    const d = db ? core.datesFor(db, 2) : null;
-    const text = wave2
-      ? `Первая жеребьёвка уже прошла — вы записываетесь во <b>второй круг</b> 🎄\nОтправка подарков: ${fmtDay(d.start)} — ${fmtDay(d.end)}.\n\nПодтверждаете участие во втором круге и дальнейшую отправку подарка?`
-      : FORM_STEPS[step];
+    const d = ow ? core.datesFor(db, ow.n) : null;
+    const text = !wave2 ? FORM_STEPS[step]
+      : ow ? `Первая жеребьёвка уже прошла — вы записываетесь в <b>${ow.n}-ю волну</b> 🎄\nОтправка подарков: ${fmtDay(d.start)} — ${fmtDay(d.end)}.\n\nПодтверждаете участие в ${ow.n}-й волне и дальнейшую отправку подарка?`
+      : 'Первая жеребьёвка уже прошла — вы попадёте в <b>лист ожидания следующей волны</b> 🎄 Когда организаторы её откроют, я пришлю даты и попрошу подтвердить участие.\n\nПодтверждаете участие и дальнейшую отправку подарка?';
     out.push({ chat_id: chatId, text, reply_markup: markup });
   }
 
@@ -325,8 +326,8 @@ function createBot({ core, secret, siteUrl, username }) {
           try {
             call(db, ctx, 'POST', '/api/wave2', { join: d === 'w2:yes' }, { userId: u0.id });
             out.push({ chat_id: chatId, text: d === 'w2:yes'
-              ? '🎄 Отлично, вы во втором круге! Я напишу, когда пройдёт его жеребьёвка.'
-              : 'Понял, во втором круге вас не будет. Спасибо, что были с нами ☕' });
+              ? `🎄 Отлично, вы в ${((db.wave2 || {})[u0.id] || {}).round || 'новой'}-й волне! Я напишу, когда пройдёт её жеребьёвка.`.replace('новой-й', 'новой')
+              : 'Понял, в этой волне вас не будет. Спасибо, что были с нами ☕' });
           } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
         }
       } else if (d === 'noform_del') {
@@ -543,6 +544,8 @@ function createBot({ core, secret, siteUrl, username }) {
 
     for (const pair of db.pairs) {
       if (pair.status !== 'assigned') continue;
+      const wave = core.waveOf(db, core.pairRound(pair));
+      if (wave && wave.status === 'closed') continue; // волна остановлена — не напоминаем
       const dates = core.datesFor(db, core.pairRound(pair));
       const toStart = mskDay(Date.parse(dates.start)) - mskDay(now);
       const toEnd = mskDay(Date.parse(dates.end)) - mskDay(now);

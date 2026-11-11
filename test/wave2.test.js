@@ -27,6 +27,7 @@ test('второй круг: без подтверждения в жеребьё
   const db = core.emptyDb();
   [0, 1, 2].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const a = user(db, 3, { wave2: true });
   const b = user(db, 4, { wave2: true });
   // старые записи второго круга без подтверждения (до обновления) — «ждём подтверждения»
@@ -52,6 +53,7 @@ test('пострадавший: Санта не отправил → во вто
   const db = core.emptyDb();
   const first = [0, 1, 2, 3, 4, 5].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', {}, admin);
   // все, кроме одного Санты, отправили подарки
   const bad = first[0];
   const badPair = db.pairs.find((p) => p.santaId === bad);
@@ -74,7 +76,7 @@ test('пострадавший: Санта не отправил → во вто
   const pushed = bot.pushNotifications(db, [note], null);
   assert.equal(pushed[0].reply_markup.inline_keyboard[0][0].callback_data, 'w2:yes');
   const r = press(db, 5005, 'w2:yes');
-  assert.match(texts(r), /вы во втором круге/);
+  assert.match(texts(r), /вы в 2-й волне/);
   assert.equal(db.wave2[victim].status, 'confirmed');
   // ещё один участник первого круга (уже отправил подарок) приглашён и подтвердил — он «надёжный»
   const helper = first.find((id) => id !== bad && id !== victim);
@@ -111,6 +113,7 @@ test('организатор: пригласить, подтвердить за 
   const ids = [0, 1, 2].map((i) => user(db, i));
   assert.throws(() => call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin), /после первой жеребьёвки/);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', {}, admin);
   call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin);
   assert.equal(db.wave2[ids[0]].status, 'invited');
   assert.equal(db.notifications.filter((x) => x.userId === ids[0]).pop().action, 'wave2');
@@ -130,6 +133,7 @@ test('анкета через бота после первой жеребьёв�
   const db = core.emptyDb();
   [0, 1].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const r = call(db, 'POST', '/api/register', { name: 'Bot', phone: '+79552999999', tg: 'bot_user', password: 'qwerty1', pdConsent: true });
   db.users.find((u) => u.id === r.user.id).tgChatId = 7007;
   press(db, 7007, 'form');
@@ -138,7 +142,7 @@ test('анкета через бота после первой жеребьёв�
   press(db, 7007, 'skip');
   press(db, 7007, 'prefs:any');
   const last = press(db, 7007, 'skip');
-  assert.match(texts(last), /второй круг/);
+  assert.match(texts(last), /2-ю волну/);
   press(db, 7007, 'agree');
   assert.equal(db.wave2[r.user.id].status, 'confirmed');
 });
