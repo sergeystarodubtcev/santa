@@ -656,3 +656,22 @@ td small { display: block; }
 .wave-chip .wave-ico { width: 28px; height: 28px; font-size: 15px; border-radius: 9px; }
 .wave-chip small { font-size: 10px; }
 .wave-chip b { font-size: 13px; }
+
+/* кабинет: сначала пожелания, данные для отправки — под спойлером */
+.wish-box { padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #fff7ed, #fff); border: 1px solid #fed7aa; }
+.wish-head { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #c2410c; }
+.wish-text { margin: 8px 0 10px; font-size: 17px; line-height: 1.45; color: var(--text); white-space: pre-line; }
+.wish-note { margin-top: 10px; padding: 8px 12px; border-radius: 12px; background: #fef2f2; color: #991b1b; font-size: 14px; }
+.ship-box { margin-top: 14px; padding: 14px 16px; border-radius: 18px; border: 1px dashed var(--border); background: var(--bg-soft); cursor: pointer; }
+.ship-head { font-weight: 800; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ship-head small { font-weight: 600; font-size: 12px; color: var(--muted); }
+.ship-data { margin-top: 10px; }
+.spoiler { position: relative; display: inline-block; border-radius: 6px; color: transparent; text-shadow: 0 0 9px rgba(30, 41, 59, .55); user-select: none; transition: color .35s, text-shadow .35s; }
+.spoiler::after { content: ''; position: absolute; inset: -2px -4px; border-radius: 6px; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(100,116,139,.75) 0 1px, transparent 1.4px), radial-gradient(circle, rgba(148,163,184,.65) 0 1px, transparent 1.4px);
+  background-size: 7px 7px, 11px 9px; background-position: 0 0, 3px 4px; animation: spoil 1.6s linear infinite; transition: opacity .35s; }
+@keyframes spoil { to { background-position: 7px 7px, -8px 13px; } }
+.ship-box.shown { cursor: default; border-style: solid; background: var(--card); }
+.ship-box.shown .spoiler { color: inherit; text-shadow: none; user-select: text; cursor: copy; border-bottom: 1px dashed var(--muted); border-radius: 0; }
+.ship-box.shown .spoiler::after { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .spoiler::after { animation: none; } }

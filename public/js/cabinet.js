@@ -164,6 +164,7 @@
     } catch (ex) { FX.toast(ex.message, 'error'); b.disabled = false; }
   });
 
+  let shipShown = false; // раскрыл ли участник данные для отправки (до перезагрузки страницы)
   function renderGive() {
     const host = $('[data-give]');
     const a = me.assignment;
@@ -182,16 +183,22 @@
         <div class="${revealedOnce ? '' : 'flip'}">
           <p style="margin-bottom:14px">${a.round > 1 ? `<span class="pill">🌊 ${a.round}-я волна</span> ` : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
           ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
-          <dl class="kv">
-            <dt>ФИО</dt><dd><span class="copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
-            <dt>ПВЗ Ozon</dt><dd><span class="copy" data-copy="${esc(r.address)}" title="Скопировать">${esc(r.address)}</span> 📋</dd>
-            <dt>Телефон</dt><dd><span class="copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
-            <dt>Telegram</dt><dd>@${esc(r.tg)}</dd>
-            <dt>Тематика</dt><dd>${esc(PREFS[r.prefs] || '—')}</dd>
-            <dt>Хочет</dt><dd>${esc(r.wishes) || '<span class="muted">не написал(а) — сюрприз!</span>'}</dd>
-            ${r.notes ? `<dt>⚠️ Важно</dt><dd><span class="important">${esc(r.notes)}</span></dd>` : ''}
-            ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
-          </dl>
+          <div class="wish-box">
+            <div class="wish-head">🎁 Что хочет получить</div>
+            <p class="wish-text">${esc(r.wishes) || '<span class="muted">Не написал(а) — сюрприз на ваш вкус!</span>'}</p>
+            <div class="wish-meta"><span class="pill">${esc(PREFS[r.prefs] || '🎲 Удивите меня')}</span></div>
+            ${r.notes ? `<div class="wish-note">⚠️ <b>Важно:</b> ${esc(r.notes)}</div>` : ''}
+          </div>
+          <div class="ship-box ${shipShown ? 'shown' : ''}" data-ship>
+            <div class="ship-head">📦 Данные для отправки <small data-ship-hint>${shipShown ? 'нажмите на строку, чтобы скопировать' : 'скрыто — нажмите, чтобы показать'}</small></div>
+            <dl class="kv ship-data">
+              <dt>ФИО</dt><dd><span class="spoiler copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
+              <dt>ПВЗ Ozon</dt><dd><span class="spoiler copy" data-copy="${esc(r.address)}">${esc(r.address)}</span></dd>
+              <dt>Телефон</dt><dd><span class="spoiler copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
+              <dt>Telegram</dt><dd><span class="spoiler copy" data-copy="@${esc(r.tg)}">@${esc(r.tg)}</span></dd>
+              ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
+            </dl>
+          </div>
           ${a.status === 'assigned' && !a.ackAt ? `
           <div class="ack-box"><p><b>Подтвердите, что участвуете и собираете посылку</b> — так организаторы будут знать, что всё в порядке.</p>
             <button class="btn btn-primary btn-block" type="button" data-ack>✅ Участвую, собираю посылку</button></div>` : ''}
@@ -225,9 +232,18 @@
       });
     }
     $$('[data-open-part]', host).forEach((b) => b.addEventListener('click', openPart));
-    $$('[data-copy]', host).forEach((el) => el.addEventListener('click', () => {
-      navigator.clipboard && navigator.clipboard.writeText(el.dataset.copy).then(() => FX.toast('Скопировано 📋'));
-    }));
+    // данные для отправки скрыты, как спойлер в Telegram: первое нажатие — показать, потом нажатие на строку — скопировать
+    const ship = $('[data-ship]', host);
+    if (ship) ship.addEventListener('click', (e) => {
+      if (!ship.classList.contains('shown')) {
+        ship.classList.add('shown');
+        shipShown = true;
+        $('[data-ship-hint]', ship).textContent = 'нажмите на строку, чтобы скопировать';
+        return;
+      }
+      const el = e.target.closest('[data-copy]');
+      if (el && navigator.clipboard) navigator.clipboard.writeText(el.dataset.copy).then(() => FX.toast('Скопировано 📋'));
+    });
   }
 
   function renderGift() {
