@@ -236,11 +236,13 @@ function createBot({ core, secret, siteUrl, username }) {
     const st = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
     out.push({
       chat_id: chatId,
+      // сначала пожелания, данные для отправки — под спойлером (нажать, чтобы показать)
       text: `🎅 Вы — Тайный Санта для <b>${esc(r.name)}</b> (${st})\n\n` +
-        `👤 ФИО: <code>${esc(r.fullName)}</code>\n📦 ПВЗ Ozon: <code>${esc(r.address)}</code>\n📱 Телефон: <code>${esc(r.phone)}</code>\n💬 Telegram: @${esc(r.tg)}\n` +
-        `🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}\n🎁 Хочет: ${esc(r.wishes) || 'не написал(а) — сюрприз!'}` +
+        `🎁 <b>Что хочет получить:</b>\n${esc(r.wishes) || 'не написал(а) — сюрприз на ваш вкус!'}\n🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
-        (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в первом круге он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
+        `\n\n📦 <b>Данные для отправки</b> (нажмите, чтобы показать):\n` +
+        `👤 ФИО: <tg-spoiler>${esc(r.fullName)}</tg-spoiler>\n📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>\n💬 Telegram: <tg-spoiler>@${esc(r.tg)}</tg-spoiler>` +
+        (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
         `\n\n📅 Отправка: до ${new Date(Date.parse((me.dates && me.dates.end) || me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
       reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack']]]).concat([[['📦 Я отправил подарок', 'sent']]])) : undefined,
     });

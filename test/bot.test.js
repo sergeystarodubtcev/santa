@@ -201,3 +201,26 @@ test('переключатель модерации: по умолчанию в�
   assert.equal(db.participations[b.user.id].moderation, 'approved');
   assert.ok(db.notifications.some((x) => x.userId === '@admins' && /Модерация ВЫКЛЮЧЕНА[\s\S]*Одобрено ожидавших: 1/.test(x.text)));
 });
+
+test('«Кому я дарю» в боте: сначала пожелания, ФИО/ПВЗ/телефон/ник — под спойлером', () => {
+  const core = require('../public/js/core.js');
+  const { createBot } = require('../cloud/bot.js');
+  const bot = createBot({ core, secret: 's', siteUrl: 'https://x', username: 'b' });
+  const ctx = { now: () => Date.now(), hash: (p) => 'h:' + p, verify: (p, h) => h === 'h:' + p, issueToken: (p) => JSON.stringify(p) };
+  const call = (db, m, p, b, as) => core.handle(db, Object.assign({}, ctx, as), m, p, b).data;
+  const db = core.emptyDb();
+  const ids = [0, 1].map((i) => {
+    const r = call(db, 'POST', '/api/register', { name: 'S' + i, phone: '+7955400000' + i, tg: 'spoil_' + i, password: 'qwerty1', pdConsent: true });
+    call(db, 'POST', '/api/participate', { fullName: 'Секретов Секрет ' + i, address: 'ПВЗ Ozon, Казань ' + i, wishes: 'дрипы ' + i, agree: true }, { userId: r.user.id });
+    return r.user.id;
+  });
+  core.handle(db, Object.assign({}, ctx, { isAdmin: true }), 'POST', '/api/admin/shuffle', {});
+  db.users[0].tgChatId = 901;
+  const r = bot.handleUpdate(db, ctx, { update_id: 1, callback_query: { id: 'c', data: 'whom', from: { id: 901 }, message: { chat: { id: 901, type: 'private' } } } });
+  const t = r.out.map((o) => o.text).join('\n');
+  assert.ok(t.indexOf('дрипы 1') < t.indexOf('Секретов'), 'пожелания выше данных');
+  assert.match(t, /<tg-spoiler>Секретов Секрет 1<\/tg-spoiler>/);
+  assert.match(t, /<tg-spoiler>ПВЗ Ozon, Казань 1<\/tg-spoiler>/);
+  assert.match(t, /<tg-spoiler>\+79554000001<\/tg-spoiler>/);
+  assert.match(t, /<tg-spoiler>@spoil_1<\/tg-spoiler>/);
+});
