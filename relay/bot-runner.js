@@ -93,6 +93,11 @@ async function checkWatch() {
   }
 
   const stopAt = Date.now() + RUN_MS;
+  // Личный аккаунт организатора: пишет тем, у кого не подключён бот (relay/userbot.js)
+  const userbot = require('./userbot.js').createUserbot({
+    apiId: process.env.TG_API_ID, apiHash: process.env.TG_API_HASH, botToken: TOKEN, site, log,
+  });
+  const userLoop = userbot.loop(stopAt).catch((e) => log('👤 аккаунт организатора остановлен:', e.message));
   let lastWatch = 0;
   let offset = 0;
   let lastOutbox = 0;
@@ -115,5 +120,6 @@ async function checkWatch() {
     if (updates.length) log('обработано апдейтов:', handled);
   }
   await tg('getUpdates', { offset, timeout: 0 }); // подтверждаем последние апдейты
+  await userLoop;
   log('Смена закончилась, обработано:', handled);
 })().catch((e) => { console.error(e); process.exit(1); });

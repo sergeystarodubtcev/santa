@@ -29,9 +29,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+      - name: Библиотека для аккаунта организатора
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+        run: |
+          if [ -z "$TG_API_ID" ]; then echo "Аккаунт организатора не настроен (нет секрета TG_API_ID) — пропускаю"; exit 0; fi
+          npm install --prefix relay --no-save --no-audit --no-fund telegram@2.26.22
       - name: Бот на смене
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
           SITE_API: https://santa.speccof.ru
           RUN_MINUTES: '330'
           SEND_TEST: ${{ inputs.test_message || 'false' }}

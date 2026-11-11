@@ -597,3 +597,14 @@ td small { display: block; }
 .w2-check { padding: 12px 14px; border-radius: 14px; background: #ecfdf5; border: 1px solid #a7f3d0; }
 .w2-card { margin-bottom: 18px; border: 2px solid #34d399; background: linear-gradient(135deg, #f0fdf4, #ffffff); }
 .w2-card h3 { margin-top: 0; }
+
+.ua-card { padding: 14px 16px; margin-bottom: 16px; border-radius: 16px; background: var(--bg-soft); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.ua-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ua-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ua-row input { max-width: 280px; }
+.ua-card .muted { font-size: 13px; margin: 0; }
+.chip-btn { cursor: pointer; font: inherit; }
+.chip.dim { opacity: .5; }
+.bc-hint { font-size: 12px; margin: -4px 0 0; }
+.bc-hint code { background: var(--bg-soft); padding: 1px 5px; border-radius: 6px; }
+.chip-btn { background: none; border: 0; padding: 0; }

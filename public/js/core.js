@@ -55,6 +55,9 @@
       drawn2At: null,
       // Второй круг — отдельная «подтаблица» участников: { [userId]: { status, reason, priority, addedAt, confirmedAt } }
       wave2: {},
+      // Личный Telegram-аккаунт организатора: пишет тем, у кого не подключён бот (через ретранслятор)
+      userAcc: { status: 'off' },
+      userOutbox: [],
       notifications: [],
       broadcasts: [],
       settings: Object.assign({}, DEFAULT_SETTINGS),
@@ -157,6 +160,32 @@
     return list.find((p) => !p.failed) || list[0] || null;
   }
 
+  // Подстановки в рассылке: {имя}, {срок} — до какого числа отправить подарок, {осталось} — сколько дней осталось
+  function fillText(db, ctx, u, text) {
+    const pair = outPair(db, u.id);
+    const part = db.participations[u.id];
+    const round = pair ? pairRound(pair) : inWave2(db, u.id) ? 2 : roundOf(part);
+    const end = Date.parse(datesFor(db, round).end);
+    const days = Math.ceil((end - ctx.now()) / DAY);
+    const left = days > 0 ? `осталось ${days} ${plural(days, 'день', 'дня', 'дней')}` : 'срок уже прошёл';
+    return String(text)
+      .replace(/\{имя\}/gi, firstName(u.name) || u.name)
+      .replace(/\{срок\}/gi, fmtDay(datesFor(db, round).end))
+      .replace(/\{осталось\}/gi, left);
+  }
+
+  // Состояние аккаунта организатора для админки — без сессии, кода и пароля
+  function userAccView(db) {
+    const a = db.userAcc || { status: 'off' };
+    const q = db.userOutbox || [];
+    return {
+      status: a.status || 'off', error: a.error || null, me: a.me || null, updatedAt: a.updatedAt || null,
+      phone: a.phone ? a.phone.replace(/^(\+?\d{2})\d+(\d{2})$/, '$1•••••$2') : null,
+      pausedUntil: a.pausedUntil || null,
+      queued: q.filter((x) => x.status === 'queued' || x.status === 'sending').length,
+    };
+  }
+
   // action — подсказка для Telegram-бота, какую кнопку приложить (whom, gift, moderation, …)
   function notify(db, ctx, userId, text, kind, action) {
     db.notifications.push({ id: newId(ctx), userId, text, kind: kind || 'info', action: action || null, createdAt: ctx.now(), read: false });
@@ -209,6 +238,7 @@
     db.users = db.users.filter((u) => u.id !== uid);
     delete db.participations[uid];
     if (db.wave2) delete db.wave2[uid];
+    if (db.userOutbox) db.userOutbox = db.userOutbox.filter((x) => x.userId !== uid || (x.status !== 'queued' && x.status !== 'sending'));
     db.notifications = db.notifications.filter((n) => n.userId !== uid);
     if (db.tgState) Object.keys(db.tgState).forEach((k) => { if (db.tgState[k] && db.tgState[k].uid === uid) delete db.tgState[k]; });
   }
@@ -551,7 +581,11 @@
         return Object.assign({ userId: id, name: u.name, tg: u.tg, banned: !!u.banned, tgLinked: !!u.tgChatId, hasAnketa: !!part,
           moderation: part ? modEff(db, part) : null, giving: give ? give.status : null, receiving: get ? get.status : null }, db.wave2[id]);
       }).filter(Boolean).sort((a, b) => (b.priority || 0) - (a.priority || 0) || (a.addedAt || 0) - (b.addedAt || 0)),
-      broadcasts: (db.broadcasts || []).slice().reverse(),
+      broadcasts: (db.broadcasts || []).slice().reverse().map((b) => (b.userTg ? Object.assign({}, b, {
+        uErrors: (db.userOutbox || []).filter((x) => x.broadcastId === b.id && x.status === 'failed').slice(0, 30).map((x) => '@' + x.tg + ': ' + x.error),
+        uQueued: (db.userOutbox || []).filter((x) => x.broadcastId === b.id && (x.status === 'queued' || x.status === 'sending')).length,
+      }) : b)),
+      userAcc: userAccView(db),
       adminLog: db.notifications.filter((n) => n.userId === ADMINS).slice(-60).reverse(),
       stats: {
         users: db.users.length,
@@ -889,23 +923,68 @@
         if (!text) fail(400, 'Пустое сообщение');
         const site = body.site !== false;
         const tg = body.tg !== false;
-        if (!site && !tg) fail(400, 'Выберите, куда отправить: на сайт и/или в Telegram');
+        const viaUser = !!body.userTg; // с аккаунта организатора — тем, у кого нет бота
+        if (!site && !tg && !viaUser) fail(400, 'Выберите, куда отправить: на сайт и/или в Telegram');
+        if (viaUser && !['ready', 'limited'].includes((db.userAcc || {}).status)) fail(400, 'Аккаунт организатора не подключён — подключите его в блоке «Аккаунт организатора»');
         const targets = Array.isArray(body.userIds)
           ? db.users.filter((u) => body.userIds.includes(u.id))
           : (body.onlyParticipants ? activeParticipants(db) : db.users);
         if (!targets.length) fail(400, 'Никто не выбран');
         const id = newId(ctx);
+        let uTotal = 0;
         targets.forEach((u) => {
-          notify(db, ctx, u.id, text, 'admin');
-          const n = db.notifications[db.notifications.length - 1];
-          n.broadcastId = id;
-          if (!site) n.hideOnSite = true;
-          if (!tg) n.noTg = true;
+          const personal = fillText(db, ctx, u, text);
+          if (site || tg) {
+            notify(db, ctx, u.id, personal, 'admin');
+            const n = db.notifications[db.notifications.length - 1];
+            n.broadcastId = id;
+            if (!site) n.hideOnSite = true;
+            if (!tg) n.noTg = true;
+          }
+          if (viaUser && !u.tgChatId) {
+            db.userOutbox = (db.userOutbox || []).concat({ id: newId(ctx), broadcastId: id, userId: u.id, tg: u.tg, text: personal, status: 'queued', at: ctx.now() });
+            uTotal++;
+          }
         });
         db.broadcasts = (db.broadcasts || []).concat({
           id, text, at: ctx.now(), site, tg, count: targets.length, to: targets.slice(0, 40).map((u) => '@' + u.tg),
+          userTg: viaUser || undefined, uTotal: viaUser ? uTotal : undefined, uSent: viaUser ? 0 : undefined, uFailed: viaUser ? 0 : undefined,
         }).slice(-100);
-        return ok({ sent: targets.length, id }, true);
+        return ok({ sent: targets.length, id, viaUser: uTotal }, true);
+      }
+      case 'POST /api/admin/useracc': {
+        // подключение личного аккаунта организатора: телефон → код из Telegram → (облачный пароль) → готово.
+        // Сам вход выполняет ретранслятор; код и пароль удаляются из базы сразу после передачи ему.
+        needAdmin();
+        const a = db.userAcc = db.userAcc || { status: 'off' };
+        const set = (patch) => Object.assign(a, patch, { error: null, updatedAt: ctx.now() });
+        if (body.action === 'phone') {
+          const phone = normPhone(body.value);
+          Object.keys(a).forEach((k) => delete a[k]);
+          set({ status: 'code_requested', phone });
+        } else if (body.action === 'code') {
+          if (a.status !== 'code_sent') fail(409, 'Сначала запросите код');
+          const code = String(body.value || '').replace(/\D/g, '');
+          if (code.length < 4) fail(400, 'Введите код из Telegram');
+          set({ status: 'code_entered', code });
+        } else if (body.action === 'password') {
+          if (a.status !== 'need_password') fail(409, 'Пароль сейчас не нужен');
+          if (!body.value) fail(400, 'Введите облачный пароль');
+          set({ status: 'password_entered', password: String(body.value).slice(0, 200) });
+        } else if (body.action === 'logout') {
+          set({ status: a.session ? 'logout_requested' : 'off' });
+          if (!a.session) { delete a.phone; delete a.me; }
+        } else if (body.action === 'cancel') {
+          ['code', 'password', 'phone'].forEach((k) => delete a[k]);
+          set({ status: a.session ? 'ready' : 'off' });
+        } else if (body.action === 'resume') {
+          // после спам-блока или паузы — попробовать снова
+          if (!a.session) fail(409, 'Аккаунт не подключён');
+          set({ status: 'ready', pausedUntil: null });
+        } else if (body.action === 'clear-queue') {
+          (db.userOutbox || []).forEach((x) => { if (x.status === 'queued') { x.status = 'failed'; x.error = 'отменено организатором'; } });
+        } else fail(400, 'Неизвестное действие');
+        return ok(adminState(db), true);
       }
       case 'POST /api/admin/broadcast-delete': {
         needAdmin();
@@ -915,7 +994,13 @@
         db.broadcasts = db.broadcasts.filter((x) => x.id !== b.id);
         return ok(adminState(db), true);
       }
-      case 'GET /api/admin/export': needAdmin(); return ok(db);
+      case 'GET /api/admin/export': {
+        // бэкап без сессии аккаунта организатора
+        needAdmin();
+        const copy = JSON.parse(JSON.stringify(db));
+        if (copy.userAcc) { delete copy.userAcc.session; delete copy.userAcc.code; delete copy.userAcc.password; }
+        return ok(copy);
+      }
       case 'POST /api/admin/import': {
         needAdmin();
         if (!body.db || !Array.isArray(body.db.users)) fail(400, 'Это не похоже на бэкап базы');
@@ -929,5 +1014,5 @@
     }
   }
 
-  return { handle, modStatus, roundOf, pairRound, datesFor, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

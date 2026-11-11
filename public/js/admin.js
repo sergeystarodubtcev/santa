@@ -404,6 +404,32 @@
     ['notg', '🔕 Без бота', (u) => !u.tgLinked],
     ['banned', '🛑 В чёрном списке', (u) => u.banned],
   ];
+  // Готовые фразы. filters — какие фильтры «Кому» включить
+  const BC_TEMPLATES = [
+    { label: '⏰ Напоминание о сроке', filters: ['notsent'], text: '{имя}, привет! Это организаторы Тайного Санты Кофеманьяков 🎅 Напоминаем: подарок нужно отправить до {срок} ({осталось}). Когда отправите — отметьте это в личном кабинете на santa.speccof.ru и добавьте трек-номер 🎁' },
+    { label: '📦 Вы уже отправили?', filters: ['notsent'], text: '{имя}, привет! Вы уже отправили подарок своему получателю? Если да — пожалуйста, отметьте отправку в личном кабинете на santa.speccof.ru (можно с трек-номером), чтобы получатель знал, что посылка в пути. Если ещё нет — срок до {срок} ({осталось}).' },
+    { label: '🔥 Срок прошёл', filters: ['notsent'], text: '{имя}, срок отправки подарка закончился {срок}, а отметки об отправке у нас нет 😟 Пожалуйста, отправьте подарок в ближайшие 2 дня и отметьте это в личном кабинете на santa.speccof.ru. Если что-то случилось — просто ответьте на это сообщение, мы поможем.' },
+    { label: '🛑 Последнее предупреждение', filters: ['notsent'], text: '{имя}, это последнее напоминание: подарок так и не отправлен. Если до завтра отправки не будет, мы передадим вашего получателя другому Санте, а вы попадёте в чёрный список Тайного Санты Кофеманьяков 🛑 Если есть уважительная причина — ответьте на это сообщение.' },
+    { label: '📝 Заполните анкету', filters: ['noform'], text: '{имя}, привет! Вы зарегистрировались в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть 🎅 Заполните её на santa.speccof.ru (раздел «Личный кабинет»).' },
+    { label: '🎁 Отметьте получение', filters: ['waiting'], text: '{имя}, привет! Ваш Тайный Санта уже отправил вам подарок 🎁 Когда получите посылку — отметьте это в личном кабинете на santa.speccof.ru. Спасибо!' },
+  ];
+  $('[data-bc-tpl]').innerHTML = BC_TEMPLATES.map((t, i) => `<button type="button" class="chip chip-btn" data-tpl="${i}"><span>${t.label}</span></button>`).join('');
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tpl]');
+    if (!b) return;
+    const t = BC_TEMPLATES[Number(b.dataset.tpl)];
+    const f = $('[data-bc-form]');
+    if (f.text.value.trim() && f.text.value !== f.text.dataset.tpl && !confirm('Заменить написанный текст готовой фразой?')) return;
+    f.text.value = t.text;
+    f.text.dataset.tpl = t.text;
+    // включаем подходящие фильтры «Кому»
+    bcActive.clear();
+    t.filters.forEach((k) => bcActive.add(k));
+    $$('[data-bc-f]').forEach((x) => { x.checked = bcActive.has(x.dataset.bcF); });
+    bcSyncFromFilters();
+    renderBroadcast();
+    FX.toast('Фраза вставлена, получатели отобраны по фильтру — проверьте список', 'success');
+  });
   const bcActive = new Set();
   const bcPicked = new Set();
   let bcTouched = false; // пока галочки не трогали руками — список следует за фильтрами
@@ -429,9 +455,11 @@
       <td style="white-space:nowrap">${FX.fmtDateTime(b.at)}</td>
       <td style="white-space:pre-line">${esc(b.text)}</td>
       <td>${b.count}<small>${esc((b.to || []).slice(0, 6).join(' '))}${(b.to || []).length > 6 ? ' …' : ''}</small></td>
-      <td>${b.site ? '🌐' : ''} ${b.tg ? '✈️' : ''}</td>
+      <td>${b.site ? '🌐' : ''} ${b.tg ? '✈️' : ''} ${b.userTg ? '👤' : ''}</td>
+      <td>${b.userTg ? `${b.uSent || 0} из ${b.uTotal || 0}${b.uQueued ? `<small>⏳ в очереди: ${b.uQueued}</small>` : ''}${b.uFailed ? `<small class="bad" title="${esc((b.uErrors || []).join('\n'))}">не доставлено: ${b.uFailed}</small><small>${esc((b.uErrors || []).slice(0, 4).join('; '))}</small>` : ''}` : '—'}</td>
       <td><button class="btn btn-danger btn-sm" data-bc-del="${b.id}" title="Удалить из кабинетов">🗑</button></td>
-    </tr>`).join('') || '<tr><td colspan="5" class="muted">Рассылок пока не было.</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">Рассылок пока не было.</td></tr>';
+    renderUserAcc();
   }
   document.addEventListener('change', (e) => {
     const f = e.target.closest('[data-bc-f]');
@@ -447,19 +475,71 @@
     const f = e.target;
     const text = f.text.value.trim();
     if (!text) return FX.toast('Напишите текст уведомления', 'error');
-    if (!f.site.checked && !f.tg.checked) return FX.toast('Выберите, куда отправить', 'error');
+    if (!f.site.checked && !f.tg.checked && !f.userTg.checked) return FX.toast('Выберите, куда отправить', 'error');
     const n = bcPicked.size;
-    if (!confirm(`Отправить уведомление ${n} ${SantaCore.plural(n, 'человеку', 'людям', 'людям')}${f.site.checked ? ' на сайт' : ''}${f.site.checked && f.tg.checked ? ' и' : ''}${f.tg.checked ? ' в Telegram' : ''}?`)) return;
+    const noBot = state.users.filter((u) => bcPicked.has(u.id) && !u.tgLinked).length;
+    const where = [f.site.checked && 'на сайт', f.tg.checked && 'в Telegram-бот', f.userTg.checked && `с аккаунта организатора (${noBot} без бота)`].filter(Boolean).join(', ');
+    if (!confirm(`Отправить уведомление ${n} ${SantaCore.plural(n, 'человеку', 'людям', 'людям')}: ${where}?` + (f.userTg.checked && noBot ? `\n\nС личного аккаунта сообщения уходят по одному раз в 30–60 секунд (до 40 в сутки), чтобы Telegram не заблокировал аккаунт.` : ''))) return;
     try {
-      const r = await Api.post('/api/admin/broadcast', { text, userIds: [...bcPicked], site: f.site.checked, tg: f.tg.checked }, A);
-      FX.toast(`Отправлено: ${r.sent}`, 'success');
+      const r = await Api.post('/api/admin/broadcast', { text, userIds: [...bcPicked], site: f.site.checked, tg: f.tg.checked, userTg: f.userTg.checked }, A);
+      FX.toast(`Отправлено: ${r.sent}` + (r.viaUser ? ` · с аккаунта организатора в очереди: ${r.viaUser}` : ''), 'success');
       f.text.value = '';
+      delete f.text.dataset.tpl;
       await load();
     } catch (ex) { FX.toast(ex.message, 'error'); }
   });
   document.addEventListener('click', (e) => {
     const d = e.target.closest('[data-bc-del]');
     if (d && confirm('Удалить рассылку из личных кабинетов? (В Telegram уже доставленное не отзывается.)')) act('/api/admin/broadcast-delete', { id: d.dataset.bcDel }, 'Рассылка удалена');
+  });
+
+  // ---------- аккаунт организатора (личный Telegram) ----------
+  const UA_STATUS = {
+    off: 'не подключён', code_requested: 'отправляем код…', code_sending: 'отправляем код…', code_sent: 'код отправлен в Telegram',
+    code_entered: 'проверяем код…', signing_in: 'входим…', need_password: 'нужен облачный пароль', password_entered: 'проверяем пароль…',
+    ready: 'подключён ✅', limited: 'ограничен Telegram (спам-блок) ⚠️', logout_requested: 'отключаем…',
+  };
+  let uaTimer = null;
+  function renderUserAcc() {
+    const a = state.userAcc || { status: 'off' };
+    const host = $('[data-ua]');
+    if (host.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return; // не мешаем вводу
+    const st = a.status;
+    const me = a.me ? `${esc(a.me.name || '')}${a.me.username ? ' @' + esc(a.me.username) : ''}` : '';
+    let body = '';
+    if (st === 'off') body = `<form class="ua-row" data-ua-form="phone"><input name="value" type="tel" placeholder="+7 900 000-00-00" autocomplete="off"><button class="btn btn-gold btn-sm">📲 Получить код</button></form>
+      <p class="muted">Телефон отдельного Telegram-аккаунта для рассылок. Код придёт в Telegram на этом аккаунте — введите его здесь. Не пересылайте код никому.</p>`;
+    else if (st === 'code_sent') body = `<form class="ua-row" data-ua-form="code"><input name="value" inputmode="numeric" placeholder="Код из Telegram" autocomplete="one-time-code"><button class="btn btn-gold btn-sm">Войти</button><button type="button" class="btn btn-ghost btn-sm" data-ua-act="cancel">Отмена</button></form>`;
+    else if (st === 'need_password') body = `<form class="ua-row" data-ua-form="password"><input name="value" type="password" placeholder="Облачный пароль (двухэтапная проверка)" autocomplete="off"><button class="btn btn-gold btn-sm">Войти</button><button type="button" class="btn btn-ghost btn-sm" data-ua-act="cancel">Отмена</button></form>`;
+    else if (st === 'ready' || st === 'limited') body = `<div class="ua-row"><span>${me}</span>${a.queued ? `<span class="muted">⏳ в очереди: ${a.queued}</span>` : ''}
+      ${st === 'limited' || a.pausedUntil > Date.now() ? '<button class="btn btn-ghost btn-sm" data-ua-act="resume">▶️ Продолжить</button>' : ''}
+      ${a.queued ? '<button class="btn btn-ghost btn-sm" data-ua-act="clear-queue">Очистить очередь</button>' : ''}
+      <button class="btn btn-danger btn-sm" data-ua-act="logout">Отключить</button></div>`;
+    else body = `<div class="ua-row"><span class="muted">⏳ Подождите, ретранслятор выполняет шаг (до 20 секунд)…</span><button type="button" class="btn btn-ghost btn-sm" data-ua-act="cancel">Отмена</button></div>`;
+    host.innerHTML = `<div class="ua-head"><b>👤 Аккаунт организатора</b> <span class="status ${st === 'ready' ? 'received' : st === 'limited' || a.error ? 'banned' : 'assigned'}">${UA_STATUS[st] || st}</span>
+      <span class="muted">— пишет тем, у кого не подключён бот</span></div>
+      ${a.error ? `<div class="bad">⚠️ ${esc(a.error)}</div>` : ''}${a.pausedUntil > Date.now() ? `<div class="muted">Пауза до ${FX.fmtDateTime(a.pausedUntil)}</div>` : ''}${body}`;
+    $('[data-ua-chip]').classList.toggle('dim', !(st === 'ready' || st === 'limited'));
+    // пока идёт вход — чаще обновляем статус
+    clearTimeout(uaTimer);
+    if (!['off', 'ready', 'limited'].includes(st)) uaTimer = setTimeout(() => load(), 4000);
+  }
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('[data-ua-form]');
+    if (!f) return;
+    e.preventDefault();
+    const value = f.value.value.trim();
+    if (!value) return;
+    f.value.blur();
+    act('/api/admin/useracc', { action: f.dataset.uaForm, value }, f.dataset.uaForm === 'phone' ? 'Запросили код — он придёт в Telegram через несколько секунд' : 'Проверяем…');
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ua-act]');
+    if (!b) return;
+    const a = b.dataset.uaAct;
+    if (a === 'logout' && !confirm('Отключить аккаунт организатора? Сессия будет завершена, очередь сообщений останется.')) return;
+    if (a === 'clear-queue' && !confirm('Отменить все сообщения, которые ещё ждут отправки с аккаунта организатора?')) return;
+    act('/api/admin/useracc', { action: a }, { logout: 'Аккаунт отключается', resume: 'Продолжаем отправку', cancel: 'Отменено', 'clear-queue': 'Очередь очищена' }[a]);
   });
 
   function download(name, text, type) {

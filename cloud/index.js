@@ -167,6 +167,69 @@ function queueOut(db, out) {
   return true;
 }
 
+const esc = (x) => String(x == null ? '' : x).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+// ---------- личный аккаунт организатора (логика очереди; сам Telegram — в ретрансляторе) ----------
+const USER_DAILY_CAP = Number(process.env.USER_DAILY_CAP) || 40; // не больше стольких сообщений в сутки: бережём аккаунт от спам-блока
+const USER_FOOTER = () => (TG_USERNAME ? `\n\n🤖 Все уведомления Тайного Санты приходят в бот @${TG_USERNAME} — подключите его, чтобы не пропустить сроки.` : '');
+function userPoll(db, body, now) {
+  const a = db.userAcc = db.userAcc || { status: 'off' };
+  const q = db.userOutbox = db.userOutbox || [];
+  let changed = false;
+  const touch = (patch) => { Object.assign(a, patch, { updatedAt: now }); changed = true; };
+  const r = body.report;
+  if (r && r.status) {
+    const patch = { status: r.status, error: r.error || null };
+    if (r.me) patch.me = r.me;
+    if (r.session) patch.session = r.session;
+    if (r.clearSession) { delete a.session; delete a.me; }
+    if (r.pauseSec) patch.pausedUntil = now + r.pauseSec * 1000;
+    touch(patch);
+    if (r.status === 'limited' || (r.status === 'off' && r.error)) {
+      const text = '👤 Аккаунт организатора: ' + (r.error || r.status);
+      db.notifications.push({ id: 'ua' + now, userId: '@admins', text, kind: 'admin-log', action: 'admin', createdAt: now, read: false });
+      db.tgOutbox = (db.tgOutbox || []).concat((db.tgAdmins || []).map((chat_id) => ({ chat_id, text: '📋 ' + esc(text) })));
+    }
+  }
+  for (const res of body.results || []) {
+    const it = q.find((x) => x.id === res.id);
+    if (!it || it.status !== 'sending') continue;
+    const b = (db.broadcasts || []).find((x) => x.id === it.broadcastId);
+    if (res.retry) { it.status = 'queued'; delete it.givenAt; }
+    else if (res.ok) {
+      it.status = 'sent'; it.sentAt = now;
+      if (b) b.uSent = (b.uSent || 0) + 1;
+      const day = new Date(now + 3 * 3600e3).toISOString().slice(0, 10);
+      a.sent = a.sent && a.sent.day === day ? { day, n: a.sent.n + 1 } : { day, n: 1 };
+    } else {
+      it.status = 'failed'; it.error = String(res.error || 'ошибка').slice(0, 200);
+      if (b) b.uFailed = (b.uFailed || 0) + 1;
+    }
+    changed = true;
+  }
+  // зависшие (ретранслятор перезапустился) — обратно в очередь
+  q.forEach((x) => { if (x.status === 'sending' && now - (x.givenAt || 0) > 30 * 60e3) { x.status = 'queued'; delete x.givenAt; changed = true; } });
+  // шаг входа для ретранслятора; код и пароль из базы сразу удаляем
+  let task = null;
+  if (a.status === 'code_requested') { task = { type: 'send_code', phone: a.phone }; touch({ status: 'code_sending' }); }
+  else if (a.status === 'code_entered') { task = { type: 'sign_in', phone: a.phone, code: a.code }; delete a.code; touch({ status: 'signing_in' }); }
+  else if (a.status === 'password_entered') { task = { type: 'password', password: a.password }; delete a.password; touch({ status: 'signing_in' }); }
+  else if (a.status === 'logout_requested') { task = { type: 'logout' }; delete a.session; delete a.me; delete a.phone; touch({ status: 'off' }); }
+  // сообщения — только когда аккаунт готов, не на паузе и не исчерпан суточный лимит
+  const items = [];
+  const day = new Date(now + 3 * 3600e3).toISOString().slice(0, 10);
+  const sentToday = a.sent && a.sent.day === day ? a.sent.n : 0;
+  const want = Math.min(Number(body.want) || 0, 5, USER_DAILY_CAP - sentToday - q.filter((x) => x.status === 'sending').length);
+  if (a.status === 'ready' && a.session && !(a.pausedUntil > now) && want > 0) {
+    for (const it of q.filter((x) => x.status === 'queued').slice(0, want)) {
+      it.status = 'sending'; it.givenAt = now; changed = true;
+      items.push({ id: it.id, tg: it.tg, text: it.text + USER_FOOTER() });
+    }
+  }
+  // старые записи очереди не копим
+  if (q.length > 2000) { db.userOutbox = q.filter((x) => x.status === 'queued' || x.status === 'sending' || now - x.at < 30 * 86400e3); changed = true; }
+  return { changed, task, items, session: a.session || null, status: a.status };
+}
+
 function makeCtx(auth, t) {
   return {
     now: () => Date.now(),
@@ -313,7 +376,6 @@ module.exports.handler = async function handler(event, context) {
       if (!bot || !TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
       const db = await loadDb(token);
       const admins = db.tgAdmins || [];
-      const esc = (x) => String(x || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
       if (body.test) {
         const out = admins.map((chat_id) => ({ chat_id, text: `🧪 Пробное сообщение от Санта-бота.\nСлежу за страницей «${esc(body.title)}»: как только она появится, напишу сюда.\n${esc(body.url)}` }));
         return reply(200, { out, admins: admins.length });
@@ -351,6 +413,17 @@ module.exports.handler = async function handler(event, context) {
       db.tgOutbox = (db.tgOutbox || []).concat(out);
       await s3('PUT', DB_KEY, token, JSON.stringify(db));
       return reply(200, { out: [], queued: out.length, done: true, admins: admins.length });
+    }
+
+    // Личный аккаунт организатора: ретранслятор забирает шаги входа и сообщения для тех, у кого нет бота,
+    // и возвращает результаты. Сессия хранится зашифрованной (ключ знает только ретранслятор и функция).
+    if (path === '/api/tg/user-poll') {
+      if (!TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
+      const db = await loadDb(token);
+      const res = userPoll(db, body, Date.now());
+      if (res.changed) await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      delete res.changed;
+      return reply(200, res);
     }
 
     if (path === '/api/tg/relay' || path === '/api/tg/outbox') {
@@ -449,4 +522,4 @@ module.exports.handler = async function handler(event, context) {
 };
 
 // для тестов
-module.exports._internal = { routeOf, makeAuth };
+module.exports._internal = { routeOf, makeAuth, userPoll };

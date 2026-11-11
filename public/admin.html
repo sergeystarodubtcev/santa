@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261111i">
+  <link rel="stylesheet" href="css/style.css?v=20261111j">
 </head>
 <body>
   <header class="topbar">
@@ -109,12 +109,19 @@
             <div><b>❓ Без анкеты: <span data-noform-count>0</span></b><span class="muted" data-noform-sub>Бот спросит «Будете участвовать?» с кнопками «Заполнить анкету» и «Удалить аккаунт». Обычно это приходит само через сутки после регистрации.</span></div>
             <button class="btn btn-gold btn-sm" type="button" data-noform-ask>📨 Спросить сейчас</button>
           </div>
+          <div class="ua-card" data-ua></div>
           <form class="form" data-bc-form>
-            <textarea name="text" rows="3" placeholder="Текст уведомления. Например: «У вас 3 дня, чтобы успеть отправить подарок!»"></textarea>
+            <div class="bc-row">
+              <span class="field-label">Готовые фразы:</span>
+              <div class="chips" data-bc-tpl></div>
+            </div>
+            <textarea name="text" rows="4" placeholder="Текст уведомления. Например: «У вас 3 дня, чтобы успеть отправить подарок!»"></textarea>
+            <p class="muted bc-hint">Подстановки: <code>{имя}</code> — имя человека, <code>{срок}</code> — до какого числа отправить подарок (по его кругу), <code>{осталось}</code> — «осталось 3 дня» или «срок уже прошёл». Каждый получит текст со своими данными.</p>
             <div class="bc-row">
               <span class="field-label">Куда:</span>
               <label class="chip"><input type="checkbox" name="site" checked><span>🌐 На сайт (личный кабинет)</span></label>
               <label class="chip"><input type="checkbox" name="tg" checked><span>✈️ В Telegram (кто подключил бота)</span></label>
+              <label class="chip" data-ua-chip><input type="checkbox" name="userTg"><span>👤 С аккаунта организатора (у кого нет бота)</span></label>
             </div>
             <div class="bc-row">
               <span class="field-label">Кому (все отмеченные условия сразу):</span>
@@ -133,7 +140,7 @@
           </form>
           <h3 style="margin-top:22px">🗂 Отправленные</h3>
           <div class="table-wrap"><table>
-            <thead><tr><th>Когда</th><th>Текст</th><th>Кому</th><th>Куда</th><th></th></tr></thead>
+            <thead><tr><th>Когда</th><th>Текст</th><th>Кому</th><th>Куда</th><th>👤 Личный аккаунт</th><th></th></tr></thead>
             <tbody data-bc-history></tbody>
           </table></div>
           <p class="muted" style="font-size:12px">«Удалить» убирает уведомление из личных кабинетов. Уже доставленное сообщение в Telegram отозвать нельзя.</p>
@@ -231,11 +238,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261111i"></script>
-  <script src="js/cities.js?v=20261111i"></script>
-  <script src="js/core.js?v=20261111i"></script>
-  <script src="js/api.js?v=20261111i"></script>
-  <script src="js/fx.js?v=20261111i"></script>
-  <script src="js/admin.js?v=20261111i"></script>
+  <script src="js/config.js?v=20261111j"></script>
+  <script src="js/cities.js?v=20261111j"></script>
+  <script src="js/core.js?v=20261111j"></script>
+  <script src="js/api.js?v=20261111j"></script>
+  <script src="js/fx.js?v=20261111j"></script>
+  <script src="js/admin.js?v=20261111j"></script>
 </body>
 </html>
