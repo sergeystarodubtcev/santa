@@ -183,8 +183,8 @@ test('Санта подтверждает «собираю посылку» — 
   // бот: у Санты без подтверждения — кнопка «Участвую, собираю посылку»
   const r1 = bot.handleUpdate(db, ctx, { update_id: 1, callback_query: { id: 'c1', data: 'whom', from: { id: 500 }, message: { chat: { id: 500, type: 'private' } } } });
   const kb = r1.out.find((o) => o.reply_markup && o.reply_markup.inline_keyboard).reply_markup.inline_keyboard;
-  assert.equal(kb[0][0].callback_data, 'ack');
-  const r2 = bot.handleUpdate(db, ctx, { update_id: 2, callback_query: { id: 'c2', data: 'ack', from: { id: 500 }, message: { chat: { id: 500, type: 'private' } } } });
+  assert.equal(kb[0][0].callback_data, 'ack:1');
+  const r2 = bot.handleUpdate(db, ctx, { update_id: 2, callback_query: { id: 'c2', data: 'ack:1', from: { id: 500 }, message: { chat: { id: 500, type: 'private' } } } });
   assert.match(r2.out.map((o) => o.text).join(' '), /собираете посылку/);
   assert.ok(db.pairs.find((p) => p.santaId === ids[0]).ackAt);
 });

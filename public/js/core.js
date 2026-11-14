@@ -61,6 +61,8 @@
       // Участники волн 2+ — «подтаблица»: { [userId]: { round, status, reason, priority, addedAt, confirmedAt } }
       // status: waiting (лист ожидания следующей волны) | invited (ждём подтверждения) | confirmed | declined
       wave2: {},
+      // Анкеты для конкретных волн (если человек записался в следующую волну и поправил данные): { [userId]: { [n | 'next']: анкета } }
+      waveAnketas: {},
       // Личный Telegram-аккаунт организатора: пишет тем, у кого не подключён бот (через ретранслятор)
       userAcc: { status: 'off' },
       userOutbox: [],
@@ -188,7 +190,13 @@
   // Допущенные модерацией — только они попадают в жеребьёвку. В волны 2+ — только подтвердившие участие.
   function approvedParticipants(db, round) {
     return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved'
-      && (!round || (round > 1 ? inWave(db, u.id, round) : roundOf(db.participations[u.id]) === 1)));
+      && (!round || (round > 1 ? inWave(db, u.id, round) || hadPairIn(db, u.id, round) : roundOf(db.participations[u.id]) === 1)));
+  }
+  const hadPairIn = (db, uid, n) => !!drawnFor(db, n) && db.pairs.some((p) => pairRound(p) === n && (p.santaId === uid || p.recipientId === uid));
+  // Анкета получателя для конкретной волны (своя анкета волны или основная)
+  function anketaFor(db, uid, n) {
+    const wa = n > 1 && db.waveAnketas && db.waveAnketas[uid] && db.waveAnketas[uid][n];
+    return wa || db.participations[uid] || {};
   }
   // У «пострадавшего» пары могут быть в обоих кругах — берём актуальную.
   const byRoundDesc = (a, b) => pairRound(b) - pairRound(a);
@@ -280,6 +288,7 @@
     db.users = db.users.filter((u) => u.id !== uid);
     delete db.participations[uid];
     if (db.wave2) delete db.wave2[uid];
+    if (db.waveAnketas) delete db.waveAnketas[uid];
     if (db.userOutbox) db.userOutbox = db.userOutbox.filter((x) => x.userId !== uid || (x.status !== 'queued' && x.status !== 'sending'));
     db.notifications = db.notifications.filter((n) => n.userId !== uid);
     if (db.tgState) Object.keys(db.tgState).forEach((k) => { if (db.tgState[k] && db.tgState[k].uid === uid) delete db.tgState[k]; });
@@ -340,6 +349,53 @@
   }
 
   // ---------- participation ----------
+  function readAnketa(db, user, body) {
+    const fullName = str(body.fullName, 120);
+    if (fullName.length < 3) fail(400, 'Укажите ФИО получателя посылки');
+    if (body.phone != null && String(body.phone).trim()) {
+      const phone = normPhone(body.phone);
+      if (phone !== user.phone) {
+        if (db.users.some((u) => u.id !== user.id && u.phone === phone)) fail(409, 'Этот телефон уже указан у другого участника');
+        user.phone = phone;
+      }
+    }
+    const address = str(body.address, 400);
+    if (address.length < 5) fail(400, 'Укажите адрес ближайшего пункта выдачи Ozon');
+    if (/(^|[\s,.])(кв|квартира|кв-ра|апарт)(\.|\s|\d|$)|подъезд|домофон|этаж/i.test(address)) {
+      fail(400, 'Укажите только адрес пункта выдачи Ozon — без квартиры, подъезда и домашнего адреса');
+    }
+    return { fullName, address, city: detectCity(address), wishes: str(body.wishes, 1000), notes: str(body.notes, 500), prefs: PREFS[body.prefs] ? body.prefs : 'any' };
+  }
+
+  // Участник уже играет и хочет ещё и в следующую волну: анкета копируется из прошлой, её можно поправить.
+  // Открыта волна n>1 — сразу участвует в ней; волны ещё нет — лист ожидания (приглашение придёт при создании волны).
+  function waveJoin(db, ctx, userId, body) {
+    const user = getUser(db, userId);
+    if (user.banned) fail(403, 'Вы в чёрном списке. Напишите организаторам.');
+    if (!db.participations[userId]) fail(400, 'Сначала заполните анкету участника');
+    if ((waveOf(db, 1) || {}).status === 'open') fail(409, 'Сейчас идёт запись в первую волну — вы уже в ней');
+    if (!db.settings.round2Open) fail(409, 'Запись в следующие волны сейчас закрыта');
+    const ow = openWave(db);
+    const target = ow && ow.n > 1 ? ow.n : null;
+    const a = readAnketa(db, user, body);
+    if (!body.agree) fail(400, target ? `Подтвердите участие в ${waveIn(target)}` : 'Подтвердите участие в следующей волне');
+    db.waveAnketas = db.waveAnketas || {};
+    db.waveAnketas[userId] = db.waveAnketas[userId] || {};
+    db.waveAnketas[userId][target || 'next'] = Object.assign(a, { updatedAt: ctx.now() });
+    const prev = wave2Of(db, userId);
+    const already = prev && prev.round === target && prev.status === 'confirmed';
+    db.wave2[userId] = Object.assign({ reason: 'self', priority: 0, addedAt: ctx.now() }, prev && (prev.round === target || prev.status === 'waiting') ? prev : {}, {
+      round: target, status: target ? 'confirmed' : 'waiting', confirmedAt: target ? (already ? prev.confirmedAt : ctx.now()) : null,
+    });
+    if (!already) {
+      notify(db, ctx, userId, target
+        ? `Вы записались в ${waveTo(target)} 🌊 Отправка подарков ${fmtDay(datesFor(db, target).start)} — ${fmtDay(datesFor(db, target).end)}. Мы напишем, когда пройдёт её жеребьёвка.`
+        : 'Вы в листе ожидания следующей волны 🌊 Как только организаторы её откроют, мы напишем — останется подтвердить участие.', 'success');
+      notifyAdmins(db, ctx, `🌊 ${who(user)} ` + (target ? `записался в ${waveTo(target)}` : 'записался в лист ожидания следующей волны') + ' (повторное участие).');
+    }
+    return db.wave2[userId];
+  }
+
   function participate(db, ctx, userId, body) {
     const user = getUser(db, userId);
     if (user.banned) fail(403, 'Вы в чёрном списке. Напишите организаторам.');
@@ -610,15 +666,28 @@
       if (w.status !== 'waiting' || !db.users.some((u) => u.id === uid)) continue;
       Object.assign(w, { round: n, status: 'invited' });
       if (db.participations[uid] && roundOf(db.participations[uid]) === 0) db.participations[uid].round = n;
+      const wa = db.waveAnketas && db.waveAnketas[uid];
+      if (wa && wa.next) { wa[n] = wa.next; delete wa.next; }
       notify(db, ctx, uid, `Открылась запись в ${waveTo(n)} Тайного Санты 🎄 Отправка подарков ${fmtDay(start)} — ${fmtDay(end)}.` + (w.priority ? ' Вам отправят подарок в первую очередь ⭐' : '') + ' Подтвердите участие.', 'info', 'wave2');
       invited++;
     }
-    notifyAdmins(db, ctx, `🌊 Создана ${waveName(n)}: отправка ${fmtDay(start)} — ${fmtDay(end)}.` + (invited ? ` Приглашения подтвердить участие: ${invited}.` : ''));
+    // остальным участникам — предложение записаться ещё и в новую волну
+    let offered = 0;
+    if (db.settings.round2Open) {
+      for (const u of db.users) {
+        const w = wave2Of(db, u.id);
+        if (u.banned || !db.participations[u.id] || (w && w.round === n)) continue;
+        notify(db, ctx, u.id, `Открылась запись в ${waveTo(n)} Тайного Санты 🌊 Отправка ${fmtDay(start)} — ${fmtDay(end)}. Хотите подарить ещё один подарок и получить ещё один? Анкета подставится из прошлой волны — её можно поправить.`, 'info', 'wavejoin');
+        offered++;
+      }
+    }
+    notifyAdmins(db, ctx, `🌊 Создана ${waveName(n)}: отправка ${fmtDay(start)} — ${fmtDay(end)}.` + (invited ? ` Приглашения подтвердить участие: ${invited}.` : '') + (offered ? ` Предложение записаться отправлено участникам: ${offered}.` : ''));
     return { n, invited };
   }
 
+  const pairOfWave = (db, uid, side, n) => db.pairs.find((p) => p[side] === uid && pairRound(p) === n && published(db, n));
   function markSent(db, ctx, userId, body) {
-    const pair = outPair(db, userId);
+    const pair = body && Number(body.round) ? pairOfWave(db, userId, 'santaId', Number(body.round)) : outPair(db, userId);
     if (!pair) fail(404, 'У вас пока нет получателя');
     pair.status = pair.status === 'received' ? 'received' : 'sent';
     pair.track = str(body && body.track, 80);
@@ -627,8 +696,9 @@
     return pair;
   }
 
-  function markReceived(db, ctx, userId) {
-    const pair = db.pairs.filter((p) => p.recipientId === userId).sort(byRoundDesc).find((p) => p.status === 'sent') || inPair(db, userId);
+  function markReceived(db, ctx, userId, body) {
+    const pair = body && Number(body.round) ? pairOfWave(db, userId, 'recipientId', Number(body.round))
+      : db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort(byRoundDesc).find((p) => p.status === 'sent') || inPair(db, userId);
     if (!pair) fail(404, 'Подарок не найден');
     if (pair.status === 'assigned') fail(409, 'Ваш Санта ещё не отметил отправку');
     pair.status = 'received';
@@ -676,9 +746,33 @@
       dates: w2.round ? datesFor(db, w2.round) : null, drawn: w2.round ? !!drawnFor(db, w2.round) : false,
       open: w2.round ? (waveOf(db, w2.round) || {}).status === 'open' : false } : null;
     const mine = outPair(db, userId);
+    const recipientView = (p) => {
+      const r = db.users.find((u) => u.id === p.recipientId) || {};
+      const rp = anketaFor(db, p.recipientId, pairRound(p));
+      return {
+        recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
+        status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
+        round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
+      };
+    };
+    // все подтверждённые пары по волнам (у повторного участника их несколько)
+    out.assignments = db.pairs.filter((p) => p.santaId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b)).map(recipientView);
+    out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
+      .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p) }));
+    // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
+    const ow2 = openWave(db);
+    const target = ow2 && ow2.n > 1 ? ow2 : null;
+    const w1open = (waveOf(db, 1) || {}).status === 'open';
+    const inTarget = w2 && (target ? w2.round === target.n && w2.status === 'confirmed' : w2.status === 'waiting');
+    out.nextWave = !part || user.banned || w1open || !db.settings.round2Open ? null : {
+      n: target ? target.n : null, start: target ? target.start : null, end: target ? target.end : null,
+      joined: !!inTarget, invited: !!(w2 && target && w2.round === target.n && w2.status === 'invited'),
+      anketa: (() => { const wa = (db.waveAnketas || {})[userId] || {}; const a = wa[target ? target.n : 'next'] || wa.next || part;
+        return { fullName: a.fullName, address: a.address, wishes: a.wishes, notes: a.notes, prefs: a.prefs }; })(),
+    };
     if (mine) {
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
-      const rp = db.participations[mine.recipientId] || {};
+      const rp = anketaFor(db, mine.recipientId, pairRound(mine));
       out.assignment = {
         recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
@@ -926,12 +1020,13 @@
       case 'POST /api/sent': markSent(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/ack': {
         // Санта подтверждает, что участвует и собирает посылку
-        const pair = outPair(db, needUser());
+        const pair = Number(body.round) ? pairOfWave(db, needUser(), 'santaId', Number(body.round)) : outPair(db, needUser());
         if (!pair) fail(404, 'У вас пока нет получателя');
         if (!pair.ackAt) pair.ackAt = ctx.now();
         return ok(me(db, ctx, ctx.userId), true);
       }
-      case 'POST /api/received': markReceived(db, ctx, needUser()); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/received': markReceived(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/wave-join': waveJoin(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/notifications/read': {
         const uid = needUser();
         db.notifications.forEach((n) => { if (n.userId === uid) n.read = true; });

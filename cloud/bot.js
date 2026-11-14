@@ -25,13 +25,16 @@ const BTN = {
   form: '📝 Моя анкета',
   got: '🎉 Я получил подарок',
   help: '🆘 Помощь администратора',
+  wave: '🌊 Следующие волны',
   done: '✅ Готово',
 };
-const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.help }]], resize_keyboard: true };
+const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.wave }, { text: BTN.help }]], resize_keyboard: true };
 const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: '🛡 Модерация' }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
+const WHOM_WAVE_BTN = ib([[['🎁 Узнать кому', 'whom']], [['🌊 Следующие волны', 'wave']]]);
+const WAVEJOIN_BTN = ib([[['🌊 Записаться в новую волну', 'wave']]]);
 const PREFS_BTN = ib([[['☕ Кофейное', 'prefs:coffee'], ['🧸 Некофейное', 'prefs:noncoffee']], [['🎲 Удивите меня', 'prefs:any']]]);
 const SKIP_BTN = ib([[['Пропустить →', 'skip']]]);
 const W2_BTN = ib([[['✅ Да, участвую в новой волне', 'w2:yes']], [['🙅 Нет, не буду', 'w2:no']]]);
@@ -140,6 +143,8 @@ function createBot({ core, secret, siteUrl, username }) {
   const FORM_ORDER = ['fullName', 'address', 'wishes', 'prefs', 'notes', 'agree'];
 
   function askForm(out, chatId, step, db) {
+    const st0 = db && db.tgState && db.tgState[chatId];
+    if (st0 && st0.waveJoin) return askWaveForm(out, chatId, step, st0);
     const wave2 = step === 'agree' && db && db.drawnAt && !db.participations[(userByChat(db, chatId) || {}).id];
     const ow = wave2 ? core.openWave(db) : null;
     const markup = step === 'prefs' ? PREFS_BTN
@@ -150,6 +155,70 @@ function createBot({ core, secret, siteUrl, username }) {
       : ow ? `Первая жеребьёвка уже прошла — вы записываетесь в <b>${ow.n}-ю волну</b> 🎄\nОтправка подарков: ${fmtDay(d.start)} — ${fmtDay(d.end)}.\n\nПодтверждаете участие в ${ow.n}-й волне и дальнейшую отправку подарка?`
       : 'Первая жеребьёвка уже прошла — вы попадёте в <b>лист ожидания следующей волны</b> 🎄 Когда организаторы её откроют, я пришлю даты и попрошу подтвердить участие.\n\nПодтверждаете участие и дальнейшую отправку подарка?';
     out.push({ chat_id: chatId, text, reply_markup: markup });
+  }
+
+  // Анкета для следующей волны: каждый шаг показывает прошлое значение и кнопку «Оставить как есть»
+  function askWaveForm(out, chatId, step, st) {
+    const pre = st.prefill || {};
+    const KEEP = [['✅ Оставить как есть', 'keep']];
+    if (step === 'agree') {
+      out.push({
+        chat_id: chatId,
+        text: (st.waveN ? `Записываю вас в <b>${st.waveN}-ю волну</b> 🌊` : 'Записываю вас в <b>лист ожидания следующей волны</b> 🌊')
+          + '\nВы дарите ещё один подарок новому получателю и получаете ещё один.\n\nПодтверждаете участие?',
+        reply_markup: ib([[[st.waveN ? `✅ Участвую в ${st.waveN}-й волне` : '✅ Записаться в лист ожидания', 'agree']]]),
+      });
+      return;
+    }
+    const cur = step === 'prefs' ? core.PREFS[pre.prefs] : pre[step];
+    const markup = step === 'prefs' ? { inline_keyboard: PREFS_BTN.inline_keyboard.concat(pre.prefs ? [KEEP.map(([t, d]) => ({ text: t, callback_data: d }))] : []) }
+      : cur ? ib([KEEP].concat(step === 'wishes' || step === 'notes' ? [[['Очистить', 'skip']]] : []))
+      : step === 'wishes' || step === 'notes' ? SKIP_BTN : { remove_keyboard: true };
+    out.push({ chat_id: chatId, text: FORM_STEPS[step] + (cur ? `\n\nСейчас: «${esc(cur)}»` : ''), reply_markup: markup });
+  }
+
+  function startWaveForm(db, out, chatId, nw, edit) {
+    db.tgState[chatId] = { flow: 'form', step: edit ? 'fullName' : 'agree', data: Object.assign({}, nw.anketa), prefill: nw.anketa, waveJoin: true, waveN: nw.n || null };
+    if (edit) out.push({ chat_id: chatId, text: '✏️ Анкета для новой волны. На каждом шаге можно оставить прошлое значение. /cancel — отменить.' });
+    askWaveForm(out, chatId, edit ? 'fullName' : 'agree', db.tgState[chatId]);
+  }
+
+  // «🌊 Следующие волны»: записаться (анкета из прошлой волны), лист ожидания, статус
+  function waveMenu(db, ctx, out, chatId) {
+    const u = userByChat(db, chatId);
+    if (!u) return notLinked(out, chatId);
+    const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
+    const nw = me.nextWave;
+    const w = me.wave2;
+    if (!me.participation) {
+      out.push({ chat_id: chatId, text: 'Сначала заполните анкету участника 🎁', reply_markup: ib([[['🎁 Заполнить анкету', 'form']]]) });
+      return;
+    }
+    if (!nw) {
+      const w1 = (me.settings.waves || [])[0] || {};
+      out.push({ chat_id: chatId, text: w1.status === 'open'
+        ? '🌊 Сейчас идёт запись в первую волну — вы уже в ней! Следующие волны откроются после жеребьёвки.'
+        : '🌊 Запись в следующие волны сейчас закрыта. Я напишу, когда она откроется.' });
+      return;
+    }
+    const a = nw.anketa || {};
+    const summary = `\n\n📋 <b>Анкета</b> (как в прошлый раз):\nФИО: ${esc(a.fullName)}\nПВЗ: ${esc(a.address)}\nПожелания: ${esc(a.wishes) || '—'}\nТематика: ${esc(core.PREFS[a.prefs] || '—')}`;
+    if (nw.joined) {
+      out.push({
+        chat_id: chatId,
+        text: (nw.n ? `✅ Вы участвуете в <b>${nw.n}-й волне</b> (отправка ${fmtDay(nw.start)} — ${fmtDay(nw.end)}). Я напишу, когда пройдёт её жеребьёвка.`
+          : '✅ Вы в листе ожидания следующей волны. Как только организаторы её откроют, я пришлю даты.') + summary,
+        reply_markup: ib([[['✏️ Изменить анкету для волны', 'wj:edit']], [['🙅 Отказаться', 'wj:no']]]),
+      });
+      return;
+    }
+    out.push({
+      chat_id: chatId,
+      text: (nw.n ? `🌊 Открыта запись в <b>${nw.n}-ю волну</b>! Отправка подарков ${fmtDay(nw.start)} — ${fmtDay(nw.end)}.`
+        : '🌊 Следующая волна ещё не открыта, но можно записаться в лист ожидания — я напишу, когда она начнётся.')
+        + '\nВы дарите ещё один подарок и получаете ещё один (новая жеребьёвка).' + summary,
+      reply_markup: ib([[[nw.n ? '✅ Записаться с этими данными' : '✅ В лист ожидания с этими данными', 'wj:yes']], [['✏️ Изменить данные и записаться', 'wj:edit']]]),
+    });
   }
 
   function startForm(db, out, chatId) {
@@ -173,6 +242,19 @@ function createBot({ core, secret, siteUrl, username }) {
     const next = FORM_ORDER[FORM_ORDER.indexOf(st.step) + 1];
     if (next) { st.step = next; askForm(out, chatId, next, db); return; }
     const u = userByChat(db, chatId);
+    if (st.waveJoin) {
+      try {
+        call(db, ctx, 'POST', '/api/wave-join', Object.assign({}, st.data, { agree: true }), { userId: u.id });
+        delete db.tgState[chatId];
+        out.push({ chat_id: chatId, text: st.waveN ? `🌊 Готово! Вы в ${st.waveN}-й волне. Я напишу, когда пройдёт её жеребьёвка.` : '🌊 Готово! Вы в листе ожидания следующей волны — я напишу, когда она откроется.', reply_markup: MAIN_KB });
+      } catch (e) {
+        if (!(e instanceof core.SantaError)) throw e;
+        const back = /ПВЗ|адрес|пункта/i.test(e.message) ? 'address' : /ФИО/i.test(e.message) ? 'fullName' : null;
+        out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
+        if (back) { st.step = back; askWaveForm(out, chatId, back, st); } else delete db.tgState[chatId];
+      }
+      return;
+    }
     try {
       call(db, ctx, 'POST', '/api/participate', Object.assign({ phone: u.phone }, st.data, { agree: true, wave2: !!db.drawnAt }), { userId: u.id });
       delete db.tgState[chatId];
@@ -227,26 +309,42 @@ function createBot({ core, secret, siteUrl, username }) {
     const u = userByChat(db, chatId);
     if (!u) return notLinked(out, chatId);
     const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
-    const a = me.assignment;
-    if (!a) {
+    const list = me.assignments && me.assignments.length ? me.assignments : me.assignment ? [me.assignment] : [];
+    if (!list.length) {
       out.push({ chat_id: chatId, text: me.drawing ? '🎲 Идёт жеребьёвка — организаторы проверяют пары. Я напишу, как только всё будет готово!'
         : me.drawn ? 'Вас нет в жеребьёвке этого года.' : '🔒 Жеребьёвки ещё не было. Я напишу, как только организаторы раскидают участников!\n\n' + statusLine(db, u) });
       return;
     }
+    const many = list.length > 1;
+    for (const a of list) {
     const r = a.recipient;
     const st = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
     out.push({
       chat_id: chatId,
       // сначала пожелания, данные для отправки — под спойлером (нажать, чтобы показать)
-      text: `🎅 Вы — Тайный Санта для <b>${esc(r.name)}</b> (${st})\n\n` +
+      text: (many ? `🌊 <b>${a.round}-я волна</b>\n` : '') + `🎅 Вы — Тайный Санта для <b>${esc(r.name)}</b> (${st})\n\n` +
         `🎁 <b>Что хочет получить:</b>\n${esc(r.wishes) || 'не написал(а) — сюрприз на ваш вкус!'}\n🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
         `\n\n📦 <b>Данные для отправки</b> (нажмите, чтобы показать):\n` +
         `👤 ФИО: <tg-spoiler>${esc(r.fullName)}</tg-spoiler>\n📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>\n💬 Telegram: <tg-spoiler>@${esc(r.tg)}</tg-spoiler>` +
         (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
-        `\n\n📅 Отправка: до ${new Date(Date.parse((me.dates && me.dates.end) || me.settings.sendEnd)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' })}`,
-      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack']]]).concat([[['📦 Я отправил подарок', 'sent']]])) : undefined,
+        `\n\n📅 Отправка: до ${fmtDay((a.dates && a.dates.end) || (me.dates && me.dates.end) || me.settings.sendEnd)}`,
+      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]]])) : undefined,
     });
+    }
+    if (me.nextWave && !me.nextWave.joined) out.push({ chat_id: chatId, text: me.nextWave.n ? `🌊 Кстати, открыта запись в ${me.nextWave.n}-ю волну — можно подарить ещё один подарок.` : '🌊 Хотите участвовать и в следующей волне? Можно записаться в лист ожидания.', reply_markup: WAVEJOIN_BTN });
+  }
+
+  // «Я отправил»: если ждут отправки подарки из нескольких волн — спросить, какой
+  function askSent(db, ctx, out, chatId, u) {
+    const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
+    const pending = (me.assignments || []).filter((a) => a.status === 'assigned');
+    if (pending.length > 1) {
+      out.push({ chat_id: chatId, text: 'Какой подарок вы отправили?', reply_markup: ib(pending.map((a) => [[`🌊 ${a.round}-я волна → ${a.recipient.name}`, 'sentw:' + a.round]])) });
+      return;
+    }
+    db.tgState[chatId] = { flow: 'sent', step: 'track', data: {}, round: pending[0] ? pending[0].round : null };
+    out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
   }
 
   function notLinked(out, chatId) {
@@ -257,10 +355,10 @@ function createBot({ core, secret, siteUrl, username }) {
     });
   }
 
-  function markSent(db, ctx, out, chatId, track) {
+  function markSent(db, ctx, out, chatId, track, round) {
     const u = userByChat(db, chatId);
     try {
-      call(db, ctx, 'POST', '/api/sent', { track: track || '' }, { userId: u.id });
+      call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined }, { userId: u.id });
       out.push({ chat_id: chatId, text: '🎉 Хо-хо-хо! Отметил: подарок отправлен. Получатель увидит, что посылка в пути. Спасибо, Санта!', reply_markup: MAIN_KB });
     } catch (e) {
       if (!(e instanceof core.SantaError)) throw e;
@@ -295,6 +393,45 @@ function createBot({ core, secret, siteUrl, username }) {
         if (!u0) notLinked(out, chatId); else startForm(db, out, chatId);
       } else if (d === 'whom') {
         whom(db, ctx, out, chatId);
+      } else if (d === 'wave') {
+        waveMenu(db, ctx, out, chatId);
+      } else if (d === 'wj:yes' || d === 'wj:edit') {
+        if (!u0) notLinked(out, chatId);
+        else {
+          const me = call(db, ctx, 'GET', '/api/me', null, { userId: u0.id });
+          if (!me.nextWave) out.push({ chat_id: chatId, text: 'Запись в следующие волны сейчас закрыта.' });
+          else startWaveForm(db, out, chatId, me.nextWave, d === 'wj:edit');
+        }
+      } else if (d === 'wj:no') {
+        if (!u0) notLinked(out, chatId);
+        else {
+          try { call(db, ctx, 'POST', '/api/wave2', { join: false }, { userId: u0.id }); out.push({ chat_id: chatId, text: 'Понял, в этой волне вас не будет. Если передумаете — «🌊 Следующие волны».' }); }
+          catch (e) {
+            if (!(e instanceof core.SantaError)) throw e;
+            // лист ожидания: просто убираем запись
+            const w = (db.wave2 || {})[u0.id];
+            if (w && w.status === 'waiting') { w.status = 'declined'; out.push({ chat_id: chatId, text: 'Убрал вас из листа ожидания.' }); }
+            else out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
+          }
+        }
+      } else if (d === 'keep' && st && st.flow === 'form' && st.waveJoin) {
+        if (st.step === 'address') st.addrConfirmed = true;
+        formInput(db, ctx, out, chatId, st, (st.prefill || {})[st.step] || '');
+      } else if (d.startsWith('sentw:')) {
+        if (!u0) notLinked(out, chatId);
+        else {
+          db.tgState[chatId] = { flow: 'sent', step: 'track', data: {}, round: Number(d.slice(6)) || null };
+          out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
+        }
+      } else if (d.startsWith('ack:') || d.startsWith('received:')) {
+        if (!u0) notLinked(out, chatId);
+        else {
+          const [kind, n] = d.split(':');
+          try {
+            call(db, ctx, 'POST', kind === 'ack' ? '/api/ack' : '/api/received', { round: Number(n) || undefined }, { userId: u0.id });
+            out.push({ chat_id: chatId, text: kind === 'ack' ? '👍 Отлично! Отметил, что вы собираете посылку. Когда отправите — нажмите «📦 Я отправил подарок».' : '🥳 Ура! Отметил, что подарок получен. С наступающим!' });
+          } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
+        }
       } else if (d === 'consent' && st && st.flow === 'reg') {
         regInput(db, ctx, out, chatId, st, true, from);
       } else if (d === 'addr_ok' && st && st.flow === 'form' && st.step === 'address' && st.pendingAddress) {
@@ -310,13 +447,10 @@ function createBot({ core, secret, siteUrl, username }) {
         formInput(db, ctx, out, chatId, st, true);
       } else if (d === 'sent') {
         if (!u0) notLinked(out, chatId);
-        else {
-          db.tgState[chatId] = { flow: 'sent', step: 'track', data: {} };
-          out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
-        }
+        else askSent(db, ctx, out, chatId, u0);
       } else if (d === 'skip' && st && st.flow === 'sent') {
         delete db.tgState[chatId];
-        markSent(db, ctx, out, chatId, '');
+        markSent(db, ctx, out, chatId, '', st.round);
       } else if (d === 'ack') {
         if (!u0) notLinked(out, chatId);
         else {
@@ -444,7 +578,7 @@ function createBot({ core, secret, siteUrl, username }) {
       }
       if (st.flow === 'sent' && text && !Object.values(BTN).includes(text)) {
         delete db.tgState[chatId];
-        markSent(db, ctx, out, chatId, text);
+        markSent(db, ctx, out, chatId, text, st.round);
         return { out, actingUid };
       }
     }
@@ -462,10 +596,15 @@ function createBot({ core, secret, siteUrl, username }) {
         reply_markup: ib([[[p ? '✏️ Изменить анкету' : '🎁 Заполнить анкету', 'form']]]),
       });
     } else if (text === BTN.sent) {
-      db.tgState[chatId] = { flow: 'sent', step: 'track', data: {} };
-      out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
+      askSent(db, ctx, out, chatId, u0);
+    } else if (text === BTN.wave) {
+      waveMenu(db, ctx, out, chatId);
     } else if (text === BTN.got) {
-      out.push({ chat_id: chatId, text: 'Подтверждаете, что получили подарок от Тайного Санты?', reply_markup: ib([[['🎉 Да, получил!', 'received']]]) });
+      const me = call(db, ctx, 'GET', '/api/me', null, { userId: u0.id });
+      const coming = (me.incomings || []).filter((x) => x.status === 'sent');
+      out.push({ chat_id: chatId, text: 'Подтверждаете, что получили подарок от Тайного Санты?', reply_markup: coming.length > 1
+        ? ib(coming.map((x) => [[`🎉 Получил подарок ${x.round}-й волны`, 'received:' + x.round]]))
+        : ib([[['🎉 Да, получил!', 'received']]]) });
     } else greet(out, db, chatId, u0);
     return { out, actingUid };
   }
@@ -485,7 +624,7 @@ function createBot({ core, secret, siteUrl, username }) {
         out.push({
           chat_id: u.tgChatId,
           text: '🔔 ' + esc(n.text),
-          reply_markup: n.action === 'whom' ? WHOM_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : undefined,
+          reply_markup: n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
       }
       if (n.action === 'new-anketa') {

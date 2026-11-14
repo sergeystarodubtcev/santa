@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261114a">
+  <link rel="stylesheet" href="css/style.css?v=20261114b">
 </head>
 <body>
   <div class="banners" data-banners></div>
@@ -110,7 +110,8 @@
     <div class="modal-backdrop" data-close></div>
     <div class="modal-card" role="dialog" aria-modal="true">
       <button class="modal-x" data-close aria-label="Закрыть">✕</button>
-      <div class="modal-head"><div class="modal-emoji">📦</div><h3>Анкета участника</h3></div>
+      <div class="modal-head"><div class="modal-emoji">📦</div><h3 data-part-title>Анкета участника</h3></div>
+      <p class="muted wave-hint" data-wave-hint hidden>🌊 Данные подставлены из вашей прошлой анкеты — проверьте и поправьте, если что-то изменилось. Основная анкета и аккаунт не меняются.</p>
       <form class="form" data-form="part" novalidate>
         <div class="form-section">📦 Данные для доставки</div>
         <label>ФИО получателя<small>Так, как в паспорте — для выдачи в ПВЗ</small><input name="fullName" autocomplete="name" placeholder="Кофеманов Сергей Иванович"></label>
@@ -127,7 +128,7 @@
           <label class="chip"><input type="radio" name="prefs" value="any"><span>🎲 Удивите меня</span></label>
         </div>
         <label>Особые пометки<input name="notes" placeholder="Например: у меня аллергия на инфьюзы"></label>
-        <label class="check"><input type="checkbox" name="agree"><span>Подтверждаю участие и дальнейшую отправку подарка.</span></label>
+        <label class="check"><input type="checkbox" name="agree"><span data-agree-text>Подтверждаю участие и дальнейшую отправку подарка.</span></label>
         <label class="check w2-check" data-w2-wrap hidden><input type="checkbox" name="wave2"><span data-w2-text>Подтверждаю участие в <b>следующей волне</b></span></label>
         <div class="form-err" data-err></div>
         <button class="btn btn-primary btn-block" type="submit">Сохранить</button>
@@ -187,11 +188,11 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261114a"></script>
-  <script src="js/cities.js?v=20261114a"></script>
-  <script src="js/core.js?v=20261114a"></script>
-  <script src="js/api.js?v=20261114a"></script>
-  <script src="js/fx.js?v=20261114a"></script>
-  <script src="js/cabinet.js?v=20261114a"></script>
+  <script src="js/config.js?v=20261114b"></script>
+  <script src="js/cities.js?v=20261114b"></script>
+  <script src="js/core.js?v=20261114b"></script>
+  <script src="js/api.js?v=20261114b"></script>
+  <script src="js/fx.js?v=20261114b"></script>
+  <script src="js/cabinet.js?v=20261114b"></script>
 </body>
 </html>

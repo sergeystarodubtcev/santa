@@ -59,7 +59,34 @@
   // ---------- participation modal ----------
   const modal = $('[data-modal]');
   const pf = $('[data-form=part]');
+  let partMode = 'main'; // 'main' — основная анкета, 'wave' — анкета для следующей волны (данные копируются из прошлой)
+  function setPartMode(mode) {
+    partMode = mode;
+    const nw = me.nextWave || {};
+    $('[data-part-title]').textContent = mode === 'wave' ? (nw.n ? `Анкета для ${nw.n}-й волны` : 'Анкета для следующей волны') : 'Анкета участника';
+    $('[data-agree-text]').textContent = mode === 'wave'
+      ? (nw.n ? `Участвую в ${nw.n}-й волне (отправка ${FX.fmtDate(nw.start)} — ${FX.fmtDate(nw.end)}): дарю ещё один подарок и получаю ещё один.` : 'Записываюсь в лист ожидания следующей волны: дарю ещё один подарок и получаю ещё один.')
+      : 'Подтверждаю участие и дальнейшую отправку подарка.';
+    $('[data-wave-hint]').hidden = mode !== 'wave';
+  }
+  function openWavePart() {
+    const a = (me.nextWave && me.nextWave.anketa) || me.participation || {};
+    setPartMode('wave');
+    pf.fullName.value = a.fullName || '';
+    pf.phone.value = me.user.phone || '';
+    pf.address.value = a.address || '';
+    pf.wishes.value = a.wishes || '';
+    pf.notes.value = a.notes || '';
+    const r = pf.querySelector(`input[name=prefs][value="${a.prefs || 'coffee'}"]`);
+    if (r) r.checked = true;
+    pf.agree.checked = false;
+    $('[data-w2-wrap]', pf).hidden = true;
+    pf.wave2.checked = false;
+    modal.hidden = false;
+    requestAnimationFrame(() => modal.classList.add('open'));
+  }
   function openPart() {
+    setPartMode('main');
     const p = me.participation || {};
     pf.fullName.value = p.fullName || '';
     pf.phone.value = me.user.phone || '';
@@ -86,6 +113,19 @@
     e.preventDefault();
     if (!(await FX.checkCity(pf.address.value))) { pf.address.focus(); return; }
     submit(pf, async () => {
+      if (partMode === 'wave') {
+        const nw = me.nextWave || {};
+        me = await Api.post('/api/wave-join', {
+          fullName: pf.fullName.value, phone: pf.phone.value,
+          address: pf.address.value, wishes: pf.wishes.value, notes: pf.notes.value,
+          prefs: (pf.querySelector('input[name=prefs]:checked') || {}).value, agree: pf.agree.checked,
+        });
+        closePart();
+        render();
+        FX.burst(innerWidth / 2, innerHeight / 3, { count: 60 });
+        FX.toast(nw.n ? `Вы в ${nw.n}-й волне! 🌊` : 'Вы в листе ожидания следующей волны 🌊', 'success');
+        return;
+      }
       const first = !me.participation;
       me = await Api.post('/api/participate', {
         fullName: pf.fullName.value, phone: pf.phone.value,
@@ -120,7 +160,7 @@
 
     // big deadline notice
     const n = me.deadline;
-    $('[data-notice]').innerHTML = wave2Card() + (n
+    $('[data-notice]').innerHTML = wave2Card() + nextWaveCard() + (n
       ? `<div class="big-notice ${n.kind}">⏰ ${esc(n.text)}<small>Отправка: ${FX.fmtDate((me.dates || me.settings).start || me.settings.sendStart)} — ${FX.fmtDate((me.dates || me.settings).end || me.settings.sendEnd)}</small></div>`
       : (me.settings.announcement ? `<div class="big-notice info">📣 ${esc(me.settings.announcement)}</div>` : ''));
 
@@ -139,6 +179,30 @@
     $('[data-delete-me]').hidden = false;
   }
 
+  // Запись в следующую волну тем, кто уже участвует: анкета подставляется из прошлой волны
+  function nextWaveCard() {
+    const nw = me.nextWave;
+    if (!nw || nw.invited || (me.wave2 && me.wave2.status === 'invited' && !me.wave2.drawn)) return '';
+    if (nw.joined) {
+      return `<div class="card w2-card nw-card"><h3>🌊 ${nw.n ? `Вы в ${nw.n}-й волне` : 'Вы в листе ожидания следующей волны'} ✅</h3>
+        <p class="muted">${nw.n ? `Отправка подарков: <b>${FX.fmtDate(nw.start)} — ${FX.fmtDate(nw.end)}</b>. Мы напишем, когда пройдёт её жеребьёвка — здесь появится ещё один получатель.` : 'Как только организаторы откроют следующую волну, мы пришлём даты и попросим подтвердить участие.'}</p>
+        <div class="actions"><button class="btn btn-ghost btn-sm" data-wave-edit>✏️ Анкета для волны</button><button class="btn btn-ghost btn-sm" data-wave-leave>🙅 Отказаться</button></div></div>`;
+    }
+    return `<div class="card w2-card nw-card"><h3>🌊 ${nw.n ? `Открыта запись в ${nw.n}-ю волну!` : 'Хотите участвовать и в следующей волне?'}</h3>
+      <p>${nw.n ? `Отправка подарков: <b>${FX.fmtDate(nw.start)} — ${FX.fmtDate(nw.end)}</b>. ` : ''}Вы дарите ещё один подарок новому получателю и получаете ещё один — отдельная жеребьёвка. Анкета подставится из прошлой волны, её можно поправить.</p>
+      <div class="actions"><button class="btn btn-primary" data-wave-join>📝 ${nw.n ? `Записаться в ${nw.n}-ю волну` : 'Записаться в лист ожидания'}</button></div></div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-wave-join]') || e.target.closest('[data-wave-edit]')) { openWavePart(); return; }
+    const lv = e.target.closest('[data-wave-leave]');
+    if (lv) {
+      if (!confirm('Отказаться от участия в следующей волне?')) return;
+      lv.disabled = true;
+      try { me = await Api.post('/api/wave2', { join: false }); render(); FX.toast('Отметили: в следующей волне вас не будет', 'success'); }
+      catch (ex) { FX.toast(ex.message, 'error'); lv.disabled = false; }
+    }
+  });
+
   // Приглашение в следующую волну: участие нужно подтвердить
   function wave2Card() {
     const w = me.wave2;
@@ -155,6 +219,7 @@
     const b = e.target.closest('[data-w2-join]');
     if (!b) return;
     const join = b.dataset.w2Join === '1';
+    if (join && me.nextWave && me.participation) { openWavePart(); return; }
     if (!join && !confirm('Точно отказаться от участия в этой волне?')) return;
     b.disabled = true;
     try {
@@ -165,7 +230,7 @@
     } catch (ex) { FX.toast(ex.message, 'error'); b.disabled = false; }
   });
 
-  let shipShown = false; // раскрыл ли участник данные для отправки (до перезагрузки страницы)
+  const shipShown = new Set(); // в каких волнах участник раскрыл данные для отправки (до перезагрузки страницы)
   function renderGive() {
     const host = $('[data-give]');
     const a = me.assignment;
@@ -180,78 +245,102 @@
     } else if (!a) {
       host.innerHTML = `<div class="sealed"><div class="env">🔒</div><p class="muted">Анкета одобрена ✅ Конверт запечатан. Как только организаторы перемешают участников, здесь появится имя, ПВЗ и пожелания вашего получателя.</p></div>`;
     } else {
-      const r = a.recipient;
-      const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
-      host.innerHTML = `
-        <div class="${revealedOnce ? '' : 'flip'}">
-          <p style="margin-bottom:14px">${a.round > 1 ? `<span class="pill">🌊 ${a.round}-я волна</span> ` : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
-          ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
-          <div class="wish-box">
-            <div class="wish-head">🎁 Что хочет получить</div>
-            <p class="wish-text">${esc(r.wishes) || '<span class="muted">Не написал(а) — сюрприз на ваш вкус!</span>'}</p>
-            <div class="wish-meta"><span class="pill">${esc(PREFS[r.prefs] || '🎲 Удивите меня')}</span></div>
-            ${r.notes ? `<div class="wish-note">⚠️ <b>Важно:</b> ${esc(r.notes)}</div>` : ''}
-          </div>
-          <div class="ship-box ${shipShown ? 'shown' : ''}" data-ship>
-            <div class="ship-head">📦 Данные для отправки <small data-ship-hint>${shipShown ? 'нажмите на строку, чтобы скопировать' : 'скрыто — нажмите, чтобы показать'}</small></div>
-            <dl class="kv ship-data">
-              <dt>ФИО</dt><dd><span class="spoiler copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
-              <dt>ПВЗ Ozon</dt><dd><span class="spoiler copy" data-copy="${esc(r.address)}">${esc(r.address)}</span></dd>
-              <dt>Телефон</dt><dd><span class="spoiler copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
-              <dt>Telegram</dt><dd><span class="spoiler copy" data-copy="@${esc(r.tg)}">@${esc(r.tg)}</span></dd>
-              ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
-            </dl>
-          </div>
-          ${a.status === 'assigned' && !a.ackAt ? `
-          <div class="ack-box"><p><b>Подтвердите, что участвуете и собираете посылку</b> — так организаторы будут знать, что всё в порядке.</p>
-            <button class="btn btn-primary btn-block" type="button" data-ack>✅ Участвую, собираю посылку</button></div>` : ''}
-          ${a.status === 'assigned' && a.ackAt ? '<p class="muted" style="margin-top:12px">👍 Вы подтвердили, что собираете посылку.</p>' : ''}
-          ${a.status === 'assigned' ? `
-          <form class="form" data-sent style="margin-top:16px">
-            <label>Трек-номер (необязательно)<input name="track" placeholder="например, 0123456789-0001-1"></label>
-            <button class="btn btn-green btn-block" type="submit">📦 Я отправил подарок!</button>
-            <div class="form-err" data-err></div>
-          </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>`}
-        </div>`;
+      const list = me.assignments && me.assignments.length ? me.assignments : [a];
+      const many = list.length > 1;
+      host.innerHTML = `<div class="${revealedOnce ? '' : 'flip'}">${list.map((x) => giveBlock(x, many)).join('<hr class="wave-sep">')}</div>`;
       revealedOnce = true;
-      const ab = $('[data-ack]', host);
-      if (ab) ab.addEventListener('click', async () => {
+      $$('[data-ack]', host).forEach((ab) => ab.addEventListener('click', async () => {
         ab.disabled = true;
         try {
-          me = await Api.post('/api/ack', {});
+          me = await Api.post('/api/ack', { round: Number(ab.dataset.round) || undefined });
           render();
           FX.toast('Отлично! Собирайте посылку 🎁', 'success');
         } catch (ex) { FX.toast(ex.message, 'error'); ab.disabled = false; }
-      });
-      const sf = $('[data-sent]', host);
-      if (sf) sf.addEventListener('submit', (e) => {
+      }));
+      $$('[data-sent]', host).forEach((sf) => sf.addEventListener('submit', (e) => {
         e.preventDefault();
         submit(sf, async () => {
-          me = await Api.post('/api/sent', { track: sf.track.value });
+          me = await Api.post('/api/sent', { track: sf.track.value, round: Number(sf.dataset.round) || undefined });
           render();
           FX.burst(innerWidth / 2, innerHeight / 2, { count: 60, power: 15 });
           FX.toast('Хо-хо-хо! Получатель увидит, что подарок в пути 🎁', 'success');
         });
-      });
+      }));
     }
     $$('[data-open-part]', host).forEach((b) => b.addEventListener('click', openPart));
     // данные для отправки скрыты, как спойлер в Telegram: первое нажатие — показать, потом нажатие на строку — скопировать
-    const ship = $('[data-ship]', host);
-    if (ship) ship.addEventListener('click', (e) => {
+    $$('[data-ship]', host).forEach((ship) => ship.addEventListener('click', (e) => {
       if (!ship.classList.contains('shown')) {
         ship.classList.add('shown');
-        shipShown = true;
+        shipShown.add(ship.dataset.round);
         $('[data-ship-hint]', ship).textContent = 'нажмите на строку, чтобы скопировать';
         return;
       }
       const el = e.target.closest('[data-copy]');
       if (el && navigator.clipboard) navigator.clipboard.writeText(el.dataset.copy).then(() => FX.toast('Скопировано 📋'));
-    });
+    }));
+  }
+
+  function giveBlock(a, many) {
+    const r = a.recipient;
+    const rn = a.round || 1;
+    const shown = shipShown.has(String(rn));
+    const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
+    return `<div class="give-block">
+      ${many ? `<div class="wave-head">🌊 ${rn}-я волна${a.dates ? ` · отправка до ${FX.fmtDate(a.dates.end)}` : ''}</div>` : ''}
+      <p style="margin-bottom:14px">${!many && rn > 1 ? `<span class="pill">🌊 ${rn}-я волна</span> ` : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
+      ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
+      <div class="wish-box">
+        <div class="wish-head">🎁 Что хочет получить</div>
+        <p class="wish-text">${esc(r.wishes) || '<span class="muted">Не написал(а) — сюрприз на ваш вкус!</span>'}</p>
+        <div class="wish-meta"><span class="pill">${esc(PREFS[r.prefs] || '🎲 Удивите меня')}</span></div>
+        ${r.notes ? `<div class="wish-note">⚠️ <b>Важно:</b> ${esc(r.notes)}</div>` : ''}
+      </div>
+      <div class="ship-box ${shown ? 'shown' : ''}" data-ship data-round="${rn}">
+        <div class="ship-head">📦 Данные для отправки <small data-ship-hint>${shown ? 'нажмите на строку, чтобы скопировать' : 'скрыто — нажмите, чтобы показать'}</small></div>
+        <dl class="kv ship-data">
+          <dt>ФИО</dt><dd><span class="spoiler copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
+          <dt>ПВЗ Ozon</dt><dd><span class="spoiler copy" data-copy="${esc(r.address)}">${esc(r.address)}</span></dd>
+          <dt>Телефон</dt><dd><span class="spoiler copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
+          <dt>Telegram</dt><dd><span class="spoiler copy" data-copy="@${esc(r.tg)}">@${esc(r.tg)}</span></dd>
+          ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
+        </dl>
+      </div>
+      ${a.status === 'assigned' && !a.ackAt ? `
+      <div class="ack-box"><p><b>Подтвердите, что участвуете и собираете посылку</b> — так организаторы будут знать, что всё в порядке.</p>
+        <button class="btn btn-primary btn-block" type="button" data-ack data-round="${rn}">✅ Участвую, собираю посылку</button></div>` : ''}
+      ${a.status === 'assigned' && a.ackAt ? '<p class="muted" style="margin-top:12px">👍 Вы подтвердили, что собираете посылку.</p>' : ''}
+      ${a.status === 'assigned' ? `
+      <form class="form" data-sent data-round="${rn}" style="margin-top:16px">
+        <label>Трек-номер (необязательно)<input name="track" placeholder="например, 0123456789-0001-1"></label>
+        <button class="btn btn-green btn-block" type="submit">📦 Я отправил подарок!</button>
+        <div class="form-err" data-err></div>
+      </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>`}
+    </div>`;
   }
 
   function renderGift() {
     const host = $('[data-gift]');
-    const g = me.incoming;
+    const list = (me.incomings || []).filter((x) => !x.failed);
+    if (list.length > 1) {
+      // повторный участник: подарки из нескольких волн
+      host.innerHTML = list.map((g) => `<div class="gift-row">
+        <div class="wave-head">🌊 ${g.round}-я волна</div>
+        ${g.status === 'assigned' ? '<p>🛷 Ваш Тайный Санта собирает посылку.</p>'
+          : g.status === 'sent' ? `<p>🎁 <b>Подарок уже в пути!</b> Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `, трек: <b>${esc(g.track)}</b>` : ''}</p><button class="btn btn-primary btn-block" data-received data-round="${g.round}">🎉 Я получил подарок!</button>`
+          : `<p>🥳 Подарок получен ${FX.fmtDateTime(g.receivedAt)}.</p>`}
+      </div>`).join('<hr class="wave-sep">');
+      $$('[data-received]', host).forEach((b) => b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          me = await Api.post('/api/received', { round: Number(b.dataset.round) });
+          render();
+          FX.burst(innerWidth / 2, innerHeight / 2, { count: 70, power: 16, emojiRatio: 0.25 });
+        } catch (ex) { FX.toast(ex.message, 'error'); b.disabled = false; }
+      }));
+      return;
+    }
+    const g = list.length ? list[0] : me.incoming;
     if (!g) {
       host.innerHTML = `<div class="sealed"><div class="env">🎄</div><p class="muted">${me.drawn ? 'Ваш Санта уже знает о вас. Ждём!' : 'После жеребьёвки кто-то станет вашим Тайным Сантой.'}</p></div>`;
     } else if (g.failed) {
@@ -267,7 +356,7 @@
       $('[data-received]', host).addEventListener('click', async (e) => {
         e.target.disabled = true;
         try {
-          me = await Api.post('/api/received');
+          me = await Api.post('/api/received', { round: g.round || undefined });
           render();
           FX.burst(innerWidth / 2, innerHeight / 2, { count: 70, power: 16, emojiRatio: 0.25 });
         } catch (ex) { FX.toast(ex.message, 'error'); e.target.disabled = false; }
