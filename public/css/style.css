@@ -699,3 +699,8 @@ td small { display: block; }
 .ask-box { margin-top: 12px; }
 .ask-box textarea { min-height: 60px; }
 .ask-done { margin: 0; padding: 10px 12px; border-radius: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+
+.pairs-tools { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.pairs-tools .chips { gap: 6px; }
+.pairs-tools .chip span { font-size: 13px; padding: 6px 12px; }
+.edit-hint { font-size: 13px; padding: 10px 12px; border-radius: 12px; background: #fffbeb; border: 1px solid #fde68a; }

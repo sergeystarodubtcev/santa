@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261114c">
+  <link rel="stylesheet" href="css/style.css?v=20261114d">
 </head>
 <body>
   <header class="topbar">
@@ -140,10 +140,21 @@
 
         <details class="card fold" style="margin-top:18px">
           <summary><h3>🔗 Пары</h3><span class="fold-hint" data-fold-pairs>Кто кому дарит, статусы и треки</span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
-          <p class="muted" style="font-size:13px;margin-top:-4px">Получателя можно поменять вручную — выберите в списке. Санта сразу получит уведомление с новым адресом. Форс-мажоры, удаления и обращения в «Помощь администратора» приходят вам в Telegram-бот.</p>
+          <div class="pairs-tools">
+            <div class="chips" data-pf></div>
+            <div class="toolbar" style="margin:0">
+              <b data-pairs-count></b>
+              <div class="actions" style="margin:0">
+                <input type="search" placeholder="Найти: ник, имя, трек" data-pair-search style="max-width:240px">
+                <button class="btn btn-ghost btn-sm" type="button" data-pf-reset>Сбросить фильтры</button>
+                <button class="btn btn-gold btn-sm" type="button" data-pair-edit>✏️ Править пары</button>
+              </div>
+            </div>
+          </div>
+          <p class="muted edit-hint" data-pair-edit-hint hidden>✏️ Режим правки: получателя можно поменять вручную — выберите в списке (Санта сразу получит уведомление с новым адресом); в черновике жеребьёвки — кнопки 🔄; статус можно поставить вручную. Форс-мажоры и обращения приходят вам в Telegram-бот.</p>
           <div data-pairs-warn></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Круг</th><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr></thead>
+            <thead data-pairs-head></thead>
             <tbody data-pairs></tbody>
           </table></div>
           <div class="actions" data-pair-add-wrap hidden>
@@ -218,11 +229,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261114c"></script>
-  <script src="js/cities.js?v=20261114c"></script>
-  <script src="js/core.js?v=20261114c"></script>
-  <script src="js/api.js?v=20261114c"></script>
-  <script src="js/fx.js?v=20261114c"></script>
-  <script src="js/admin.js?v=20261114c"></script>
+  <script src="js/config.js?v=20261114d"></script>
+  <script src="js/cities.js?v=20261114d"></script>
+  <script src="js/core.js?v=20261114d"></script>
+  <script src="js/api.js?v=20261114d"></script>
+  <script src="js/fx.js?v=20261114d"></script>
+  <script src="js/admin.js?v=20261114d"></script>
 </body>
 </html>

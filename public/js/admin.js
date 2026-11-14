@@ -175,6 +175,31 @@
     }).join('') || '<tr><td colspan="6" class="muted">Пока никого. Киньте ссылку в чат!</td></tr>';
   }
 
+  // ---------- пары: фильтры, поиск и режим правки ----------
+  let pairEdit = false;
+  const pfActive = new Set();
+  const isDraftPair = (p) => ((state.waves || []).find((w) => w.n === (p.round > 1 ? p.round : 1)) || {}).status === 'drawing';
+  const PAIR_FILTERS = [
+    ['noack', '🤷 Не подтвердили, что собирают', (p) => p.status === 'assigned' && !p.ackAt && !p.failed && !isDraftPair(p)],
+    ['notsent', '📦 Не отправили', (p) => p.status === 'assigned' && !p.failed],
+    ['sent', '🚚 Отправили, ждут получения', (p) => p.status === 'sent'],
+    ['received', '✅ Получено', (p) => p.status === 'received'],
+    ['failed', '😢 Санта не отправил', (p) => !!p.failed],
+    ['priority', '⭐ Приоритет', (p) => !!p.priority],
+    ['draft', '🎲 Черновик (не подтверждено)', (p) => isDraftPair(p)],
+    ['notrack', '🔎 Отправили без трека', (p) => p.status !== 'assigned' && !p.track],
+  ];
+  $('[data-pf]').innerHTML = PAIR_FILTERS.map(([k, label]) => `<label class="chip"><input type="checkbox" data-pf-k="${k}"><span>${label}</span></label>`).join('');
+  document.addEventListener('change', (e) => {
+    const f = e.target.closest('[data-pf-k]');
+    if (!f) return;
+    if (f.checked) pfActive.add(f.dataset.pfK); else pfActive.delete(f.dataset.pfK);
+    renderPairs();
+  });
+  $('[data-pair-search]').addEventListener('input', () => renderPairs());
+  $('[data-pf-reset]').addEventListener('click', () => { pfActive.clear(); $$('[data-pf-k]').forEach((x) => { x.checked = false; }); $('[data-pair-search]').value = ''; renderPairs(); });
+  $('[data-pair-edit]').addEventListener('click', () => { pairEdit = !pairEdit; renderPairs(); });
+
   function renderPairs() {
     const players = state.users.filter((u) => u.participation && u.participation.moderation === 'approved' && !u.banned);
     const opt = (sel, except) => '<option value="">— нет —</option>' + players.filter((u) => u.id !== except)
@@ -188,21 +213,44 @@
     $('[data-pairs-warn]').innerHTML = warn.length ? `<div class="pairs-warn">${warn.join('<br>')}<br><small>Исправьте вручную: выберите получателя в таблице или назначьте ниже.</small></div>` : '';
     const givers = new Set(state.pairs.map((p) => p.santaId));
     const free = players.filter((u) => !givers.has(u.id));
-    $('[data-pair-add-wrap]').hidden = !state.pairs.length || !free.length;
+    $('[data-pair-add-wrap]').hidden = !pairEdit || !state.pairs.length || !free.length;
+    $('[data-pair-edit]').textContent = pairEdit ? '✅ Готово' : '✏️ Править пары';
+    $('[data-pair-edit]').classList.toggle('btn-gold', !pairEdit);
+    $('[data-pair-edit]').classList.toggle('btn-green', pairEdit);
+    $('[data-pair-edit-hint]').hidden = !pairEdit;
+    $('[data-pairs-head]').innerHTML = pairEdit
+      ? '<tr><th>Волна</th><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr>'
+      : '<tr><th>Волна</th><th>Санта</th><th></th><th>Получатель</th><th>Статус</th><th>Трек</th></tr>';
     $('[data-pair-add-santa]').innerHTML = free.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
     $('[data-pair-add-rec]').innerHTML = opt('', null);
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     const rnd = (p) => (p.round > 1 ? p.round : 1);
-    const shownPairs = wave() ? state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === wave().n) : state.pairs;
+    const byWave = wave() ? state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === wave().n) : state.pairs;
+    const who = (id) => { const u = state.users.find((x) => x.id === id); return u ? `@${u.tg} ${u.name}` : ''; };
+    const q = $('[data-pair-search]').value.trim().toLowerCase().replace(/^@/, '');
+    const shownPairs = byWave.filter((p) => PAIR_FILTERS.every(([k, , fn]) => !pfActive.has(k) || fn(p))
+      && (!q || (who(p.santaId) + ' ' + who(p.recipientId) + ' ' + (p.track || '')).toLowerCase().includes(q)));
+    $('[data-pairs-count]').textContent = shownPairs.length === byWave.length ? `${byWave.length} ${SantaCore.plural(byWave.length, 'пара', 'пары', 'пар')}` : `Показано ${shownPairs.length} из ${byWave.length}`;
+    const person = (id, nick) => { const u = state.users.find((x) => x.id === id); return `<b>${esc(nick)}</b>${u ? `<small>${esc(u.name)}</small>` : ''}`; };
+    if (!pairEdit) {
+      // просмотр: без селектов и кнопок
+      $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${p.failed ? 'row-failed' : ''}">
+        <td>🌊 ${rnd(p)}${isDraftPair(p) ? '<small>черновик</small>' : ''}</td><td>${person(p.santaId, p.santa)}</td><td>🎁→</td>
+        <td>${person(p.recipientId, p.recipient)}${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
+        <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
+        <td>${esc(p.track) || '—'}</td>
+      </tr>`).join('') || `<tr><td colspan="6" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
+      return;
+    }
     const draft = (p) => ((state.waves || []).find((w) => w.n === rnd(p)) || {}).status === 'drawing';
     const swapBtn = (p, side) => (draft(p) ? `<button class="swap-btn" type="button" data-swap="${side}" data-uid="${side === 'santa' ? p.santaId : p.recipientId}" data-round="${rnd(p)}" title="${side === 'santa' ? 'Сменить получателя у этого Санты' : 'Сменить Санту у этого получателя'} (случайно)">🔄</button>` : '');
     $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${p.failed ? 'row-failed' : ''} ${lastSwapped.has(p.santaId) && draft(p) ? 'row-swapped' : ''}">
       <td>🌊 ${rnd(p)}${draft(p) ? '<small>черновик</small>' : ''}</td><td>${esc(p.santa)} ${swapBtn(p, 'santa')}</td><td>🎁→</td><td><div class="rec-cell"><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${swapBtn(p, 'recipient')}</div>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
-      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
+      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
       <td>${draft(p) ? '<span class="muted">после подтверждения</span>' : `<select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>`}
         ${p.status === 'assigned' && !p.failed && !draft(p) ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}" title="Санта не отправил подарок: получателя — в следующую волну с наивысшим приоритетом">😢 Не отправил → получателя в следующую волну ⭐</button>` : ''}</td>
-    </tr>`).join('') || '<tr><td colspan="6" class="muted">Пар пока нет — нажмите «Раскидать людей».</td></tr>';
+    </tr>`).join('') || `<tr><td colspan="7" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
   }
 
   // ---------- правка данных участника ----------
