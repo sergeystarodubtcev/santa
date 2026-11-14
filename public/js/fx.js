@@ -328,5 +328,48 @@
     }).join('');
   }
 
-  window.FX = { confirmBox, checkCity, snow, burst, burstFrom, santas, toast, countdown, animateNumber, esc, fmtDate, fmtDateTime, chrome, renderBanners, reduced };
+  // Картинка → data:URL. QR-коды (небольшие PNG) оставляем как есть, чтобы не мылить; фото — до 1600 px, JPEG
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\//.test(file.type)) return reject(new Error('Выберите картинку'));
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('Не удалось прочитать файл'));
+      fr.onload = () => {
+        if (file.type === 'image/png' && file.size < 700 * 1024) return resolve(fr.result);
+        const img = new Image();
+        img.onerror = () => reject(new Error('Это не похоже на картинку'));
+        img.onload = () => {
+          const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          const g = c.getContext('2d');
+          g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.9));
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  function lightbox(src) {
+    const w = document.createElement('div');
+    w.className = 'lightbox';
+    w.innerHTML = `<img src="${src}" alt="Фото"><button class="lightbox-x" aria-label="Закрыть">✕</button>`;
+    w.addEventListener('click', () => w.remove());
+    document.body.appendChild(w);
+  }
+  const photoCache = new Map();
+  async function loadPhoto(id, opts) {
+    if (!photoCache.has(id)) photoCache.set(id, Api.post('/api/photo', { id }, opts).then((r) => r.image).catch((e) => { photoCache.delete(id); throw e; }));
+    return photoCache.get(id);
+  }
+  // <img data-photo-id> → подгружаем картинку с проверкой доступа
+  function hydratePhotos(root, opts) {
+    (root || document).querySelectorAll('img[data-photo-id]:not([src])').forEach((img) => {
+      loadPhoto(img.dataset.photoId, opts).then((src) => { img.src = src; img.addEventListener('click', () => lightbox(src)); }).catch(() => { img.alt = 'Фото недоступно'; });
+    });
+  }
+
+  window.FX = { compressImage, lightbox, hydratePhotos, confirmBox, checkCity, snow, burst, burstFrom, santas, toast, countdown, animateNumber, esc, fmtDate, fmtDateTime, chrome, renderBanners, reduced };
 })();

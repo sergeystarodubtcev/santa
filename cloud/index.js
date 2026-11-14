@@ -517,6 +517,29 @@ module.exports.handler = async function handler(event, context) {
       return reply(200, { sent: r.sent, total: r.total });
     }
 
+    // Фото к посылке (QR-код и т. п.): отдельный файл в бакете; смотреть могут Санта, получатель и организаторы
+    if (path === '/api/track-photo' && method === 'POST') {
+      const img = core.parsePhoto(body.image);
+      const id = crypto.randomBytes(12).toString('hex');
+      const n0p = db.notifications.length;
+      const { data } = core.handle(db, ctx, 'POST', '/api/track-photo', { round: body.round, photoId: id });
+      await s3('PUT', `data/photos/${id}.json`, token, JSON.stringify(img));
+      if (data.oldPhotoId) await s3('DELETE', `data/photos/${data.oldPhotoId}.json`, token).catch(() => {});
+      const out = bot ? bot.pushNotifications(db, db.notifications.slice(n0p), null) : [];
+      const queued = queueOut(db, out);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      if (out.length && !queued) await tgSend(out);
+      return reply(200, core.handle(db, ctx, 'GET', '/api/me').data);
+    }
+    if (path === '/api/photo' && method === 'POST') {
+      const id = String(body.id || '').replace(/[^a-f0-9]/g, '');
+      if (!core.photoAccess(db, ctx.userId, ctx.isAdmin, id)) throw new core.SantaError(404, 'Фото не найдено');
+      const raw = await s3('GET', `data/photos/${id}.json`, token);
+      if (!raw) throw new core.SantaError(404, 'Фото не найдено');
+      const img = JSON.parse(raw);
+      return reply(200, { image: `data:${img.type};base64,${img.data}` });
+    }
+
     const n0 = db.notifications.length;
     const { data, mutated } = core.handle(db, ctx, method, path, body);
     if (mutated) {

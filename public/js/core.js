@@ -223,6 +223,22 @@
       .replace(/\{осталось\}/gi, left);
   }
 
+  // Фото к посылке (QR-код, чек): data:URL картинки, до ~1,5 МБ
+  function parsePhoto(dataUrl) {
+    const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+    if (!m) fail(400, 'Прикрепите картинку: JPG, PNG или WEBP');
+    if (m[2].length > 2100000) fail(413, 'Картинка слишком большая — до 1,5 МБ');
+    return { type: m[1], data: m[2] };
+  }
+  // Фото видят только Санта и получатель этой пары (после подтверждения жеребьёвки) и организаторы
+  function photoAccess(db, uid, isAdmin, id) {
+    if (!id) return false;
+    const p = db.pairs.find((x) => x.photoId === id);
+    if (!p) return false;
+    if (isAdmin) return true;
+    return !!uid && published(db, pairRound(p)) && (p.santaId === uid || (p.recipientId === uid && p.status !== 'assigned'));
+  }
+
   // Состояние аккаунта организатора для админки — без сессии, кода и пароля
   function userAccView(db) {
     const a = db.userAcc || { status: 'off' };
@@ -692,7 +708,10 @@
     pair.status = pair.status === 'received' ? 'received' : 'sent';
     pair.track = str(body && body.track, 80);
     pair.sentAt = pair.sentAt || ctx.now();
-    notify(db, ctx, pair.recipientId, 'Вам подарок от Деда Мороза! 🎁 Посылка уже в пути' + (pair.track ? ' (трек: ' + pair.track + ')' : ''), 'gift', 'gift');
+    if (body && body.tgPhoto) pair.tgPhoto = str(body.tgPhoto, 300);
+    notify(db, ctx, pair.recipientId, 'Вам подарок от Деда Мороза! 🎁 Посылка уже в пути' + (pair.track ? ' (трек: ' + pair.track + ')' : '')
+      + (pair.photoId || pair.tgPhoto ? '. Санта прикрепил фото (например, QR-код) — оно в «Мой подарок» в личном кабинете.' : ''), 'gift', 'gift');
+    if (pair.tgPhoto) db.notifications[db.notifications.length - 1].tgPhoto = pair.tgPhoto;
     return pair;
   }
 
@@ -754,12 +773,14 @@
         recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
+        photoId: p.photoId || null, tgPhoto: !!p.tgPhoto,
       };
     };
     // все подтверждённые пары по волнам (у повторного участника их несколько)
     out.assignments = db.pairs.filter((p) => p.santaId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b)).map(recipientView);
     out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
-      .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p) }));
+      .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p),
+        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto }));
     // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;
@@ -778,12 +799,13 @@
         // получатель анонимный: только телефон, адрес ПВЗ и пожелания (имя, ФИО и ник Санте не показываем)
         recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
-        round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null,
+        round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null, photoId: mine.photoId || null, tgPhoto: !!mine.tgPhoto,
       };
       out.dates = datesFor(db, pairRound(mine));
     }
     const incoming = inPair(db, userId);
-    if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt, failed: !!incoming.failed && incoming.status === 'assigned', round: pairRound(incoming) };
+    if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt, failed: !!incoming.failed && incoming.status === 'assigned', round: pairRound(incoming),
+      photoId: incoming.status !== 'assigned' ? incoming.photoId || null : null, tgPhoto: incoming.status !== 'assigned' && !!incoming.tgPhoto };
     out.deadline = deadlineNotice(db, now, mine);
     out.drawing = db.pairs.some((p) => (p.santaId === userId || p.recipientId === userId) && (waveOf(db, pairRound(p)) || {}).status === 'drawing');
     out.notifications = db.notifications.filter((n) => (n.userId === userId || n.userId === '*') && !n.hideOnSite).slice(-30).reverse();
@@ -1029,6 +1051,19 @@
       }
       case 'POST /api/received': markReceived(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/wave-join': waveJoin(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/track-photo': {
+        const uid = needUser();
+        const pair = Number(body.round) ? pairOfWave(db, uid, 'santaId', Number(body.round)) : outPair(db, uid);
+        if (!pair) fail(404, 'У вас пока нет получателя');
+        if (!/^[a-f0-9]{16,40}$/.test(String(body.photoId || ''))) fail(400, 'Нет фото');
+        const old = pair.photoId || null;
+        pair.photoId = body.photoId;
+        pair.photoAt = ctx.now();
+        if (pair.status !== 'assigned') {
+          notify(db, ctx, pair.recipientId, '📷 Ваш Тайный Санта прикрепил фото к посылке (например, QR-код) — посмотрите в «Мой подарок» в личном кабинете.', 'gift');
+        }
+        return ok({ oldPhotoId: old }, true);
+      }
       case 'POST /api/ask-organizer': {
         // «Уточнить данные у организатора»: Санте не хватает данных для доставки — организатор видит, о каком получателе речь
         const uid = needUser();
@@ -1380,5 +1415,5 @@
     }
   }
 
-  return { handle, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, parsePhoto, photoAccess, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

@@ -260,7 +260,10 @@
       $$('[data-sent]', host).forEach((sf) => sf.addEventListener('submit', (e) => {
         e.preventDefault();
         submit(sf, async () => {
+          const file = sf.photo && sf.photo.files[0];
+          const image = file ? await FX.compressImage(file) : null; // сначала проверяем картинку, потом отмечаем отправку
           me = await Api.post('/api/sent', { track: sf.track.value, round: Number(sf.dataset.round) || undefined });
+          if (image) me = await Api.post('/api/track-photo', { round: Number(sf.dataset.round) || undefined, image });
           render();
           FX.burst(innerWidth / 2, innerHeight / 2, { count: 60, power: 15 });
           FX.toast('Хо-хо-хо! Получатель увидит, что подарок в пути 🎁', 'success');
@@ -268,6 +271,23 @@
       }));
     }
     $$('[data-open-part]', host).forEach((b) => b.addEventListener('click', openPart));
+    // фото к посылке: превью перед отправкой, загрузка/замена после
+    $$('[data-sent] input[name=photo]', host).forEach((inp) => inp.addEventListener('change', async () => {
+      const pv = $('[data-photo-preview]', inp.closest('form'));
+      const nm = $('[data-photo-name]', inp.closest('form'));
+      try { pv.src = await FX.compressImage(inp.files[0]); pv.hidden = false; nm.textContent = '📷 ' + inp.files[0].name + ' — заменить'; }
+      catch (ex) { FX.toast(ex.message, 'error'); inp.value = ''; pv.hidden = true; nm.textContent = '📷 Выбрать картинку'; }
+    }));
+    $$('[data-photo-upload]', host).forEach((inp) => inp.addEventListener('change', async () => {
+      if (!inp.files[0]) return;
+      try {
+        const image = await FX.compressImage(inp.files[0]);
+        me = await Api.post('/api/track-photo', { round: Number(inp.dataset.round) || undefined, image });
+        render();
+        FX.toast('Фото прикреплено — получатель его увидит 📷', 'success');
+      } catch (ex) { FX.toast(ex.message, 'error'); }
+    }));
+    FX.hydratePhotos(host);
     // «Уточнить у организатора»: короткий вопрос уходит организаторам вместе с данными пары
     $$('[data-ask-box]', host).forEach((box) => {
       const f = $('[data-ask-form]', box);
@@ -334,21 +354,32 @@
       ${a.status === 'assigned' ? `
       <form class="form" data-sent data-round="${rn}" style="margin-top:16px">
         <label>Трек-номер (необязательно)<input name="track" placeholder="например, 0123456789-0001-1"></label>
+        <label class="photo-pick">📷 Фото или QR-код (необязательно)<small>Например, QR-код для получения или фото чека — получатель увидит его в «Мой подарок»</small><span class="btn btn-ghost btn-sm photo-btn" data-photo-name>📷 Выбрать картинку</span><input type="file" name="photo" accept="image/*" hidden></label>
+        <img class="photo-preview" data-photo-preview hidden alt="">
         <button class="btn btn-green btn-block" type="submit">📦 Я отправил подарок!</button>
         <div class="form-err" data-err></div>
-      </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>`}
+      </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>
+      <div class="photo-block">
+        ${a.photoId ? `<div class="photo-label">📷 Прикреплённое фото</div><img class="photo-thumb" data-photo-id="${a.photoId}" alt="Фото к посылке">` : a.tgPhoto ? '<p class="muted">📷 Фото отправлено через Telegram-бот.</p>' : ''}
+        <label class="btn btn-ghost btn-sm photo-btn">📷 ${a.photoId ? 'Заменить фото' : 'Прикрепить фото или QR-код'}<input type="file" accept="image/*" data-photo-upload data-round="${rn}" hidden></label>
+      </div>`}
     </div>`;
   }
 
+  function giftPhoto(g) {
+    return g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`
+      : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото — оно в Telegram-боте.</p>' : '';
+  }
   function renderGift() {
     const host = $('[data-gift]');
+    setTimeout(() => FX.hydratePhotos(host), 0);
     const list = (me.incomings || []).filter((x) => !x.failed);
     if (list.length > 1) {
       // повторный участник: подарки из нескольких волн
       host.innerHTML = list.map((g) => `<div class="gift-row">
         <div class="wave-head">🌊 ${g.round}-я волна</div>
         ${g.status === 'assigned' ? '<p>🛷 Ваш Тайный Санта собирает посылку.</p>'
-          : g.status === 'sent' ? `<p>🎁 <b>Подарок уже в пути!</b> Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `, трек: <b>${esc(g.track)}</b>` : ''}</p><button class="btn btn-primary btn-block" data-received data-round="${g.round}">🎉 Я получил подарок!</button>`
+          : g.status === 'sent' ? `<p>🎁 <b>Подарок уже в пути!</b> Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `, трек: <b>${esc(g.track)}</b>` : ''}</p>${giftPhoto(g)}<button class="btn btn-primary btn-block" data-received data-round="${g.round}">🎉 Я получил подарок!</button>`
           : `<p>🥳 Подарок получен ${FX.fmtDateTime(g.receivedAt)}.</p>`}
       </div>`).join('<hr class="wave-sep">');
       $$('[data-received]', host).forEach((b) => b.addEventListener('click', async () => {
@@ -373,6 +404,7 @@
       host.innerHTML = `<div class="gift-big">🎁</div>
         <h3 style="justify-content:center;text-align:center;font-size:22px">Вам подарок от Деда Мороза!</h3>
         <p class="muted" style="text-align:center">Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `<br>Трек: <b>${esc(g.track)}</b>` : ''}</p>
+        ${giftPhoto(g)}
         <button class="btn btn-primary btn-block" data-received>🎉 Я получил подарок!</button>`;
       $('[data-received]', host).addEventListener('click', async (e) => {
         e.target.disabled = true;

@@ -269,6 +269,24 @@ const server = http.createServer(async (req, res) => {
         startedAt: STARTED_AT,
       });
     }
+    // Фото к посылке: файл в DATA_DIR/photos; смотреть могут Санта, получатель и организаторы
+    if (url.pathname === '/api/track-photo' && req.method === 'POST') {
+      const img = core.parsePhoto(body.image);
+      const id = crypto.randomBytes(12).toString('hex');
+      const { data } = core.handle(db, ctx, 'POST', '/api/track-photo', { round: body.round, photoId: id });
+      fs.mkdirSync(path.join(DATA_DIR, 'photos'), { recursive: true });
+      fs.writeFileSync(path.join(DATA_DIR, 'photos', id + '.json'), JSON.stringify(img));
+      if (data.oldPhotoId) fs.rm(path.join(DATA_DIR, 'photos', data.oldPhotoId + '.json'), () => {});
+      save();
+      return send(res, 200, core.handle(db, ctx, 'GET', '/api/me').data);
+    }
+    if (url.pathname === '/api/photo' && req.method === 'POST') {
+      const id = String(body.id || '').replace(/[^a-f0-9]/g, '');
+      const file = path.join(DATA_DIR, 'photos', id + '.json');
+      if (!core.photoAccess(db, ctx.userId, ctx.isAdmin, id) || !fs.existsSync(file)) throw new core.SantaError(404, 'Фото не найдено');
+      const img = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return send(res, 200, { image: `data:${img.type};base64,${img.data}` });
+    }
     const { data, mutated } = core.handle(db, ctx, req.method, url.pathname, body);
     if (mutated) save();
     send(res, 200, data);

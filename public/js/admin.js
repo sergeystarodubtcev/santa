@@ -199,6 +199,11 @@
   $('[data-pair-search]').addEventListener('input', () => renderPairs());
   $('[data-pf-reset]').addEventListener('click', () => { pfActive.clear(); $$('[data-pf-k]').forEach((x) => { x.checked = false; }); $('[data-pair-search]').value = ''; renderPairs(); });
   $('[data-pair-edit]').addEventListener('click', () => { pairEdit = !pairEdit; renderPairs(); });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-admin-photo]');
+    if (!b) return;
+    try { FX.lightbox((await Api.post('/api/photo', { id: b.dataset.adminPhoto }, A)).image); } catch (ex) { FX.toast(ex.message, 'error'); }
+  });
 
   function renderPairs() {
     const players = state.users.filter((u) => u.participation && u.participation.moderation === 'approved' && !u.banned);
@@ -238,7 +243,7 @@
         <td>🌊 ${rnd(p)}${isDraftPair(p) ? '<small>черновик</small>' : ''}</td><td>${person(p.santaId, p.santa)}</td><td>🎁→</td>
         <td>${person(p.recipientId, p.recipient)}${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
         <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
-        <td>${esc(p.track) || '—'}</td>
+        <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}</td>
       </tr>`).join('') || `<tr><td colspan="6" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
       return;
     }

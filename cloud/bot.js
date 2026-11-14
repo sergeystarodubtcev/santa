@@ -344,7 +344,7 @@ function createBot({ core, secret, siteUrl, username }) {
       return;
     }
     db.tgState[chatId] = { flow: 'sent', step: 'track', data: {}, round: pending[0] ? pending[0].round : null };
-    out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
+    out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки или фото (например, QR-код) — или нажмите «Пропустить»:', reply_markup: SKIP_BTN });
   }
 
   function notLinked(out, chatId) {
@@ -355,10 +355,10 @@ function createBot({ core, secret, siteUrl, username }) {
     });
   }
 
-  function markSent(db, ctx, out, chatId, track, round) {
+  function markSent(db, ctx, out, chatId, track, round, tgPhoto) {
     const u = userByChat(db, chatId);
     try {
-      call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined }, { userId: u.id });
+      call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined, tgPhoto: tgPhoto || undefined }, { userId: u.id });
       out.push({ chat_id: chatId, text: '🎉 Хо-хо-хо! Отметил: подарок отправлен. Получатель увидит, что посылка в пути. Спасибо, Санта!', reply_markup: MAIN_KB });
     } catch (e) {
       if (!(e instanceof core.SantaError)) throw e;
@@ -434,7 +434,7 @@ function createBot({ core, secret, siteUrl, username }) {
         if (!u0) notLinked(out, chatId);
         else {
           db.tgState[chatId] = { flow: 'sent', step: 'track', data: {}, round: Number(d.slice(6)) || null };
-          out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки (или нажмите «Пропустить»):', reply_markup: SKIP_BTN });
+          out.push({ chat_id: chatId, text: 'Пришлите трек-номер посылки или фото (например, QR-код) — или нажмите «Пропустить»:', reply_markup: SKIP_BTN });
         }
       } else if (d.startsWith('ack:') || d.startsWith('received:')) {
         if (!u0) notLinked(out, chatId);
@@ -589,6 +589,13 @@ function createBot({ core, secret, siteUrl, username }) {
         formInput(db, ctx, out, chatId, st, text);
         return { out, actingUid };
       }
+      // фото (например, QR-код) вместо трек-номера: подпись к фото — трек
+      if (st.flow === 'sent' && update.message.photo && update.message.photo.length) {
+        delete db.tgState[chatId];
+        const ph = update.message.photo[update.message.photo.length - 1];
+        markSent(db, ctx, out, chatId, update.message.caption || '', st.round, ph.file_id);
+        return { out, actingUid };
+      }
       if (st.flow === 'sent' && text && !Object.values(BTN).includes(text)) {
         delete db.tgState[chatId];
         markSent(db, ctx, out, chatId, text, st.round);
@@ -639,6 +646,7 @@ function createBot({ core, secret, siteUrl, username }) {
           text: '🔔 ' + esc(n.text),
           reply_markup: n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
+        if (n.tgPhoto) out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: n.tgPhoto, caption: '📷 Фото от вашего Тайного Санты' });
       }
       if (n.action === 'new-anketa') {
         const p = db.participations[u.id] || {};
