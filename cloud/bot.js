@@ -29,7 +29,8 @@ const BTN = {
   done: '✅ Готово',
 };
 const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.wave }, { text: BTN.help }]], resize_keyboard: true };
-const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: '🛡 Модерация' }]]), resize_keyboard: true };
+const ADM = { status: '📊 Статус', send: '📣 Рассылка' };
+const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.status }, { text: ADM.send }], [{ text: '🛡 Модерация' }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
@@ -68,6 +69,128 @@ function createBot({ core, secret, siteUrl, username }) {
     if (m === 'approved') return 'Анкета одобрена ✅ Вы в жеребьёвке.';
     if (m === 'rejected') return 'Анкета не прошла модерацию 🚫' + (p.moderationNote ? ' Причина: ' + esc(p.moderationNote) : '') + ' Исправьте её.';
     return 'Анкета на модерации ⏳ Организаторы проверят её перед жеребьёвкой.';
+  }
+
+  // ---------- панель организатора: статус по волнам, списки, напоминания, рассылка ----------
+  const ADM_CATS = {
+    noack: { label: '🤷 Не подтвердили, что собирают', text: '{имя}, жеребьёвка прошла! 🎅 Подтвердите, пожалуйста, что участвуете и собираете посылку: «Кому я дарю» → «✅ Участвую, собираю посылку» (здесь в боте или в личном кабинете на santa.speccof.ru).' },
+    notsent: { label: '📦 Не отправили', text: '{имя}, напоминаем: подарок нужно отправить до {срок} ({осталось}). Когда отправите — нажмите «📦 Я отправил подарок» и добавьте трек или фото QR-кода 🎁' },
+    notgot: { label: '🎁 Не отметили получение', text: '{имя}, ваш Тайный Санта уже отправил подарок 🎁 Когда получите посылку — отметьте «🎉 Я получил подарок». Спасибо!' },
+    invited: { label: '⏳ Не подтвердили участие в волне', text: '{имя}, подтвердите, пожалуйста, участие в новой волне Тайного Санты — кнопка «🌊 Следующие волны» здесь в боте или карточка в личном кабинете на santa.speccof.ru.' },
+    noform: { label: '📝 Без анкеты', text: '{имя}, вы зарегистрировались в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть 🎅 Заполните её здесь в боте («📝 Моя анкета») или на santa.speccof.ru.' },
+    nobot: { label: '🔕 Без бота', text: '{имя}, подключите, пожалуйста, бота Тайного Санты — он напомнит о сроках и подскажет, кому дарить: личный кабинет на santa.speccof.ru → «🔔 Подписаться на уведомления».' },
+    all: { label: '👥 Все участники', text: '' },
+  };
+  const admState = (db, ctx) => call(db, ctx, 'GET', '/api/admin/state', null, { isAdmin: true });
+  // кто попадает в категорию (n — номер волны; для nobot/noform/all волна не важна)
+  function admPeople(st, cat, n) {
+    const pr = (p) => (p.round > 1 ? p.round : 1);
+    const wave = (st.waves || []).find((w) => w.n === n) || {};
+    const live = wave.confirmedAt ? st.pairs.filter((p) => pr(p) === n && !p.failed) : [];
+    const ids = cat === 'noack' ? live.filter((p) => p.status === 'assigned' && !p.ackAt).map((p) => p.santaId)
+      : cat === 'notsent' ? live.filter((p) => p.status === 'assigned').map((p) => p.santaId)
+      : cat === 'notgot' ? live.filter((p) => p.status === 'sent').map((p) => p.recipientId)
+      : cat === 'invited' ? (st.wave2 || []).filter((w) => w.round === n && w.status === 'invited').map((w) => w.userId)
+      : cat === 'noform' ? st.users.filter((u) => !u.participation && !u.banned).map((u) => u.id)
+      : cat === 'nobot' ? st.users.filter((u) => u.participation && !u.banned && !u.tgLinked).map((u) => u.id)
+      : st.users.filter((u) => u.participation && !u.banned).map((u) => u.id);
+    return [...new Set(ids)].map((id) => st.users.find((u) => u.id === id)).filter(Boolean);
+  }
+  const WST = { open: '📝 идёт запись', drawing: '🎲 ждёт вашего подтверждения', drawn: '✅ пары у участников', closed: '⏹ остановлена' };
+  function admStatus(db, ctx, out, chatId, n) {
+    const st = admState(db, ctx);
+    const waves = st.waves || [];
+    const w = waves.find((x) => x.n === n) || waves.filter((x) => x.status !== 'closed').pop() || waves[waves.length - 1];
+    const cnt = (cat) => admPeople(st, cat, w.n).length;
+    const lines = [
+      `📊 <b>Волна ${w.n}</b> · ${WST[w.status] || w.status}`,
+      `Отправка: ${fmtDay(w.start)} — ${fmtDay(w.end)}`,
+      `Участников: ${w.members}` + (w.pending ? ` · на модерации: ${w.pending}` : '') + (w.invited ? ` · ждут подтверждения: ${w.invited}` : ''),
+    ];
+    if (w.confirmedAt) lines.push(`Пар: ${w.pairs} · 🤷 не подтвердили: ${w.noAck} · 📦 не отправили: ${w.notSent} · 🚚 отправили: ${w.sent} · ✅ получили: ${w.received}` + (w.failed ? ` · 😢 ${w.failed}` : ''));
+    else if (w.status === 'drawing') lines.push('🎲 Пары готовы — проверьте и подтвердите в админке на сайте.');
+    lines.push('', `Всего аккаунтов: ${st.stats.users} · без анкеты: ${cnt('noform')} · без бота: ${cnt('nobot')}` + (st.waitlist ? ` · лист ожидания: ${st.waitlist}` : ''));
+    const rows = [];
+    const add = (cat) => { const c = cnt(cat); if (c) rows.push([[`${ADM_CATS[cat].label} (${c})`, `adm:l:${cat}:${w.n}`]]); };
+    if (w.confirmedAt) ['noack', 'notsent', 'notgot'].forEach(add);
+    if (w.n > 1) add('invited');
+    add('noform'); add('nobot');
+    if (waves.length > 1) rows.push(waves.map((x) => [(x.n === w.n ? '• ' : '') + `Волна ${x.n}`, `adm:st:${x.n}`]));
+    rows.push([['🔄 Обновить', `adm:st:${w.n}`], ['📣 Рассылка', 'adm:send']]);
+    out.push({ chat_id: chatId, text: lines.join('\n'), reply_markup: ib(rows) });
+  }
+  function admList(db, ctx, out, chatId, cat, n) {
+    const st = admState(db, ctx);
+    const people = admPeople(st, cat, n);
+    const C = ADM_CATS[cat];
+    if (!people.length) { out.push({ chat_id: chatId, text: `${C.label}: никого 🎉` }); return; }
+    const shown = people.slice(0, 60).map((u) => `@${esc(u.tg)} — ${esc(u.name)}${u.tgLinked ? '' : ' 🔕'}`);
+    const withBot = people.filter((u) => u.tgLinked).length;
+    out.push({
+      chat_id: chatId,
+      text: `<b>${C.label}</b>${['all', 'noform', 'nobot'].includes(cat) ? '' : ` · волна ${n}`} — ${people.length}:\n` + shown.join('\n') + (people.length > 60 ? `\n…и ещё ${people.length - 60}` : '') + (withBot < people.length ? '\n\n🔕 — бот не подключён (увидит только на сайте)' : ''),
+      reply_markup: ib([
+        [[`📣 Напомнить (${people.length})`, `adm:r:${cat}:${n}`], ['✏️ Свой текст', `adm:o:${cat}:${n}`]],
+        [['📋 Текст для общего чата', `adm:c:${cat}:${n}`]],
+        [['⬅️ К статусу', `adm:st:${n}`]],
+      ]),
+    });
+  }
+  // подтверждение рассылки: показываем текст и кому, отправка — только по кнопке
+  function admConfirm(db, ctx, out, chatId, cat, n, text) {
+    const st = admState(db, ctx);
+    const people = admPeople(st, cat, n);
+    if (!people.length) { out.push({ chat_id: chatId, text: 'Отправлять некому 🎉' }); return; }
+    db.tgState[chatId] = { flow: 'admsend', cat, n, text, ids: people.map((u) => u.id) };
+    const acc = st.userAcc || {};
+    const canUser = acc.enabled !== false && ['ready', 'limited'].includes(acc.status) && people.some((u) => !u.tgLinked);
+    const rows = [[['✅ Отправить: сайт + бот', 'adm:go']]];
+    if (canUser) rows.push([['✅ Отправить + 👤 с аккаунта тем, у кого нет бота', 'adm:gou']]);
+    rows.push([['✏️ Изменить текст', `adm:o:${cat}:${n}`], ['✖️ Отмена', 'adm:x']]);
+    out.push({
+      chat_id: chatId,
+      text: `📣 <b>Проверьте рассылку</b>\nКому: ${ADM_CATS[cat].label}${['all', 'noform', 'nobot'].includes(cat) ? '' : ` · волна ${n}`} — ${people.length} чел. (с ботом — ${people.filter((u) => u.tgLinked).length})\n\n<i>${esc(text)}</i>\n\n{имя}, {срок}, {осталось} подставятся каждому свои.`,
+      reply_markup: ib(rows),
+    });
+  }
+  function admSendMenu(out, chatId) {
+    out.push({
+      chat_id: chatId,
+      text: '📣 <b>Рассылка</b> — кому написать? Дальше можно взять готовый текст или написать свой.\nПо отдельной волне — через «📊 Статус».',
+      reply_markup: ib([[[ADM_CATS.all.label, 'adm:o:all:0']], [[ADM_CATS.noform.label, 'adm:l:noform:0']], [[ADM_CATS.nobot.label, 'adm:l:nobot:0']], [['📊 По волнам — через статус', 'adm:st']]]),
+    });
+  }
+  function admCallback(db, ctx, out, chatId, d) {
+    const [, act, cat, nRaw] = d.split(':');
+    const n = Number(nRaw) || 0;
+    const st0 = db.tgState[chatId];
+    if (act === 'st') return admStatus(db, ctx, out, chatId, Number(cat) || 0);
+    if (act === 'send') return admSendMenu(out, chatId);
+    if (act === 'l') return admList(db, ctx, out, chatId, cat, n);
+    if (act === 'r') return admConfirm(db, ctx, out, chatId, cat, n, ADM_CATS[cat].text);
+    if (act === 'o') {
+      db.tgState[chatId] = { flow: 'admtext', cat, n };
+      out.push({ chat_id: chatId, text: `✏️ Напишите текст для «${ADM_CATS[cat].label}» одним сообщением. Можно использовать {имя}, {срок}, {осталось}. /cancel — отмена.` });
+      return;
+    }
+    if (act === 'c') {
+      const people = admPeople(admState(db, ctx), cat, n);
+      const tail = ADM_CATS[cat].text.replace(/^\{имя\}, /, '').replace(/\{срок\}|\{осталось\}|\{имя\}/g, (m) => (m === '{срок}' ? 'конца отправки' : ''));
+      const body = tail ? tail[0].toUpperCase() + tail.slice(1) : 'Ваш текст';
+      out.push({ chat_id: chatId, text: people.length ? `Ребята! 👋\n${people.map((u) => '@' + u.tg).join('\n')}\n\n${body}` : 'Никого 🎉' });
+      out.push({ chat_id: chatId, text: '☝️ Перешлите или скопируйте это сообщение в общий чат.' });
+      return;
+    }
+    if (act === 'x') { delete db.tgState[chatId]; out.push({ chat_id: chatId, text: 'Отменил.', reply_markup: ADMIN_KB }); return; }
+    if ((act === 'go' || act === 'gou') && st0 && st0.flow === 'admsend') {
+      delete db.tgState[chatId];
+      try {
+        const r = call(db, ctx, 'POST', '/api/admin/broadcast', { text: st0.text, userIds: st0.ids, site: true, tg: true, userTg: act === 'gou' }, { isAdmin: true });
+        out.push({ chat_id: chatId, text: `✅ Отправлено: ${r.sent} чел.` + (r.viaUser ? ` С аккаунта организатора в очереди: ${r.viaUser}.` : '') + ' Рассылка видна в админке в «Отправленных».', reply_markup: ADMIN_KB });
+      } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
+      return;
+    }
+    out.push({ chat_id: chatId, text: 'Эта кнопка устарела — откройте «📊 Статус» заново.' });
   }
 
   function modPanel(db, out, chatId) {
@@ -502,6 +625,8 @@ function createBot({ core, secret, siteUrl, username }) {
           try { call(db, ctx, 'POST', '/api/received', {}, { userId: u0.id }); out.push({ chat_id: chatId, text: '🥳 Ура! Отметил, что подарок получен. С наступающим!' }); }
           catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
         }
+      } else if (d.startsWith('adm:') && isAdmin(db, chatId)) {
+        admCallback(db, ctx, out, chatId, d);
       } else if (d.startsWith('modset:') && isAdmin(db, chatId)) {
         call(db, ctx, 'POST', '/api/admin/moderation', { enabled: d === 'modset:on' }, { isAdmin: true });
         modPanel(db, out, chatId);
@@ -557,6 +682,12 @@ function createBot({ core, secret, siteUrl, username }) {
       return { out, actingUid };
     }
     if ((text === '🛡 Модерация' || text === '/moderation') && isAdmin(db, chatId)) { modPanel(db, out, chatId); return { out, actingUid }; }
+    if ((text === ADM.status || text === '/status') && isAdmin(db, chatId)) { delete db.tgState[chatId]; admStatus(db, ctx, out, chatId, 0); return { out, actingUid }; }
+    if ((text === ADM.send || text === '/send') && isAdmin(db, chatId)) { delete db.tgState[chatId]; admSendMenu(out, chatId); return { out, actingUid }; }
+    if (st && st.flow === 'admtext' && isAdmin(db, chatId) && text && text !== '/cancel') {
+      admConfirm(db, ctx, out, chatId, st.cat, st.n, text.slice(0, 1000));
+      return { out, actingUid };
+    }
     if (text === '/help' || text === BTN.help) { startHelp(db, out, chatId, from); return { out, actingUid }; }
     if (st && st.flow === 'help') {
       if (text === BTN.done || text === '/cancel') {
