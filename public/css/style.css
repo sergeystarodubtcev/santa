@@ -695,3 +695,7 @@ td small { display: block; }
 .gift-row p { margin: 6px 0 10px; }
 .nw-card { border-color: #7dd3fc; background: linear-gradient(135deg, #f0f9ff, #ffffff); }
 .wave-hint { font-size: 13px; margin: -6px 0 12px; padding: 10px 12px; border-radius: 12px; background: #f0f9ff; border: 1px solid #bae6fd; }
+
+.ask-box { margin-top: 12px; }
+.ask-box textarea { min-height: 60px; }
+.ask-done { margin: 0; padding: 10px 12px; border-radius: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }

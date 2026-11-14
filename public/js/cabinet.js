@@ -268,6 +268,22 @@
       }));
     }
     $$('[data-open-part]', host).forEach((b) => b.addEventListener('click', openPart));
+    // «Уточнить у организатора»: короткий вопрос уходит организаторам вместе с данными пары
+    $$('[data-ask-box]', host).forEach((box) => {
+      const f = $('[data-ask-form]', box);
+      $('[data-ask-open]', box).addEventListener('click', () => { f.hidden = false; $('[data-ask-open]', box).hidden = true; f.text.focus(); });
+      $('[data-ask-cancel]', box).addEventListener('click', () => { f.hidden = true; $('[data-ask-open]', box).hidden = false; });
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        try {
+          await Api.post('/api/ask-organizer', { round: Number(box.dataset.round) || undefined, text: f.text.value });
+          box.innerHTML = '<p class="muted ask-done">✅ Организатор получил ваш вопрос и ответит в Telegram' + (me.user.tgLinked ? ' (в бот)' : '') + '.</p>';
+          FX.toast('Вопрос отправлен организатору 📨', 'success');
+        } catch (ex) { FX.toast(ex.message, 'error'); btn.disabled = false; }
+      });
+    });
     // данные для отправки скрыты, как спойлер в Telegram: первое нажатие — показать, потом нажатие на строку — скопировать
     $$('[data-ship]', host).forEach((ship) => ship.addEventListener('click', (e) => {
       if (!ship.classList.contains('shown')) {
@@ -288,7 +304,7 @@
     const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
     return `<div class="give-block">
       ${many ? `<div class="wave-head">🌊 ${rn}-я волна${a.dates ? ` · отправка до ${FX.fmtDate(a.dates.end)}` : ''}</div>` : ''}
-      <p style="margin-bottom:14px">${!many && rn > 1 ? `<span class="pill">🌊 ${rn}-я волна</span> ` : ''}Вы — Тайный Санта для <b class="grad" style="font-size:20px">${esc(r.name)}</b> <span class="status ${a.status}">${statusTxt}</span></p>
+      <p style="margin-bottom:14px">${!many && rn > 1 ? `<span class="pill">🌊 ${rn}-я волна</span> ` : ''}<b>Вы — Тайный Санта</b> 🎅 <span class="status ${a.status}">${statusTxt}</span></p>
       ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
       <div class="wish-box">
         <div class="wish-head">🎁 Что хочет получить</div>
@@ -299,12 +315,17 @@
       <div class="ship-box ${shown ? 'shown' : ''}" data-ship data-round="${rn}">
         <div class="ship-head">📦 Данные для отправки <small data-ship-hint>${shown ? 'нажмите на строку, чтобы скопировать' : 'скрыто — нажмите, чтобы показать'}</small></div>
         <dl class="kv ship-data">
-          <dt>ФИО</dt><dd><span class="spoiler copy" data-copy="${esc(r.fullName)}">${esc(r.fullName)}</span></dd>
           <dt>ПВЗ Ozon</dt><dd><span class="spoiler copy" data-copy="${esc(r.address)}">${esc(r.address)}</span></dd>
           <dt>Телефон</dt><dd><span class="spoiler copy" data-copy="${esc(r.phone)}">${esc(r.phone)}</span></dd>
-          <dt>Telegram</dt><dd><span class="spoiler copy" data-copy="@${esc(r.tg)}">@${esc(r.tg)}</span></dd>
           ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
         </dl>
+      </div>
+      <div class="ask-box" data-ask-box data-round="${rn}">
+        <button class="btn btn-ghost btn-sm btn-block" type="button" data-ask-open>❓ Не хватает данных для доставки? Уточнить у организатора</button>
+        <form class="form" data-ask-form hidden>
+          <label>Что уточнить?<textarea name="text" rows="2" placeholder="Например: не указан город ПВЗ / нужен другой пункт выдачи"></textarea></label>
+          <div class="row2"><button class="btn btn-ghost btn-sm" type="button" data-ask-cancel>Отмена</button><button class="btn btn-primary btn-sm" type="submit">📨 Отправить организатору</button></div>
+        </form>
       </div>
       ${a.status === 'assigned' && !a.ackAt ? `
       <div class="ack-box"><p><b>Подтвердите, что участвуете и собираете посылку</b> — так организаторы будут знать, что всё в порядке.</p>

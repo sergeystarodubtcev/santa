@@ -750,7 +750,8 @@
       const r = db.users.find((u) => u.id === p.recipientId) || {};
       const rp = anketaFor(db, p.recipientId, pairRound(p));
       return {
-        recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
+        // получатель анонимный: только телефон, адрес ПВЗ и пожелания (имя, ФИО и ник Санте не показываем)
+        recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
       };
@@ -774,7 +775,8 @@
       const r = db.users.find((u) => u.id === mine.recipientId) || {};
       const rp = anketaFor(db, mine.recipientId, pairRound(mine));
       out.assignment = {
-        recipient: { name: r.name, fullName: rp.fullName || r.name, phone: r.phone, tg: r.tg, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
+        // получатель анонимный: только телефон, адрес ПВЗ и пожелания (имя, ФИО и ник Санте не показываем)
+        recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
         round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null,
       };
@@ -1027,6 +1029,21 @@
       }
       case 'POST /api/received': markReceived(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/wave-join': waveJoin(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/ask-organizer': {
+        // «Уточнить данные у организатора»: Санте не хватает данных для доставки — организатор видит, о каком получателе речь
+        const uid = needUser();
+        const u = getUser(db, uid);
+        const pair = Number(body.round) ? pairOfWave(db, uid, 'santaId', Number(body.round)) : outPair(db, uid);
+        if (!pair) fail(404, 'У вас пока нет получателя');
+        const r = db.users.find((x) => x.id === pair.recipientId) || {};
+        const rp = anketaFor(db, pair.recipientId, pairRound(pair));
+        const q = str(body.text, 1000);
+        pair.askedAt = ctx.now();
+        notifyAdmins(db, ctx, `❓ ${who(u)} просит уточнить данные для доставки (${pairRound(pair)}-я волна).\n`
+          + `Получатель: @${r.tg || '—'} · ${rp.fullName || r.name || '—'} · ${r.phone || '—'}\nПВЗ: ${rp.address || '—'}`
+          + (q ? `\nВопрос: ${q}` : '') + `\nОтветить в бот: /reply @${u.tg} текст`);
+        return ok({ ok: true }, true);
+      }
       case 'POST /api/notifications/read': {
         const uid = needUser();
         db.notifications.forEach((n) => { if (n.userId === uid) n.read = true; });

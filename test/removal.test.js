@@ -148,9 +148,9 @@ test('профиль: можно исправить ник, имя и телеф
   const me = call(db, 'POST', '/api/profile', { name: 'Аня', tg: 'https://t.me/Anya_Real', phone: '8 966 000 00 00' }, { userId: A });
   assert.equal(me.user.tg, 'anya_real');
   assert.equal(me.user.name, 'Аня');
-  // Санта того, кто сменил ник, видит новый ник у получателя
+  // ник получателя Санте не показываем (только телефон, ПВЗ и пожелания)
   const santaOfA = db.pairs.find((p) => p.recipientId === A).santaId;
-  assert.equal(call(db, 'GET', '/api/me', null, { userId: santaOfA }).assignment.recipient.tg, 'anya_real');
+  assert.equal(call(db, 'GET', '/api/me', null, { userId: santaOfA }).assignment.recipient.tg, undefined);
   assert.match(adminLog(db), /✏️ @anya_real исправил профиль после жеребьёвки: ник @user_0 → @anya_real, имя «U0» → «Аня»/);
   // вход по новому нику работает
   assert.equal(call(db, 'POST', '/api/login', { login: '@anya_real', password: 'qwerty1' }).user.id, A);

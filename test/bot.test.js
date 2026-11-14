@@ -129,7 +129,8 @@ test('после жеребьёвки: уведомление с кнопкой 
   let r = press(db, 300, 'whom');
   const pair = db.pairs.find((p) => p.santaId === ids[0]);
   const rec = db.users.find((u) => u.id === pair.recipientId);
-  assert.match(texts(r), new RegExp(`Тайный Санта для <b>${rec.name}</b>[\\s\\S]*ПВЗ Ozon[\\s\\S]*@${rec.tg}`));
+  assert.match(texts(r), /Вы — Тайный Санта[\s\S]*ПВЗ Ozon/);
+  assert.ok(!texts(r).includes('@' + rec.tg) && !texts(r).includes(rec.name + '</b>'), 'имя и ник получателя не показываем');
   // отправил с трек-номером
   press(db, 300, 'sent');
   const n1 = db.notifications.length;
@@ -220,9 +221,20 @@ test('«Кому я дарю» в боте: сначала пожелания, �
   db.users[0].tgChatId = 901;
   const r = bot.handleUpdate(db, ctx, { update_id: 1, callback_query: { id: 'c', data: 'whom', from: { id: 901 }, message: { chat: { id: 901, type: 'private' } } } });
   const t = r.out.map((o) => o.text).join('\n');
-  assert.ok(t.indexOf('дрипы 1') < t.indexOf('Секретов'), 'пожелания выше данных');
-  assert.match(t, /<tg-spoiler>Секретов Секрет 1<\/tg-spoiler>/);
+  assert.ok(t.indexOf('дрипы 1') < t.indexOf('ПВЗ Ozon, Казань 1'), 'пожелания выше данных');
   assert.match(t, /<tg-spoiler>ПВЗ Ozon, Казань 1<\/tg-spoiler>/);
   assert.match(t, /<tg-spoiler>\+79554000001<\/tg-spoiler>/);
-  assert.match(t, /<tg-spoiler>@spoil_1<\/tg-spoiler>/);
+  assert.ok(!t.includes('Секретов') && !t.includes('@spoil_1'), 'ФИО и ник получателя скрыты');
+  // кнопка «Уточнить у организатора» — организаторам уходят данные пары
+  db.tgAdmins = [990];
+  const kb = r.out.find((o) => o.reply_markup && o.reply_markup.inline_keyboard).reply_markup.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(kb.includes('ask:1'));
+  const n0 = db.notifications.length;
+  const a = bot.handleUpdate(db, ctx, { update_id: 2, callback_query: { id: 'c2', data: 'ask:1', from: { id: 901 }, message: { chat: { id: 901, type: 'private' } } } });
+  assert.match(a.out.map((o) => o.text).join(' '), /Организатор уже знает/);
+  const note = db.notifications.slice(n0).find((x) => x.userId === '@admins');
+  assert.match(note.text, /просит уточнить данные[\s\S]*Секретов Секрет 1[\s\S]*ПВЗ Ozon, Казань 1/);
+  // сайт: тот же вопрос с текстом
+  core.handle(db, Object.assign({}, ctx, { userId: db.users[0].id }), 'POST', '/api/ask-organizer', { round: 1, text: 'нет города' });
+  assert.match(db.notifications.pop().text, /Вопрос: нет города/);
 });

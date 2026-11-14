@@ -114,7 +114,9 @@ test('полный цикл: получатель, дедлайн, отправ�
 
   let me = call(db, 'GET', '/api/me', null, as(santa));
   assert.ok(me.assignment.recipient.address.startsWith('Ozon'));
-  assert.match(me.assignment.recipient.fullName, /^Иванов Иван/);
+  // Санта видит только телефон, ПВЗ и пожелания — без имени, ФИО и ника
+  assert.deepEqual(Object.keys(me.assignment.recipient).sort(), ['address', 'notes', 'phone', 'prefs', 'wishes']);
+  assert.ok(!JSON.stringify(me.assignment).includes(db.participations[recipientId].fullName), 'ФИО получателя не видно');
   assert.equal(me.deadline.kind, 'info'); // до 1 декабря
 
   clock = Date.parse('2026-12-08T10:00:00+03:00');

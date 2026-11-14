@@ -85,7 +85,7 @@ test('автожеребьёвка в 00:00 создаёт черновик; у�
   assert.deepEqual(sent.map((x) => x.userId).sort(), ids.slice().sort(), 'каждому Санте — уведомление');
   for (const id of ids) {
     const me = call(db, 'GET', '/api/me', null, as(id));
-    assert.ok(me.assignment && me.assignment.recipient.name, 'после подтверждения получатель виден');
+    assert.ok(me.assignment && me.assignment.recipient.address, 'после подтверждения получатель виден');
     assert.equal(me.drawing, false);
   }
   const pub2 = call(db, 'GET', '/api/public');

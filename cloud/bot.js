@@ -322,14 +322,14 @@ function createBot({ core, secret, siteUrl, username }) {
     out.push({
       chat_id: chatId,
       // сначала пожелания, данные для отправки — под спойлером (нажать, чтобы показать)
-      text: (many ? `🌊 <b>${a.round}-я волна</b>\n` : '') + `🎅 Вы — Тайный Санта для <b>${esc(r.name)}</b> (${st})\n\n` +
+      text: (many ? `🌊 <b>${a.round}-я волна</b>\n` : '') + `🎅 <b>Вы — Тайный Санта</b> (${st})\n\n` +
         `🎁 <b>Что хочет получить:</b>\n${esc(r.wishes) || 'не написал(а) — сюрприз на ваш вкус!'}\n🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
         `\n\n📦 <b>Данные для отправки</b> (нажмите, чтобы показать):\n` +
-        `👤 ФИО: <tg-spoiler>${esc(r.fullName)}</tg-spoiler>\n📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>\n💬 Telegram: <tg-spoiler>@${esc(r.tg)}</tg-spoiler>` +
+        `📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>` +
         (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
         `\n\n📅 Отправка: до ${fmtDay((a.dates && a.dates.end) || (me.dates && me.dates.end) || me.settings.sendEnd)}`,
-      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]]])) : undefined,
+      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]], [['❓ Уточнить данные у организатора', 'ask:' + a.round]]])) : undefined,
     });
     }
     if (me.nextWave && !me.nextWave.joined) out.push({ chat_id: chatId, text: me.nextWave.n ? `🌊 Кстати, открыта запись в ${me.nextWave.n}-ю волну — можно подарить ещё один подарок.` : '🌊 Хотите участвовать и в следующей волне? Можно записаться в лист ожидания.', reply_markup: WAVEJOIN_BTN });
@@ -340,7 +340,7 @@ function createBot({ core, secret, siteUrl, username }) {
     const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
     const pending = (me.assignments || []).filter((a) => a.status === 'assigned');
     if (pending.length > 1) {
-      out.push({ chat_id: chatId, text: 'Какой подарок вы отправили?', reply_markup: ib(pending.map((a) => [[`🌊 ${a.round}-я волна → ${a.recipient.name}`, 'sentw:' + a.round]])) });
+      out.push({ chat_id: chatId, text: 'Какой подарок вы отправили?', reply_markup: ib(pending.map((a) => [[`🌊 Подарок ${a.round}-й волны`, 'sentw:' + a.round]])) });
       return;
     }
     db.tgState[chatId] = { flow: 'sent', step: 'track', data: {}, round: pending[0] ? pending[0].round : null };
@@ -417,6 +417,19 @@ function createBot({ core, secret, siteUrl, username }) {
       } else if (d === 'keep' && st && st.flow === 'form' && st.waveJoin) {
         if (st.step === 'address') st.addrConfirmed = true;
         formInput(db, ctx, out, chatId, st, (st.prefill || {})[st.step] || '');
+      } else if (d.startsWith('ask:')) {
+        // «Уточнить данные»: организаторы сразу получают данные пары, дальше — переписка через «Помощь»
+        if (!u0) notLinked(out, chatId);
+        else {
+          try {
+            call(db, ctx, 'POST', '/api/ask-organizer', { round: Number(d.slice(4)) || undefined }, { userId: u0.id });
+            const key = helpKey(u0, from);
+            db.tgState[chatId] = { flow: 'help', uid: u0.id };
+            db.tgHelpChats = db.tgHelpChats || {};
+            db.tgHelpChats[key] = chatId;
+            out.push({ chat_id: chatId, text: '❓ Организатор уже знает, о каком получателе речь. Напишите, каких данных не хватает для доставки, — он уточнит и ответит здесь же. Когда закончите, нажмите «✅ Готово».', reply_markup: HELP_KB });
+          } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
+        }
       } else if (d.startsWith('sentw:')) {
         if (!u0) notLinked(out, chatId);
         else {
