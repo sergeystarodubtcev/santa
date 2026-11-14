@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 const { createBot } = require('../cloud/bot.js');
 
 let clock = Date.parse('2026-11-20T12:00:00+03:00');
@@ -28,7 +29,7 @@ test('второй круг: без подтверждения в жеребьё
   [0, 1, 2].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   const a = user(db, 3, { wave2: true });
   const b = user(db, 4, { wave2: true });
   // старые записи второго круга без подтверждения (до обновления) — «ждём подтверждения»
@@ -56,7 +57,7 @@ test('пострадавший: Санта не отправил → во вто
   const first = [0, 1, 2, 3, 4, 5].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   // все, кроме одного Санты, отправили подарки
   const bad = first[0];
   const badPair = db.pairs.find((p) => p.santaId === bad);
@@ -118,7 +119,7 @@ test('организатор: пригласить, подтвердить за 
   assert.throws(() => call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin), /после первой жеребьёвки/);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin);
   assert.equal(db.wave2[ids[0]].status, 'invited');
   assert.equal(db.notifications.filter((x) => x.userId === ids[0]).pop().action, 'wave2');
@@ -139,7 +140,7 @@ test('анкета через бота после первой жеребьёв�
   [0, 1].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   const r = call(db, 'POST', '/api/register', { name: 'Bot', phone: '+79552999999', tg: 'bot_user', password: 'qwerty1', pdConsent: true });
   db.users.find((u) => u.id === r.user.id).tgChatId = 7007;
   press(db, 7007, 'form');

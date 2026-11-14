@@ -185,7 +185,9 @@ function createBot({ core, secret, siteUrl, username }) {
     if ((act === 'go' || act === 'gou') && st0 && st0.flow === 'admsend') {
       delete db.tgState[chatId];
       try {
-        const r = call(db, ctx, 'POST', '/api/admin/broadcast', { text: st0.text, userIds: st0.ids, site: true, tg: true, userTg: act === 'gou' }, { isAdmin: true });
+        const BTN_FOR = { noack: 'whom', notsent: 'sent', notgot: 'received', invited: 'wave', noform: 'form', nobot: 'site' };
+        const r = call(db, ctx, 'POST', '/api/admin/broadcast', { text: st0.text, userIds: st0.ids, site: true, tg: true, userTg: act === 'gou',
+          buttons: BTN_FOR[st0.cat] ? [{ kind: BTN_FOR[st0.cat] }] : [] }, { isAdmin: true });
         out.push({ chat_id: chatId, text: `✅ Отправлено: ${r.sent} чел.` + (r.viaUser ? ` С аккаунта организатора в очереди: ${r.viaUser}.` : '') + ' Рассылка видна в админке в «Отправленных».', reply_markup: ADMIN_KB });
       } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) }); }
       return;
@@ -760,6 +762,13 @@ function createBot({ core, secret, siteUrl, username }) {
     return { out, actingUid };
   }
 
+  // кнопки рассылки → кнопки Telegram (действия бота или ссылки)
+  function notifButtons(list) {
+    const CB = { whom: 'whom', sent: 'sent', received: 'received', wave: 'wave', form: 'form' };
+    return { inline_keyboard: list.map((b) => [b.url ? { text: b.text, url: b.url }
+      : b.kind === 'site' ? { text: b.text, url: siteUrl + '/cabinet.html' } : { text: b.text, callback_data: CB[b.kind] }]) };
+  }
+
   // ---------- уведомления с сайта → Telegram ----------
   function pushNotifications(db, list, exceptUid) {
     const out = [];
@@ -775,7 +784,7 @@ function createBot({ core, secret, siteUrl, username }) {
         out.push({
           chat_id: u.tgChatId,
           text: '🔔 ' + esc(n.text),
-          reply_markup: n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
+          reply_markup: n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
         if (n.tgPhoto) out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: n.tgPhoto, caption: '📷 Фото от вашего Тайного Санты' });
       }

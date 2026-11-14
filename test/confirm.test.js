@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 const { createBot } = require('../cloud/bot.js');
 
 let clock = Date.parse('2026-11-19T23:58:00+03:00');
@@ -73,7 +74,7 @@ test('автожеребьёвка в 00:00 создаёт черновик; у�
   assert.equal(db.wave2[late.user.id].status, 'waiting');
   assertValid(db, 1, ids); // поздний в первую волну не попал
   // пока черновик: ни новой волны, ни остановки, ни «пострадавших»
-  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', {}, admin), /подтвердите/);
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', W2DATES, admin), /подтвердите/);
   assert.throws(() => call(db, 'POST', '/api/admin/wave-set', { n: 1, action: 'close' }, admin), /подтвердите или сбросьте/);
   assert.throws(() => call(db, 'POST', '/api/admin/wave2-rescue', { santaId: ids[0] }, admin), /не подтверждена/);
 
@@ -94,7 +95,7 @@ test('автожеребьёвка в 00:00 создаёт черновик; у�
   assert.throws(() => call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin), /уже подтверждена/);
   assert.throws(() => call(db, 'POST', '/api/admin/pair-swap', { round: 1, userId: ids[0], side: 'santa' }, admin), /только до подтверждения/);
   // теперь можно создать следующую волну — лист ожидания получает приглашение
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   assert.equal(db.wave2[late.user.id].status, 'invited');
 });
 

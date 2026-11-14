@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261115a">
+  <link rel="stylesheet" href="css/style.css?v=20261115c">
 </head>
 <body>
   <header class="topbar">
@@ -96,12 +96,20 @@
               <div class="chips" data-bc-tpl></div>
             </div>
             <textarea name="text" rows="4" placeholder="Текст уведомления. Например: «У вас 3 дня, чтобы успеть отправить подарок!»"></textarea>
-            <p class="muted bc-hint">Подстановки: <code>{имя}</code> — имя человека, <code>{срок}</code> — до какого числа отправить подарок (по его кругу), <code>{осталось}</code> — «осталось 3 дня» или «срок уже прошёл». Каждый получит текст со своими данными.</p>
+            <p class="muted bc-hint">Подстановки: <code>{имя}</code> — имя человека, <code>{начало}</code> и <code>{срок}</code> — начало и конец отправки его волны, <code>{осталось}</code> — «осталось 3 дня» или «срок уже прошёл». Каждый получит текст со своими данными.</p>
             <div class="bc-row">
               <span class="field-label">Куда:</span>
               <label class="chip"><input type="checkbox" name="site" checked><span>🌐 На сайт (личный кабинет)</span></label>
               <label class="chip"><input type="checkbox" name="tg" checked><span>✈️ В Telegram (кто подключил бота)</span></label>
               <label class="chip" data-ua-chip><input type="checkbox" name="userTg"><span>👤 С аккаунта организатора (у кого нет бота)</span></label>
+            </div>
+            <div class="bc-row">
+              <span class="field-label">Кнопки под сообщением (вкл/выкл):</span>
+              <div class="chips" data-bc-buttons></div>
+            </div>
+            <div class="row2 bc-link" data-bc-link hidden>
+              <label>Текст кнопки<input name="linkText" maxlength="40" placeholder="Например: Пост в канале"></label>
+              <label>Ссылка<input name="linkUrl" placeholder="https://t.me/…"></label>
             </div>
             <div class="bc-row">
               <span class="field-label">Кому (все отмеченные условия сразу):</span>
@@ -120,7 +128,7 @@
           </form>
           <h3 style="margin-top:22px">🗂 Отправленные</h3>
           <div class="table-wrap"><table>
-            <thead><tr><th>Когда</th><th>Текст</th><th>Кому</th><th>Куда</th><th>👤 Личный аккаунт</th><th></th></tr></thead>
+            <thead><tr><th>Когда</th><th>Текст</th><th>Кому</th><th>Куда / кнопки</th><th>👤 Личный аккаунт</th><th></th></tr></thead>
             <tbody data-bc-history></tbody>
           </table></div>
           <p class="muted" style="font-size:12px">«Удалить» убирает уведомление из личных кабинетов. Уже доставленное сообщение в Telegram отозвать нельзя.</p>
@@ -229,11 +237,11 @@
     </div>
   </footer>
 
-  <script src="js/config.js?v=20261115a"></script>
-  <script src="js/cities.js?v=20261115a"></script>
-  <script src="js/core.js?v=20261115a"></script>
-  <script src="js/api.js?v=20261115a"></script>
-  <script src="js/fx.js?v=20261115a"></script>
-  <script src="js/admin.js?v=20261115a"></script>
+  <script src="js/config.js?v=20261115c"></script>
+  <script src="js/cities.js?v=20261115c"></script>
+  <script src="js/core.js?v=20261115c"></script>
+  <script src="js/api.js?v=20261115c"></script>
+  <script src="js/fx.js?v=20261115c"></script>
+  <script src="js/admin.js?v=20261115c"></script>
 </body>
 </html>

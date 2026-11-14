@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 const { createBot } = require('../cloud/bot.js');
 
 let clock = Date.parse('2026-11-20T12:00:00+03:00');
@@ -46,7 +47,7 @@ test('повторное участие: запись во 2-ю волну с к
   assert.equal(me.nextWave.anketa.address, 'ПВЗ Ozon, Казань, Баумана 0', 'анкета подставляется из прошлой');
   // создаём 2-ю волну — всем участникам предложение записаться
   const n0 = db.notifications.length;
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   const offers = db.notifications.slice(n0).filter((x) => x.action === 'wavejoin');
   assert.deepEqual(offers.map((x) => x.userId).sort(), ids.slice().sort(), 'каждому участнику — предложение');
   me = call(db, 'GET', '/api/me', null, as(A));
@@ -113,7 +114,7 @@ test('бот: «🌊 Следующие волны», запись с теми �
   assert.ok(JSON.stringify(g.out).includes('🌊 Следующие волны'));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   // уведомление «Открылась запись» превращается в кнопку
   const offer = db.notifications.filter((x) => x.userId === ids[0] && x.action === 'wavejoin').pop();
   assert.equal(bot.pushNotifications(db, [offer], null)[0].reply_markup.inline_keyboard[0][0].callback_data, 'wave');
@@ -176,7 +177,7 @@ test('лист ожидания → 3-я волна: анкета переезж
   assert.ok(ids.every((id) => db.wave2[id].status === 'waiting' && db.waveAnketas[id].next));
   assert.equal(call(db, 'GET', '/api/me', null, as(ids[0])).nextWave.joined, true);
   // отказ из листа ожидания
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   ids.forEach((id) => assert.deepEqual([db.wave2[id].round, db.wave2[id].status], [2, 'invited']));
   assert.ok(ids.every((id) => db.waveAnketas[id][2] && !db.waveAnketas[id].next), 'анкета переехала в волну');
   ids.forEach((id) => call(db, 'POST', '/api/wave2', { join: true }, as(id)));
@@ -184,7 +185,7 @@ test('лист ожидания → 3-я волна: анкета переезж
   call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
   assertValid(db, 2);
   // и сразу в 3-ю: двое записываются
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   [ids[0], ids[1]].forEach((id) => call(db, 'POST', '/api/wave-join', Object.assign({}, call(db, 'GET', '/api/me', null, as(id)).nextWave.anketa, { agree: true }), as(id)));
   call(db, 'POST', '/api/admin/shuffle', { round: 3 }, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 3 }, admin);
@@ -201,7 +202,7 @@ test('ограничения: без анкеты, бан, закрытая за
   const ids = [0, 1, 2].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   const r = call(db, 'POST', '/api/register', { name: 'Без', phone: '+79557088888', tg: 'wj_noform', password: 'qwerty1', pdConsent: true });
   assert.throws(() => call(db, 'POST', '/api/wave-join', { fullName: 'Без Анкеты', address: 'ПВЗ Ozon, Казань', agree: true }, as(r.user.id)), /Сначала заполните анкету/);
   assert.throws(() => call(db, 'POST', '/api/wave-join', { fullName: 'Участник Номер 0', address: 'ПВЗ Ozon, Казань', agree: false }, as(ids[0])), /Подтвердите участие/);

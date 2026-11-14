@@ -503,10 +503,8 @@
     const ws = e.target.closest('[data-ws]');
     if (ws) { if (menu) menu.hidden = true; setWave(ws.dataset.ws); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (e.target.closest('[data-ws-new]')) {
-      const last = (state.waves || [])[state.waves.length - 1];
       if (menu) menu.hidden = true;
-      if (!confirm(`Создать ${last.n + 1}-ю волну?\n\nДаты по умолчанию — сразу после окончания ${last.n}-й волны, 10 дней; их можно поменять. Новые участники будут записываться в эту волну, а лист ожидания получит приглашение подтвердить участие.`)) return;
-      if (await act('/api/admin/wave-create', {}, `${last.n + 1}-я волна создана 🌊`)) setWave(last.n + 1);
+      openNewWave();
       return;
     }
     const cf = e.target.closest('[data-wave-confirm]');
@@ -559,14 +557,63 @@
       act('/api/admin/wave-set', { n, action: wa.dataset.waveAct }, wa.dataset.waveAct === 'close' ? `${n}-я волна остановлена ⏹` : `${n}-я волна возобновлена ▶️`);
     }
   });
-  document.addEventListener('submit', (e) => {
+  document.addEventListener('submit', async (e) => {
     const f = e.target.closest('[data-wave-dates]');
     if (!f) return;
     e.preventDefault();
-    const body = { n: Number(f.dataset.waveDates), start: f.start.value + ':00+03:00', end: f.end.value + ':59+03:00' };
+    const n = Number(f.dataset.waveDates);
+    const before = (state.waves || []).find((w) => w.n === n) || {};
+    const body = { n, start: f.start.value + ':00+03:00', end: f.end.value + ':59+03:00' };
     if (f.drawAt) body.drawAt = f.drawAt.value ? f.drawAt.value + ':00+03:00' : '';
-    act('/api/admin/wave-set', body, 'Сохранено — на сайте даты уже обновились');
+    if (!(await act('/api/admin/wave-set', body, 'Сохранено — на сайте даты уже обновились'))) return;
+    // сроки поменялись — предложить сразу сообщить участникам волны
+    const changed = Date.parse(before.start) !== Date.parse(body.start) || Date.parse(before.end) !== Date.parse(body.end);
+    const ids = [...waveUserIds(n)];
+    if (changed && ids.length && confirm(`Сроки ${n}-й волны изменены. Сообщить об этом её участникам (${ids.length} чел.) — на сайт и в Telegram?\n\n«…сроки отправки подарков изменились 📅 Теперь отправка — с ${FX.fmtDate(body.start)} по ${FX.fmtDate(body.end)}…» + кнопка «🎁 Кому я дарю»`)) {
+      try {
+        const tpl = BC_TEMPLATES.find((t) => t.label.startsWith('📅'));
+        const r = await Api.post('/api/admin/broadcast', { text: tpl.text, userIds: ids, site: true, tg: true, buttons: [{ kind: 'whom' }] }, A);
+        FX.toast(`Уведомление о новых сроках отправлено: ${r.sent}`, 'success');
+        load();
+      } catch (ex) { FX.toast(ex.message, 'error'); }
+    }
   });
+  // новая волна: даты (и время автожеребьёвки) задаёт организатор
+  function openNewWave() {
+    const last = (state.waves || [])[state.waves.length - 1];
+    const n = last ? last.n + 1 : 1;
+    const w = document.createElement('div');
+    w.className = 'modal';
+    w.innerHTML = `<div class="modal-backdrop" data-nw-close></div><div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-nw-close aria-label="Закрыть">✕</button>
+      <div class="modal-head"><div class="modal-emoji">🌊</div><h3>Новая волна — ${n}-я</h3></div>
+      <form class="form" data-nw-form>
+        <p class="muted" style="margin:0">Укажите сроки — без них волна не создаётся. Новые участники будут записываться в неё, лист ожидания и участники прошлых волн получат приглашение.</p>
+        <div class="row2">
+          <label>Начало отправки (МСК)<input type="datetime-local" name="start" required></label>
+          <label>Конец отправки (МСК)<input type="datetime-local" name="end" required></label>
+        </div>
+        <label>🎲 Автожеребьёвка (МСК, необязательно)<input type="datetime-local" name="drawAt"></label>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">🌊 Создать ${n}-ю волну</button>
+      </form></div>`;
+    document.body.appendChild(w);
+    requestAnimationFrame(() => w.classList.add('open'));
+    const close = () => { w.classList.remove('open'); setTimeout(() => w.remove(), 250); };
+    w.querySelectorAll('[data-nw-close]').forEach((b) => b.addEventListener('click', close));
+    const f = w.querySelector('[data-nw-form]');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = f.querySelector('[data-err]');
+      if (!f.start.value || !f.end.value) { err.textContent = 'Укажите начало и конец отправки'; return; }
+      try {
+        state = await Api.post('/api/admin/wave-create', { start: f.start.value + ':00+03:00', end: f.end.value + ':59+03:00', drawAt: f.drawAt.value ? f.drawAt.value + ':00+03:00' : undefined }, A);
+        close();
+        setWave(n);
+        FX.toast(`${n}-я волна создана 🌊`, 'success');
+      } catch (ex) { err.textContent = ex.message; }
+    });
+  }
 
   // ---------- центр уведомлений ----------
   const BC_FILTERS = [
@@ -585,12 +632,13 @@
   ];
   // Готовые фразы. filters — какие фильтры «Кому» включить
   const BC_TEMPLATES = [
-    { label: '⏰ Напоминание о сроке', filters: ['notsent'], text: '{имя}, привет! Это организаторы Тайного Санты Кофеманьяков 🎅 Напоминаем: подарок нужно отправить до {срок} ({осталось}). Когда отправите — отметьте это в личном кабинете на santa.speccof.ru и добавьте трек-номер 🎁' },
-    { label: '📦 Вы уже отправили?', filters: ['notsent'], text: '{имя}, привет! Вы уже отправили подарок своему получателю? Если да — пожалуйста, отметьте отправку в личном кабинете на santa.speccof.ru (можно с трек-номером), чтобы получатель знал, что посылка в пути. Если ещё нет — срок до {срок} ({осталось}).' },
-    { label: '🔥 Срок прошёл', filters: ['notsent'], text: '{имя}, срок отправки подарка закончился {срок}, а отметки об отправке у нас нет 😟 Пожалуйста, отправьте подарок в ближайшие 2 дня и отметьте это в личном кабинете на santa.speccof.ru. Если что-то случилось — просто ответьте на это сообщение, мы поможем.' },
+    { label: '📅 Сроки волны изменены', filters: [], buttons: ['whom'], text: '{имя}, внимание: сроки отправки подарков изменились 📅 Теперь отправка — с {начало} по {срок} ({осталось}). Пожалуйста, успейте отправить подарок вовремя!' },
+    { label: '⏰ Напоминание о сроке', filters: ['notsent'], buttons: ['sent'], text: '{имя}, привет! Это организаторы Тайного Санты Кофеманьяков 🎅 Напоминаем: подарок нужно отправить до {срок} ({осталось}). Когда отправите — отметьте это в личном кабинете на santa.speccof.ru и добавьте трек-номер 🎁' },
+    { label: '📦 Вы уже отправили?', filters: ['notsent'], buttons: ['sent'], text: '{имя}, привет! Вы уже отправили подарок своему получателю? Если да — пожалуйста, отметьте отправку в личном кабинете на santa.speccof.ru (можно с трек-номером), чтобы получатель знал, что посылка в пути. Если ещё нет — срок до {срок} ({осталось}).' },
+    { label: '🔥 Срок прошёл', filters: ['notsent'], buttons: ['sent'], text: '{имя}, срок отправки подарка закончился {срок}, а отметки об отправке у нас нет 😟 Пожалуйста, отправьте подарок в ближайшие 2 дня и отметьте это в личном кабинете на santa.speccof.ru. Если что-то случилось — просто ответьте на это сообщение, мы поможем.' },
     { label: '🛑 Последнее предупреждение', filters: ['notsent'], text: '{имя}, это последнее напоминание: подарок так и не отправлен. Если до завтра отправки не будет, мы передадим вашего получателя другому Санте, а вы попадёте в чёрный список Тайного Санты Кофеманьяков 🛑 Если есть уважительная причина — ответьте на это сообщение.' },
-    { label: '📝 Заполните анкету', filters: ['noform'], text: '{имя}, привет! Вы зарегистрировались в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть 🎅 Заполните её на santa.speccof.ru (раздел «Личный кабинет»).' },
-    { label: '🎁 Отметьте получение', filters: ['waiting'], text: '{имя}, привет! Ваш Тайный Санта уже отправил вам подарок 🎁 Когда получите посылку — отметьте это в личном кабинете на santa.speccof.ru. Спасибо!' },
+    { label: '📝 Заполните анкету', filters: ['noform'], buttons: ['form'], text: '{имя}, привет! Вы зарегистрировались в Тайном Санте Кофеманьяков, но не заполнили анкету — без неё в жеребьёвку не попасть 🎅 Заполните её на santa.speccof.ru (раздел «Личный кабинет»).' },
+    { label: '🎁 Отметьте получение', filters: ['waiting'], buttons: ['received'], text: '{имя}, привет! Ваш Тайный Санта уже отправил вам подарок 🎁 Когда получите посылку — отметьте это в личном кабинете на santa.speccof.ru. Спасибо!' },
   ];
   $('[data-bc-tpl]').innerHTML = BC_TEMPLATES.map((t, i) => `<button type="button" class="chip chip-btn" data-tpl="${i}"><span>${t.label}</span></button>`).join('');
   document.addEventListener('click', (e) => {
@@ -601,6 +649,7 @@
     if (f.text.value.trim() && f.text.value !== f.text.dataset.tpl && !confirm('Заменить написанный текст готовой фразой?')) return;
     f.text.value = t.text;
     f.text.dataset.tpl = t.text;
+    setBcButtons(t.buttons || []);
     // включаем подходящие фильтры «Кому»
     bcActive.clear();
     t.filters.forEach((k) => bcActive.add(k));
@@ -609,6 +658,21 @@
     renderBroadcast();
     FX.toast('Фраза вставлена, получатели отобраны по фильтру — проверьте список', 'success');
   });
+  // кнопки под рассылкой
+  const BC_BUTTONS = [['whom', '🎁 Кому я дарю'], ['sent', '📦 Я отправил подарок'], ['received', '🎉 Я получил подарок'], ['wave', '🌊 Следующие волны'], ['form', '📝 Моя анкета'], ['site', '🌐 Открыть сайт'], ['link', '🔗 Своя ссылка']];
+  $('[data-bc-buttons]').innerHTML = BC_BUTTONS.map(([k, l]) => `<label class="chip"><input type="checkbox" data-bc-btn="${k}"><span>${l}</span></label>`).join('');
+  const setBcButtons = (kinds) => { $$('[data-bc-btn]').forEach((x) => { x.checked = kinds.includes(x.dataset.bcBtn); }); $('[data-bc-link]').hidden = !kinds.includes('link'); };
+  document.addEventListener('change', (e) => { if (e.target.closest('[data-bc-btn="link"]')) $('[data-bc-link]').hidden = !e.target.checked; });
+  function bcButtons() {
+    const f = $('[data-bc-form]');
+    const list = $$('[data-bc-btn]:checked').map((x) => x.dataset.bcBtn).filter((k) => k !== 'link').map((kind) => ({ kind }));
+    if ($('[data-bc-btn="link"]').checked) {
+      const url = f.linkUrl.value.trim();
+      if (!/^https:\/\//i.test(url)) throw new Error('Своя ссылка: укажите адрес, начинающийся с https://');
+      list.push({ text: f.linkText.value.trim() || 'Открыть', url });
+    }
+    return list;
+  }
   const bcActive = new Set();
   const bcPicked = new Set();
   let bcTouched = false; // пока галочки не трогали руками — список следует за фильтрами
@@ -636,7 +700,7 @@
       <td style="white-space:nowrap">${FX.fmtDateTime(b.at)}</td>
       <td style="white-space:pre-line">${esc(b.text)}</td>
       <td>${b.count}<small>${esc((b.to || []).slice(0, 6).join(' '))}${(b.to || []).length > 6 ? ' …' : ''}</small></td>
-      <td>${b.site ? '🌐' : ''} ${b.tg ? '✈️' : ''} ${b.userTg ? '👤' : ''}</td>
+      <td>${b.site ? '🌐' : ''} ${b.tg ? '✈️' : ''} ${b.userTg ? '👤' : ''}${(b.buttons || []).length ? `<small>кнопки: ${b.buttons.map((x) => esc(x.text)).join(', ')}</small>` : ''}</td>
       <td>${b.userTg ? `${b.uSent || 0} из ${b.uTotal || 0}${b.uQueued ? `<small>⏳ в очереди: ${b.uQueued}</small>` : ''}${b.uFailed ? `<small class="bad" title="${esc((b.uErrors || []).join('\n'))}">не доставлено: ${b.uFailed}</small><small>${esc((b.uErrors || []).slice(0, 4).join('; '))}</small>` : ''}` : '—'}</td>
       <td><button class="btn btn-danger btn-sm" data-bc-del="${b.id}" title="Удалить из кабинетов">🗑</button></td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">Рассылок пока не было.</td></tr>';
@@ -663,10 +727,11 @@
     const where = [f.site.checked && 'на сайт', f.tg.checked && 'в Telegram-бот', f.userTg.checked && `с аккаунта организатора (${noBot} без бота)`].filter(Boolean).join(', ');
     if (!confirm(`Отправить уведомление ${n} ${SantaCore.plural(n, 'человеку', 'людям', 'людям')}: ${where}?` + (f.userTg.checked && noBot ? `\n\nС личного аккаунта сообщения уходят по одному раз в 30–60 секунд (до 40 в сутки), чтобы Telegram не заблокировал аккаунт.` : ''))) return;
     try {
-      const r = await Api.post('/api/admin/broadcast', { text, userIds: [...bcPicked], site: f.site.checked, tg: f.tg.checked, userTg: f.userTg.checked }, A);
+      const r = await Api.post('/api/admin/broadcast', { text, userIds: [...bcPicked], site: f.site.checked, tg: f.tg.checked, userTg: f.userTg.checked, buttons: bcButtons() }, A);
       FX.toast(`Отправлено: ${r.sent}` + (r.viaUser ? ` · с аккаунта организатора в очереди: ${r.viaUser}` : ''), 'success');
       f.text.value = '';
       delete f.text.dataset.tpl;
+      setBcButtons([]);
       await load();
     } catch (ex) { FX.toast(ex.message, 'error'); }
   });

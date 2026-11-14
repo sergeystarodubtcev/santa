@@ -452,10 +452,21 @@
     $$('[data-open-part]', host).forEach((b) => b.addEventListener('click', openPart));
   }
 
+  // кнопки из рассылки организаторов
+  function notifButtons(list) {
+    if (!list || !list.length) return '';
+    const HREF = { whom: '#give', sent: '#give', received: '#gift', site: './' };
+    return `<div class="notif-btns">${list.map((b) => b.url
+      ? `<a class="btn btn-ghost btn-sm" href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.text)}</a>`
+      : b.kind === 'wave' ? `<button class="btn btn-ghost btn-sm" type="button" data-wave-join>${esc(b.text)}</button>`
+      : b.kind === 'form' ? `<button class="btn btn-ghost btn-sm" type="button" data-notif-form>${esc(b.text)}</button>`
+      : `<a class="btn btn-ghost btn-sm" href="${HREF[b.kind] || '#'}">${esc(b.text)}</a>`).join('')}</div>`;
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-notif-form]')) openPart(); });
   function renderNotifs() {
     const list = me.notifications;
     $('[data-notifs]').innerHTML = list.length
-      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
+      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}${notifButtons(n.buttons)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
       : '<li>Пока тихо. Как будто перед большим завозом зерна.</li>';
     if (list.some((n) => !n.read)) setTimeout(() => Api.post('/api/notifications/read').catch(() => {}), 2500);
   }

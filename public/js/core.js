@@ -220,7 +220,8 @@
     return String(text)
       .replace(/\{имя\}/gi, firstName(u.name) || u.name)
       .replace(/\{срок\}/gi, fmtDay(datesFor(db, round).end))
-      .replace(/\{осталось\}/gi, left);
+      .replace(/\{осталось\}/gi, left)
+      .replace(/\{начало\}/gi, fmtDay(datesFor(db, round).start));
   }
 
   // Фото к посылке (QR-код, чек): data:URL картинки, до ~1,5 МБ
@@ -237,6 +238,22 @@
     if (!p) return false;
     if (isAdmin) return true;
     return !!uid && published(db, pairRound(p)) && (p.santaId === uid || (p.recipientId === uid && p.status !== 'assigned'));
+  }
+
+  // Кнопки под рассылкой: действия бота/кабинета или своя ссылка (до 4 штук)
+  const BUTTON_KINDS = { whom: '🎁 Кому я дарю', sent: '📦 Я отправил подарок', received: '🎉 Я получил подарок', wave: '🌊 Следующие волны', form: '📝 Моя анкета', site: '🌐 Открыть сайт' };
+  function cleanButtons(list) {
+    if (!Array.isArray(list)) return [];
+    const outB = [];
+    for (const b of list.slice(0, 6)) {
+      if (b && BUTTON_KINDS[b.kind]) { if (!outB.some((x) => x.kind === b.kind)) outB.push({ kind: b.kind, text: BUTTON_KINDS[b.kind] }); }
+      else if (b && b.url) {
+        const url = str(b.url, 300);
+        if (!/^https:\/\/[^\s<>"]+$/i.test(url)) fail(400, 'Ссылка для кнопки должна начинаться с https://');
+        outB.push({ text: str(b.text, 40) || 'Открыть', url });
+      }
+    }
+    return outB.slice(0, 4);
   }
 
   // Состояние аккаунта организатора для админки — без сессии, кода и пароля
@@ -668,14 +685,16 @@
     const last = lastWave(db);
     if (last && (last.status === 'open' || last.status === 'drawing')) fail(409, `Сначала проведите и подтвердите жеребьёвку или остановите ${waveTo(last.n)}`);
     const n = last ? last.n + 1 : 1;
-    const day = 86400e3;
-    const msk = (t) => new Date(t + 3 * 3600e3).toISOString().slice(0, 10);
-    const startT = body.start ? Date.parse(body.start) : Date.parse(last.end) + 1000;
-    const endT = body.end ? Date.parse(body.end) : startT + 9 * day;
-    if (isNaN(startT) || isNaN(endT) || endT <= startT) fail(400, 'Проверьте даты волны');
-    const start = body.start || msk(startT) + 'T00:00:00+03:00';
-    const end = body.end || msk(endT) + 'T23:59:59+03:00';
-    db.waves.push({ n, start, end, status: 'open', drawnAt: null, createdAt: ctx.now() });
+    // даты задаёт организатор — сами ничего не придумываем
+    if (!body.start || !body.end) fail(400, 'Укажите даты отправки подарков для новой волны');
+    const startT = Date.parse(body.start);
+    const endT = Date.parse(body.end);
+    if (isNaN(startT) || isNaN(endT)) fail(400, 'Проверьте даты волны');
+    if (endT <= startT) fail(400, 'Конец отправки раньше начала');
+    if (body.drawAt && isNaN(Date.parse(body.drawAt))) fail(400, 'Неверное время жеребьёвки');
+    const start = body.start;
+    const end = body.end;
+    db.waves.push({ n, start, end, status: 'open', drawnAt: null, createdAt: ctx.now(), drawAt: body.drawAt || null });
     let invited = 0;
     for (const uid of Object.keys(db.wave2 || {})) {
       const w = db.wave2[uid];
@@ -1325,6 +1344,7 @@
         const site = body.site !== false;
         const tg = body.tg !== false;
         const viaUser = !!body.userTg; // с аккаунта организатора — тем, у кого нет бота
+        const buttons = cleanButtons(body.buttons);
         if (!site && !tg && !viaUser) fail(400, 'Выберите, куда отправить: на сайт и/или в Telegram');
         if (viaUser && db.settings.userTg === false) fail(400, 'Отправка с аккаунта организатора выключена — включите её в блоке «Аккаунт организатора»');
         if (viaUser && !['ready', 'limited'].includes((db.userAcc || {}).status)) fail(400, 'Аккаунт организатора не подключён — подключите его в блоке «Аккаунт организатора»');
@@ -1340,16 +1360,20 @@
             notify(db, ctx, u.id, personal, 'admin');
             const n = db.notifications[db.notifications.length - 1];
             n.broadcastId = id;
+            if (buttons.length) n.buttons = buttons;
             if (!site) n.hideOnSite = true;
             if (!tg) n.noTg = true;
           }
           if (viaUser && !u.tgChatId) {
-            db.userOutbox = (db.userOutbox || []).concat({ id: newId(ctx), broadcastId: id, userId: u.id, tg: u.tg, text: personal, status: 'queued', at: ctx.now() });
+            // с личного аккаунта кнопок не бывает — ссылки дописываем текстом
+            const links = buttons.filter((b) => b.url).map((b) => `${b.text}: ${b.url}`).join('\n');
+            db.userOutbox = (db.userOutbox || []).concat({ id: newId(ctx), broadcastId: id, userId: u.id, tg: u.tg, text: personal + (links ? '\n\n' + links : ''), status: 'queued', at: ctx.now() });
             uTotal++;
           }
         });
         db.broadcasts = (db.broadcasts || []).concat({
           id, text, at: ctx.now(), site, tg, count: targets.length, to: targets.slice(0, 40).map((u) => '@' + u.tg),
+          buttons: buttons.length ? buttons : undefined,
           userTg: viaUser || undefined, uTotal: viaUser ? uTotal : undefined, uSent: viaUser ? 0 : undefined, uFailed: viaUser ? 0 : undefined,
         }).slice(-100);
         return ok({ sent: targets.length, id, viaUser: uTotal }, true);
@@ -1416,5 +1440,5 @@
     }
   }
 
-  return { handle, parsePhoto, photoAccess, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, BUTTON_KINDS, parsePhoto, photoAccess, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

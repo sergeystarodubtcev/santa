@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 const { createBot } = require('../cloud/bot.js');
 
 let clock = Date.parse('2026-12-05T12:00:00+03:00');
@@ -103,7 +104,7 @@ test('бот организатора: свой текст, текст для о
 
 test('бот организатора: черновик жеребьёвки и вторая волна в статусе', () => {
   const { db } = seed();
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   let r = msg(db, ADMIN, '📊 Статус');
   assert.match(texts(r), /Волна 2<\/b> · 📝 идёт запись/);
   assert.ok(buttons(r).includes('adm:st:1') && buttons(r).includes('adm:st:2'), 'переключатель волн');

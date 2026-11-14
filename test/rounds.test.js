@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 const { createBot } = require('../cloud/bot.js');
 
 let clock = Date.parse('2026-11-20T12:00:00+03:00');
@@ -25,7 +26,7 @@ test('второй круг: запись после первой жеребьё
   const first = [0, 1, 2].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   const late = [3, 4, 5].map((i) => user(db, i));
   late.forEach((id) => assert.equal(db.participations[id].round, 2));
   assert.equal(call(db, 'GET', '/api/admin/state', null, admin).stats.round2, 3);
@@ -59,7 +60,7 @@ test('второй круг: запись после первой жеребьё
   assert.equal(call(db, 'GET', '/api/admin/state', null, admin).stats.round1, 3, 'лист ожидания не попадает в первую волну');
   // нельзя сбросить вторую волну, когда создана третья; третья — только когда вторая разыграна
   call(db, 'POST', '/api/admin/wave-create', { start: '2026-12-21T00:00:00+03:00', end: '2026-12-30T23:59:59+03:00' }, admin);
-  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', {}, admin), /Сначала проведите и подтвердите жеребьёвку или остановите/);
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', W2DATES, admin), /Сначала проведите и подтвердите жеребьёвку или остановите/);
   assert.throws(() => call(db, 'POST', '/api/admin/reset', { round: 2 }, admin), /следующая волна/);
   assert.deepEqual([db.wave2[r.user.id].status, db.wave2[r.user.id].round], ['invited', 3], 'лист ожидания получил приглашение в 3-ю волну');
   assert.equal(db.notifications.filter((x) => x.userId === r.user.id).pop().action, 'wave2');

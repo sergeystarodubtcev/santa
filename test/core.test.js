@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const core = require('../public/js/core.js');
+const W2DATES = { start: '2026-12-11T00:00:00+03:00', end: '2026-12-20T23:59:59+03:00' };
 
 let clock = Date.parse('2026-11-20T12:00:00+03:00');
 let tokens = {};
@@ -89,7 +90,7 @@ test('забаненные не участвуют, после жеребьёв�
   assert.equal(call(db, 'GET', '/api/public').count, 3);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
-  call(db, 'POST', '/api/admin/wave-create', {}, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
   assert.equal(db.pairs.length, 3);
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
   const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79995550000', tg: 'late_one', password: 'secret1', pdConsent: true });
