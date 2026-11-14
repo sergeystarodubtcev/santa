@@ -57,6 +57,7 @@
       drawn2At: null,
       // Волны: { n, start, end, status: open (запись) | drawn (пары розданы) | closed (остановлена), drawnAt, closedAt }
       waves: [{ n: 1, start: DEFAULT_SETTINGS.sendStart, end: DEFAULT_SETTINGS.sendEnd, status: 'open', drawnAt: null }],
+      wavesV2: true, // у волн есть подтверждение жеребьёвки (confirmedAt)
       // Участники волн 2+ — «подтаблица»: { [userId]: { round, status, reason, priority, addedAt, confirmedAt } }
       // status: waiting (лист ожидания следующей волны) | invited (ждём подтверждения) | confirmed | declined
       wave2: {},
@@ -93,6 +94,11 @@
       if (p && p.round === 2 && !db.wave2[uid]) db.wave2[uid] = { round: 2, status: 'invited', reason: 'new', priority: 0, addedAt: p.joinedAt || 0 };
     }
     for (const w of Object.values(db.wave2)) if (w && w.round === undefined) w.round = w.status === 'waiting' ? null : 2;
+    // раньше жеребьёвка публиковалась сразу — такие волны считаем подтверждёнными
+    if (!db.wavesV2) {
+      db.waves.forEach((w) => { if (w.drawnAt && !w.confirmedAt) w.confirmedAt = w.drawnAt; });
+      db.wavesV2 = true;
+    }
     return db;
   }
 
@@ -152,10 +158,13 @@
     const w = waveOf(db, n);
     if (!w) return;
     w.drawnAt = at || null;
-    if (w.status !== 'closed') w.status = at ? 'drawn' : 'open';
+    w.confirmedAt = null; // новые пары участники увидят только после подтверждения организатором
+    if (w.status !== 'closed') w.status = at ? 'drawing' : 'open';
     if (n === 1) db.drawnAt = at || null; // совместимость: «первая жеребьёвка прошла»
     if (n === 2) db.drawn2At = at || null;
   }
+  // Пары волны видны участникам только после подтверждения организатором
+  const published = (db, n) => { const w = waveOf(db, n); return !!(w && w.confirmedAt); };
   function datesFor(db, n) {
     const w = waveOf(db, n) || waveOf(db, 1) || { start: db.settings.sendStart, end: db.settings.sendEnd };
     return { start: w.start, end: w.end };
@@ -184,11 +193,11 @@
   // У «пострадавшего» пары могут быть в обоих кругах — берём актуальную.
   const byRoundDesc = (a, b) => pairRound(b) - pairRound(a);
   function outPair(db, uid) {
-    const list = db.pairs.filter((p) => p.santaId === uid).sort(byRoundDesc);
+    const list = db.pairs.filter((p) => p.santaId === uid && published(db, pairRound(p))).sort(byRoundDesc);
     return list.find((p) => p.status === 'assigned') || list[0] || null;
   }
   function inPair(db, uid) {
-    const list = db.pairs.filter((p) => p.recipientId === uid).sort(byRoundDesc);
+    const list = db.pairs.filter((p) => p.recipientId === uid && published(db, pairRound(p))).sort(byRoundDesc);
     return list.find((p) => !p.failed) || list[0] || null;
   }
 
@@ -338,7 +347,7 @@
     if (!existing && !db.settings.regOpen) fail(409, 'Регистрация закрыта');
     // после первой жеребьёвки новые участники записываются в открытую волну или в лист ожидания следующей
     let round = existing ? roundOf(existing) : 1;
-    if (!existing && db.drawnAt) {
+    if (!existing && (waveOf(db, 1) || {}).status !== 'open') {
       if (!db.settings.round2Open) fail(409, 'Первая жеребьёвка уже прошла, а запись в следующую волну пока закрыта');
       const ow = openWave(db);
       round = ow ? ow.n : 0;
@@ -402,7 +411,7 @@
     const wave = waveOf(db, round);
     if (!wave) fail(404, 'Такой волны нет');
     if (wave.status === 'closed') fail(409, 'Волна остановлена — сначала возобновите её');
-    if (round > 1 && !drawnFor(db, round - 1) && (waveOf(db, round - 1) || {}).status !== 'closed') fail(400, 'Сначала проведите жеребьёвку предыдущей волны');
+    if (round > 1 && !published(db, round - 1) && (waveOf(db, round - 1) || {}).status !== 'closed') fail(400, 'Сначала проведите и подтвердите жеребьёвку предыдущей волны');
     const people = approvedParticipants(db, round);
     if (people.length < 2) fail(400, `Нужно минимум 2 участника${round > 1 ? ' в ' + waveIn(round) : ''}, одобренных модерацией`);
     if (db.pairs.some((p) => pairRound(p) === round && p.status !== 'assigned') && !(body && body.force)) {
@@ -437,11 +446,108 @@
     }));
     db.pairs = db.pairs.filter((p) => pairRound(p) !== round).concat(fresh);
     setDrawn(db, round, ctx.now());
+    // участникам пока ничего не показываем и не пишем — сначала организатор проверяет и подтверждает пары
+    notifyAdmins(db, ctx, `🎲 Жеребьёвка ${round}-й волны готова: ${fresh.length} пар. Участники их пока не видят — проверьте пары в админке и нажмите «✅ Подтвердить жеребьёвку».`);
+    return { pairs: fresh.length };
+  }
+
+  // Проверка пар волны: каждый участник ровно один раз дарит и ровно один раз получает, никто не дарит сам себе
+  function checkWave(db, n) {
+    const pairs = db.pairs.filter((p) => pairRound(p) === n);
+    const members = new Set(approvedParticipants(db, n).map((u) => u.id));
+    const errs = [];
+    const out = {};
+    const inc = {};
+    for (const p of pairs) {
+      if (p.santaId === p.recipientId) errs.push(`${nick(db, p.santaId)} дарит сам себе`);
+      out[p.santaId] = (out[p.santaId] || 0) + 1;
+      inc[p.recipientId] = (inc[p.recipientId] || 0) + 1;
+    }
+    Object.keys(out).filter((id) => out[id] > 1).forEach((id) => errs.push(`${nick(db, id)} дарит несколько раз`));
+    Object.keys(inc).filter((id) => inc[id] > 1).forEach((id) => errs.push(`${nick(db, id)} получает от нескольких Сант`));
+    members.forEach((id) => {
+      if (!out[id]) errs.push(`${nick(db, id)} никому не дарит`);
+      if (!inc[id]) errs.push(`${nick(db, id)} ни от кого не получает`);
+    });
+    return errs;
+  }
+
+  // Подтверждение жеребьёвки: только теперь участники видят получателей и получают уведомления
+  function confirmDraw(db, ctx, n) {
+    const w = waveOf(db, n);
+    if (!w) fail(404, 'Такой волны нет');
+    if (w.status !== 'drawing') fail(409, w.confirmedAt ? 'Жеребьёвка этой волны уже подтверждена' : 'Сначала проведите жеребьёвку');
+    const errs = checkWave(db, n);
+    if (errs.length) fail(409, 'Пары с ошибками — исправьте перед подтверждением: ' + errs.slice(0, 5).join('; '));
+    w.status = 'drawn';
+    w.confirmedAt = ctx.now();
+    const fresh = db.pairs.filter((p) => pairRound(p) === n);
     for (const p of fresh) {
-      notify(db, ctx, p.santaId, (round > 1 ? `Жеребьёвка ${round}-й волны проведена!` : 'Жеребьёвка проведена!') + ' Загляните в «Кому я дарю» — там имя и адрес получателя 🎁'
+      notify(db, ctx, p.santaId, (n > 1 ? `Жеребьёвка ${n}-й волны проведена!` : 'Жеребьёвка проведена!') + ' Загляните в «Кому я дарю» — там пожелания и данные получателя 🎁'
         + (p.priority ? ' ⭐ Ваш получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : ''), 'success', 'whom');
     }
+    notifyAdmins(db, ctx, `✅ Жеребьёвка ${n}-й волны подтверждена: участники видят своих получателей (${fresh.length} пар).`);
     return { pairs: fresh.length };
+  }
+
+  // «Изменить пару» до подтверждения: человек меняется парой со случайной другой парой той же волны.
+  // side = 'santa' — новый получатель у этого Санты; 'recipient' — новый Санта у этого получателя.
+  // Обмен получателями между двумя парами сохраняет правило «каждый дарит один раз и получает один раз».
+  function swapPair(db, ctx, body) {
+    const n = Number(body.round) || 1;
+    const w = waveOf(db, n);
+    if (!w) fail(404, 'Такой волны нет');
+    if (w.status !== 'drawing') fail(409, 'Менять пары кнопкой можно только до подтверждения жеребьёвки');
+    const pairs = db.pairs.filter((p) => pairRound(p) === n);
+    const P = pairs.find((p) => (body.side === 'recipient' ? p.recipientId : p.santaId) === body.userId);
+    if (!P) fail(404, 'Пара не найдена');
+    const rnd = ctx.random || Math.random;
+    const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+    const others = pairs.filter((q) => q !== P);
+    const before = pairs.map((p) => p.santaId + '>' + p.recipientId);
+    const mutual = (a, b) => pairs.some((x) => x.santaId === b && x.recipientId === a);
+    // 1) обмен с одной парой
+    let swaps = others.filter((q) => q.recipientId !== P.santaId && P.recipientId !== q.santaId);
+    const noMutual = swaps.filter((q) => !mutual(P.santaId, q.recipientId) && !mutual(q.santaId, P.recipientId));
+    if (noMutual.length) swaps = noMutual;
+    if (swaps.length) {
+      const Q = pick(swaps);
+      [P.recipientId, Q.recipientId] = [Q.recipientId, P.recipientId];
+      [P, Q].forEach((x) => { x.swappedAt = ctx.now(); x.priority = n > 1 && w2prio(db, x.recipientId) > 0 ? true : undefined; });
+    } else {
+      // 2) мало людей (например, трое): поворачиваем получателей трёх пар
+      const triples = [];
+      for (const Q of others) for (const R of others) {
+        if (Q === R) continue;
+        if (P.santaId !== Q.recipientId && Q.santaId !== R.recipientId && R.santaId !== P.recipientId) triples.push([Q, R]);
+      }
+      if (!triples.length) fail(409, 'Поменять не с кем: в волне слишком мало участников');
+      const [Q, R] = pick(triples);
+      const [a, b, c] = [Q.recipientId, R.recipientId, P.recipientId];
+      P.recipientId = a; Q.recipientId = b; R.recipientId = c;
+      [P, Q, R].forEach((x) => { x.swappedAt = ctx.now(); x.priority = n > 1 && w2prio(db, x.recipientId) > 0 ? true : undefined; });
+    }
+    const errs = checkWave(db, n);
+    if (errs.length) fail(500, 'Внутренняя ошибка обмена: ' + errs.join('; '));
+    const after = pairs.map((p) => p.santaId + '>' + p.recipientId);
+    const changed = pairs.filter((p, i) => before[i] !== after[i]);
+    notifyAdmins(db, ctx, `🔄 Пары ${n}-й волны изменены (до подтверждения): ` + changed.map((p) => `${nick(db, p.santaId)} → ${nick(db, p.recipientId)}`).join(', '));
+    return { changed: changed.map((p) => ({ santaId: p.santaId, recipientId: p.recipientId })) };
+  }
+
+  // Автожеребьёвка в назначенное время (wave.drawAt, например 00:00): создаёт черновик пар.
+  function tick(db, ctx) {
+    let changed = false;
+    for (const w of db.waves || []) {
+      if (w.status !== 'open' || !w.drawAt || w.drawAtDone || ctx.now() < Date.parse(w.drawAt)) continue;
+      w.drawAtDone = ctx.now();
+      changed = true;
+      try { shuffle(db, ctx, { round: w.n }); } catch (e) {
+        if (!(e instanceof SantaError)) throw e;
+        notifyAdmins(db, ctx, `⚠️ Автожеребьёвка ${w.n}-й волны не прошла: ${e.message}`);
+      }
+    }
+    return changed;
   }
 
   // Второй круг: участникам с приоритетом (пострадавшим) — надёжных Сант, тех, кто уже отправил подарок в первом круге.
@@ -475,6 +581,7 @@
   }
 
   function resetDraw(db, body) {
+    // сброс возвращает волну к записи; участники снова видят «конверт запечатан»
     const round = Number(body && body.round) || 1;
     const wave = waveOf(db, round);
     if (!wave) fail(404, 'Такой волны нет');
@@ -487,7 +594,7 @@
   // Лист ожидания получает приглашение подтвердить участие.
   function createWave(db, ctx, body) {
     const last = lastWave(db);
-    if (last && last.status === 'open') fail(409, `Сначала проведите жеребьёвку или остановите ${waveTo(last.n)}`);
+    if (last && (last.status === 'open' || last.status === 'drawing')) fail(409, `Сначала проведите и подтвердите жеребьёвку или остановите ${waveTo(last.n)}`);
     const n = last ? last.n + 1 : 1;
     const day = 86400e3;
     const msk = (t) => new Date(t + 3 * 3600e3).toISOString().slice(0, 10);
@@ -582,6 +689,7 @@
     const incoming = inPair(db, userId);
     if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt, failed: !!incoming.failed && incoming.status === 'assigned', round: pairRound(incoming) };
     out.deadline = deadlineNotice(db, now, mine);
+    out.drawing = db.pairs.some((p) => (p.santaId === userId || p.recipientId === userId) && (waveOf(db, pairRound(p)) || {}).status === 'drawing');
     out.notifications = db.notifications.filter((n) => (n.userId === userId || n.userId === '*') && !n.hideOnSite).slice(-30).reverse();
     out.settings = publicSettings(db);
     return out;
@@ -593,7 +701,7 @@
     const ow = openWave(db);
     return { regOpen: s.regOpen, sendStart: w1.start, sendEnd: w1.end, budgetMin: s.budgetMin, budgetMax: s.budgetMax, announcement: s.announcement, chatUrl: s.chatUrl, moderation: !!s.moderation,
       round2Open: !!s.round2Open,
-      waves: (db.waves || []).map((w) => ({ n: w.n, start: w.start, end: w.end, status: w.status })),
+      waves: (db.waves || []).map((w) => ({ n: w.n, start: w.start, end: w.end, status: w.status, drawAt: w.drawAt || null, confirmed: !!w.confirmedAt })),
       openWave: ow ? ow.n : null };
   }
 
@@ -629,6 +737,8 @@
       drawn: !!db.drawnAt,
       drawn2: !!db.drawn2At,
       openWave: (openWave(db) || {}).n || null,
+      drawing: ((db.waves || []).find((w) => w.status === 'drawing') || {}).n || null,
+      confirmed: ((db.waves || []).filter((w) => w.confirmedAt).pop() || {}).n || null,
       sent: db.pairs.filter((p) => p.status !== 'assigned').length,
       settings: publicSettings(db),
     };
@@ -940,6 +1050,12 @@
         return ok(adminState(db), changes.length > 0);
       }
       case 'POST /api/admin/wave-create': needAdmin(); createWave(db, ctx, body); return ok(adminState(db), true);
+      case 'POST /api/admin/wave-confirm': needAdmin(); confirmDraw(db, ctx, Number(body.n) || 1); return ok(adminState(db), true);
+      case 'POST /api/admin/pair-swap': {
+        needAdmin();
+        const r = swapPair(db, ctx, body);
+        return ok(Object.assign(adminState(db), { swapped: r.changed }), true);
+      }
       case 'POST /api/admin/wave-set': {
         // даты волны и остановка/возобновление
         needAdmin();
@@ -949,7 +1065,13 @@
           if (body[k]) { if (isNaN(Date.parse(body[k]))) fail(400, 'Неверная дата'); w[k] = body[k]; }
         }
         if (Date.parse(w.end) <= Date.parse(w.start)) fail(400, 'Конец отправки раньше начала');
+        if ('drawAt' in body) {
+          if (body.drawAt && isNaN(Date.parse(body.drawAt))) fail(400, 'Неверное время жеребьёвки');
+          w.drawAt = body.drawAt || null;
+          delete w.drawAtDone;
+        }
         if (w.n === 1) { db.settings.sendStart = w.start; db.settings.sendEnd = w.end; }
+        if (body.action === 'close' && w.status === 'drawing') fail(409, 'Сначала подтвердите или сбросьте жеребьёвку');
         if (body.action === 'close' && w.status !== 'closed') {
           w.status = 'closed'; w.closedAt = ctx.now();
           notifyAdmins(db, ctx, `⏹ ${waveName(w.n)} остановлена: напоминания этой волны больше не отправляются.`);
@@ -967,6 +1089,7 @@
         const r = Number(body.round) || null;
         const pair = db.pairs.find((p) => p.santaId === body.santaId && (r ? pairRound(p) === r : true) && p.status === 'assigned');
         if (!pair) fail(404, 'Пара не найдена или Санта уже отметил отправку');
+        if (!published(db, pairRound(pair))) fail(409, 'Жеребьёвка этой волны ещё не подтверждена');
         const ow = openWave(db);
         const target = ow && ow.n > pairRound(pair) && !ow.drawnAt ? ow.n : null;
         const victim = getUser(db, pair.recipientId);
@@ -1145,5 +1268,5 @@
     }
   }
 
-  return { handle, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });

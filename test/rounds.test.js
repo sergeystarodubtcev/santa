@@ -24,6 +24,7 @@ test('второй круг: запись после первой жеребьё
   const db = core.emptyDb();
   const first = [0, 1, 2].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const late = [3, 4, 5].map((i) => user(db, i));
   late.forEach((id) => assert.equal(db.participations[id].round, 2));
@@ -31,6 +32,7 @@ test('второй круг: запись после первой жеребьё
   // во втором круге своя жеребьёвка, первый круг не трогаем
   const pairs1 = JSON.stringify(db.pairs);
   call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
   assert.equal(db.pairs.length, 6);
   assert.equal(JSON.stringify(db.pairs.filter((p) => p.round !== 2)), pairs1);
   for (const p of db.pairs.filter((x) => x.round === 2)) {
@@ -47,6 +49,7 @@ test('второй круг: запись после первой жеребьё
   assert.equal(db.pairs.length, 3);
   assert.ok(db.drawnAt && !db.drawn2At);
   call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
   // после жеребьёвки второй волны открытой волны нет — новички в лист ожидания
   const r = call(db, 'POST', '/api/register', { name: 'Late', phone: '+79551999999', tg: 'very_late', password: 'qwerty1', pdConsent: true });
   assert.throws(() => call(db, 'POST', '/api/participate', { fullName: 'Поздний', address: 'ПВЗ Ozon, Казань', agree: true }, { userId: r.user.id }), /следующей волне/);
@@ -56,7 +59,7 @@ test('второй круг: запись после первой жеребьё
   assert.equal(call(db, 'GET', '/api/admin/state', null, admin).stats.round1, 3, 'лист ожидания не попадает в первую волну');
   // нельзя сбросить вторую волну, когда создана третья; третья — только когда вторая разыграна
   call(db, 'POST', '/api/admin/wave-create', { start: '2026-12-21T00:00:00+03:00', end: '2026-12-30T23:59:59+03:00' }, admin);
-  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', {}, admin), /Сначала проведите жеребьёвку или остановите/);
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', {}, admin), /Сначала проведите и подтвердите жеребьёвку или остановите/);
   assert.throws(() => call(db, 'POST', '/api/admin/reset', { round: 2 }, admin), /следующая волна/);
   assert.deepEqual([db.wave2[r.user.id].status, db.wave2[r.user.id].round], ['invited', 3], 'лист ожидания получил приглашение в 3-ю волну');
   assert.equal(db.notifications.filter((x) => x.userId === r.user.id).pop().action, 'wave2');

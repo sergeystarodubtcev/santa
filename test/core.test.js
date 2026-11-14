@@ -60,6 +60,7 @@ test('жеребьёвка: случайная раздача — каждый �
     const { db } = seed(n);
     assert.throws(() => call(db, 'POST', '/api/admin/shuffle', {}), /админку/);
     call(db, 'POST', '/api/admin/shuffle', {}, admin);
+    call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
     assert.equal(db.pairs.length, n);
     assert.equal(new Set(db.pairs.map((p) => p.santaId)).size, n);
     assert.equal(new Set(db.pairs.map((p) => p.recipientId)).size, n);
@@ -73,6 +74,7 @@ test('жеребьёвка действительно случайна: быва
   let mutual = 0;
   for (let k = 0; k < 300; k++) {
     call(db, 'POST', '/api/admin/shuffle', {}, admin);
+    call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
     const m = Object.fromEntries(db.pairs.map((p) => [p.santaId, p.recipientId]));
     seen.add(ids.map((id) => m[id]).join(','));
     if (ids.some((id) => m[m[id]] === id)) mutual++;
@@ -86,6 +88,7 @@ test('забаненные не участвуют, после жеребьёв�
   call(db, 'POST', '/api/admin/ban', { userId: ids[0], banned: true }, admin);
   assert.equal(call(db, 'GET', '/api/public').count, 3);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   assert.equal(db.pairs.length, 3);
   assert.ok(!db.pairs.some((p) => p.santaId === ids[0] || p.recipientId === ids[0]));
@@ -105,6 +108,7 @@ test('забаненные не участвуют, после жеребьёв�
 test('полный цикл: получатель, дедлайн, отправка, «Вам подарок от Деда Мороза», получение', () => {
   const { db, ids } = seed(3);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   const santa = ids[0];
   const recipientId = db.pairs.find((p) => p.santaId === santa).recipientId;
 
@@ -132,6 +136,7 @@ test('полный цикл: получатель, дедлайн, отправ�
 
   assert.throws(() => call(db, 'POST', '/api/admin/shuffle', {}, admin), /принудительно/);
   call(db, 'POST', '/api/admin/shuffle', { force: true }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   clock = Date.parse('2026-11-20T12:00:00+03:00');
 });
 
@@ -179,6 +184,7 @@ test('модерация: в жеребьёвку попадают только 
   assert.equal(call(db, 'GET', '/api/public').count, 3); // отклонённый не считается
   assert.ok(call(db, 'GET', '/api/me', null, as(ids[2])).notifications.some((n) => /подозрительный/.test(n.text)));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   assert.deepEqual(new Set(db.pairs.map((p) => p.santaId)), new Set([ids[0], ids[1]]));
   assert.throws(() => call(db, 'POST', '/api/admin/moderate', { userId: ids[0], status: 'rejected' }, admin), /в паре/);
   // исправленная отклонённая анкета снова уходит на модерацию

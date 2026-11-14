@@ -49,6 +49,7 @@ test('полный цикл в облачной функции: регистра
   assert.equal(st.data.storage.mode, 'yandex-object-storage');
   await call('POST', '/api/admin/approve-all', {}, admin);
   const sh = await call('POST', '/api/admin/shuffle', {}, admin);
+  await call('POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   assert.equal(sh.data.pairs.length, 3);
   const me = await call('GET', '/api/me', null, tokens[0]);
   assert.ok(me.data.assignment.recipient.address.startsWith('ПВЗ Ozon'));

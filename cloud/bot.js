@@ -229,7 +229,8 @@ function createBot({ core, secret, siteUrl, username }) {
     const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
     const a = me.assignment;
     if (!a) {
-      out.push({ chat_id: chatId, text: me.drawn ? 'Вас нет в жеребьёвке этого года.' : '🔒 Жеребьёвки ещё не было. Я напишу, как только организаторы раскидают участников!\n\n' + statusLine(db, u) });
+      out.push({ chat_id: chatId, text: me.drawing ? '🎲 Идёт жеребьёвка — организаторы проверяют пары. Я напишу, как только всё будет готово!'
+        : me.drawn ? 'Вас нет в жеребьёвке этого года.' : '🔒 Жеребьёвки ещё не было. Я напишу, как только организаторы раскидают участников!\n\n' + statusLine(db, u) });
       return;
     }
     const r = a.recipient;
@@ -547,7 +548,7 @@ function createBot({ core, secret, siteUrl, username }) {
     for (const pair of db.pairs) {
       if (pair.status !== 'assigned') continue;
       const wave = core.waveOf(db, core.pairRound(pair));
-      if (wave && wave.status === 'closed') continue; // волна остановлена — не напоминаем
+      if (wave && (wave.status === 'closed' || !wave.confirmedAt)) continue; // волна остановлена или жеребьёвка не подтверждена — не напоминаем
       const dates = core.datesFor(db, core.pairRound(pair));
       const toStart = mskDay(Date.parse(dates.start)) - mskDay(now);
       const toEnd = mskDay(Date.parse(dates.end)) - mskDay(now);

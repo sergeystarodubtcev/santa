@@ -29,6 +29,7 @@ function chainDb(n = 4) {
   }
   call(db, 'POST', '/api/admin/approve-all', {}, admin);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   db.pairs = ids.map((id, i) => ({ santaId: id, recipientId: ids[(i + 1) % n], status: 'assigned', track: '', sentAt: null, receivedAt: null }));
   return { db, ids };
 }

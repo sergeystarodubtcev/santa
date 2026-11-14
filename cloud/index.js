@@ -318,8 +318,19 @@ module.exports.handler = async function handler(event, context) {
     const token = context && context.token && context.token.access_token;
     const sec = await getSecrets(token);
     const bot = botFor(sec);
-    if (!bot) return { ok: true, skipped: 'bot not configured' };
     const payload = ((event.messages[0] || {}).details || {}).payload || '';
+    // раз в минуту: автожеребьёвка в назначенное время (черновик пар — до подтверждения организатором)
+    if (payload === 'tick') {
+      const db = await loadDb(token);
+      const n0 = db.notifications.length;
+      if (!core.tick(db, makeCtx(makeAuth(sec.secret, sec.adminPassword), null))) return { ok: true, tick: 'nothing' };
+      const out = bot ? bot.pushNotifications(db, db.notifications.slice(n0), null) : [];
+      const queued = queueOut(db, out);
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      if (!queued && out.length) await tgSend(out);
+      return { ok: true, tick: 'drawn' };
+    }
+    if (!bot) return { ok: true, skipped: 'bot not configured' };
     if (payload === 'poll') return pollTelegram(token, sec, bot);
     const db = await loadDb(token);
     const out = bot.runReminders(db, makeCtx(makeAuth(sec.secret, sec.adminPassword), null));

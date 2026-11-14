@@ -203,6 +203,12 @@ if [ -n "$TG_USERNAME" ]; then
     echo "Создан таймер напоминаний (каждый день в 12:00 МСК)"
   fi
 fi
+# Автожеребьёвка: раз в минуту проверяем, не наступило ли время жеребьёвки волны (например, 00:00)
+if ! yc serverless trigger get --name santa-tick >/dev/null 2>&1; then
+  yc serverless trigger create timer --name santa-tick --cron-expression '* * ? * * *' --payload tick \
+    --invoke-function-id "$FN_ID" --invoke-function-service-account-id "$SA_ID" >/dev/null
+  echo "Создан таймер автожеребьёвки (раз в минуту)"
+fi
 
 # 4d. Видит ли облачная функция Telegram
 if [ -n "$TG_USERNAME" ] && [ "$TG_MODE" != "relay" ] && [ -n "${ADMIN_PASSWORD:-}" ]; then

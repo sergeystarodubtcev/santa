@@ -20,6 +20,7 @@ function seed() {
     return r.user.id;
   });
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   db.users[0].tgChatId = 500; // у первого есть бот
   return { db, ids };
 }

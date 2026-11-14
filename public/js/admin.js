@@ -194,12 +194,14 @@
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     const rnd = (p) => (p.round > 1 ? p.round : 1);
     const shownPairs = wave() ? state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === wave().n) : state.pairs;
-    $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr${p.failed ? ' class="row-failed"' : ''}>
-      <td>🌊 ${rnd(p)}</td><td>${esc(p.santa)}</td><td>🎁→</td><td><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
-      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
+    const draft = (p) => ((state.waves || []).find((w) => w.n === rnd(p)) || {}).status === 'drawing';
+    const swapBtn = (p, side) => (draft(p) ? `<button class="swap-btn" type="button" data-swap="${side}" data-uid="${side === 'santa' ? p.santaId : p.recipientId}" data-round="${rnd(p)}" title="${side === 'santa' ? 'Сменить получателя у этого Санты' : 'Сменить Санту у этого получателя'} (случайно)">🔄</button>` : '');
+    $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${p.failed ? 'row-failed' : ''} ${lastSwapped.has(p.santaId) && draft(p) ? 'row-swapped' : ''}">
+      <td>🌊 ${rnd(p)}${draft(p) ? '<small>черновик</small>' : ''}</td><td>${esc(p.santa)} ${swapBtn(p, 'santa')}</td><td>🎁→</td><td><div class="rec-cell"><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${swapBtn(p, 'recipient')}</div>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
+      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён во 2-й круг</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
-      <td><select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>
-        ${p.status === 'assigned' && !p.failed ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}" title="Санта не отправил подарок: получателя — в следующую волну с наивысшим приоритетом">😢 Не отправил → получателя в следующую волну ⭐</button>` : ''}</td>
+      <td>${draft(p) ? '<span class="muted">после подтверждения</span>' : `<select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>`}
+        ${p.status === 'assigned' && !p.failed && !draft(p) ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}" title="Санта не отправил подарок: получателя — в следующую волну с наивысшим приоритетом">😢 Не отправил → получателя в следующую волну ⭐</button>` : ''}</td>
     </tr>`).join('') || '<tr><td colspan="6" class="muted">Пар пока нет — нажмите «Раскидать людей».</td></tr>';
   }
 
@@ -330,7 +332,9 @@
   });
   // ---------- волны: переключатель, панель волны, сводка ----------
   let curWave = (() => { try { return localStorage.getItem('adm_wave') || 'all'; } catch (e) { return 'all'; } })();
-  const WST = { open: '📝 идёт запись', drawn: '🎲 пары розданы', closed: '⏹ остановлена' };
+  const WST = { open: '📝 идёт запись', drawing: '🎲 ждёт подтверждения', drawn: '✅ пары у участников', closed: '⏹ остановлена' };
+  const stCls = (st) => (st === 'closed' ? 'banned' : st === 'drawn' ? 'sent' : 'assigned');
+  let lastSwapped = new Set(); // подсветка пар, изменённых последней кнопкой 🔄
   const wave = () => (curWave === 'all' ? null : (state.waves || []).find((w) => String(w.n) === String(curWave)) || null);
   const fd = (iso) => FX.fmtDate(iso);
   function setWave(v) { curWave = String(v); try { localStorage.setItem('adm_wave', curWave); } catch (e) { /* ignore */ } render(); }
@@ -362,14 +366,15 @@
     const s = state.stats;
     const w = wave();
     const last = (state.waves || [])[state.waves.length - 1];
-    const canNew = last && last.status !== 'open';
+    const canNew = last && last.status !== 'open' && last.status !== 'drawing';
     if (!w) {
       tiles([[s.users, 'аккаунтов'], [s.approved, 'одобрено'], [s.pending, 'ждут модерации'], [s.banned, 'в чёрном списке'], [s.sent, 'отправили'], [s.received, 'получили']]);
       const rows = (state.waves || []).map((x) => `<tr class="ws-row" data-ws="${x.n}">
-        <td><b>🌊 ${x.n}</b></td><td>${fd(x.start)} — ${fd(x.end)}</td><td><span class="status ${x.status === 'closed' ? 'banned' : x.status === 'drawn' ? 'sent' : 'assigned'}">${WST[x.status]}</span></td>
+        <td><b>🌊 ${x.n}</b></td><td>${fd(x.start)} — ${fd(x.end)}</td><td><span class="status ${stCls(x.status)}">${WST[x.status]}</span></td>
         <td>${x.members}${x.invited ? `<small>⏳ ждут подтверждения: ${x.invited}</small>` : ''}${x.pending ? `<small>⏳ модерация: ${x.pending}</small>` : ''}</td>
         <td>${x.pairs ? x.noAck : '—'}</td><td>${x.pairs ? `<b class="${x.notSent ? 'bad' : ''}">${x.notSent}</b>` : '—'}</td><td>${x.pairs ? x.sent : '—'}</td><td>${x.pairs ? x.received : '—'}</td><td>${x.failed || '—'}</td></tr>`).join('');
-      const details = (state.waves || []).filter((x) => x.pairs).map((x) => {
+      const drafts = (state.waves || []).filter((x) => x.status === 'drawing').map((x) => `<div class="wd"><span class="draft-note">🎲 <b>Волна ${x.n}</b>: пары готовы (${x.pairs}), участники их ещё не видят — <a href="#" data-ws="${x.n}">откройте волну</a>, проверьте и подтвердите.</span></div>`).join('');
+      const details = drafts + (state.waves || []).filter((x) => x.pairs && x.confirmedAt).map((x) => {
         const ps = wavePairs(x.n).filter((p) => !p.failed);
         const noAck = ps.filter((p) => p.status === 'assigned' && !p.ackAt).map((p) => p.santaId);
         const notSent = ps.filter((p) => p.status === 'assigned').map((p) => p.santaId);
@@ -390,27 +395,32 @@
     }
     const ps = wavePairs(w.n);
     tiles([[w.members, 'участников'], [w.n === 1 ? w.pending : w.invited, w.n === 1 ? 'ждут модерации' : 'ждут подтверждения'], [w.pairs ? w.noAck : '—', '🤷 не подтвердили'], [w.pairs ? w.notSent : '—', '📦 не отправили', w.notSent && Date.parse(w.end) < Date.now() ? 'tile-bad' : ''], [w.sent, '🚚 отправили'], [w.received, '✅ получили']]);
-    const info = w.drawnAt
-      ? `✅ Жеребьёвка проведена ${FX.fmtDateTime(w.drawnAt)}: <b>${ps.length}</b> ${SantaCore.plural(ps.length, 'пара', 'пары', 'пар')}.`
+    const info = w.status === 'drawing'
+      ? `<span class="draft-note">🎲 Жеребьёвка проведена ${FX.fmtDateTime(w.drawnAt)}: <b>${ps.length}</b> ${SantaCore.plural(ps.length, 'пара', 'пары', 'пар')}. <b>Участники их пока не видят.</b> Проверьте пары ниже: кнопка 🔄 у Санты меняет ему получателя, у получателя — Санту (случайная замена, без повторов и «самому себе»). Когда всё устроит — нажмите «✅ Подтвердить жеребьёвку».</span>`
+      : w.drawnAt
+      ? `✅ Жеребьёвка подтверждена ${FX.fmtDateTime(w.confirmedAt || w.drawnAt)}: <b>${ps.length}</b> ${SantaCore.plural(ps.length, 'пара', 'пары', 'пар')} — участники видят своих получателей.`
       : `Жеребьёвки ещё не было. В раздачу попадут: <b>${w.members}</b>` + (w.n === 1 ? ' (одобренные модерацией)' : ' (подтвердившие участие)') + '.'
         + (w.pending ? ` <span class="important">Ждут модерации: ${w.pending}</span>.` : '') + (w.invited ? ` <span class="important">Ждут подтверждения: ${w.invited}</span> — в жеребьёвку не попадут.` : '');
     const isLast = last && last.n === w.n;
-    host.innerHTML = `<h3>🌊 Волна ${w.n} <span class="status ${w.status === 'closed' ? 'banned' : w.status === 'drawn' ? 'sent' : 'assigned'}">${WST[w.status]}</span></h3>
+    host.innerHTML = `<h3>🌊 Волна ${w.n} <span class="status ${stCls(w.status)}">${WST[w.status]}</span></h3>
       <form class="ua-row" data-wave-dates="${w.n}">
         <label>Начало отправки (МСК)<input type="datetime-local" name="start" value="${toLocalInput(w.start)}"></label>
         <label>Конец отправки (МСК)<input type="datetime-local" name="end" value="${toLocalInput(w.end)}"></label>
-        <button class="btn btn-gold btn-sm">Сохранить даты</button>
+        ${w.status === 'open' ? `<label>🎲 Автожеребьёвка (МСК)<input type="datetime-local" name="drawAt" value="${w.drawAt ? toLocalInput(w.drawAt) : ''}"></label>` : ''}
+        <button class="btn btn-gold btn-sm">Сохранить</button>
       </form>
+      ${w.status === 'open' ? `<p class="muted" style="font-size:13px;margin:4px 0 0">${w.drawAt ? (w.drawAtDone ? '⚠️ Автожеребьёвка не прошла — смотрите журнал событий.' : `⏰ Жеребьёвка пройдёт автоматически ${FX.fmtDateTime(w.drawAt)}. Участники ничего не увидят, пока вы не подтвердите пары.`) : 'Время автожеребьёвки не задано — можно раскидать вручную кнопкой ниже.'}</p>` : ''}
       <p class="muted">${info}</p>
       <div class="actions">
         ${w.n === 1 && w.pending ? `<button class="btn btn-green" data-approve-all>✅ Одобрить всех ожидающих (${w.pending})</button>` : ''}
-        ${w.status !== 'closed' ? `<button class="btn btn-primary shuffle-btn" data-wave-shuffle="${w.n}">🎲 ${w.drawnAt ? 'Перемешать заново' : 'Раскидать людей'}</button>` : ''}
+        ${w.status === 'drawing' ? `<button class="btn btn-green" data-wave-confirm="${w.n}">✅ Подтвердить жеребьёвку</button>` : ''}
+        ${w.status !== 'closed' ? `<button class="btn ${w.status === 'drawing' ? 'btn-ghost' : 'btn-primary'} shuffle-btn" data-wave-shuffle="${w.n}">🎲 ${w.drawnAt ? 'Перемешать заново' : 'Раскидать людей'}</button>` : ''}
         ${w.drawnAt && isLast && w.status !== 'closed' ? `<button class="btn btn-danger btn-sm" data-wave-reset="${w.n}">Сбросить пары</button>` : ''}
-        ${w.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" data-wave-act="close" data-n="${w.n}" title="Напоминания этой волны перестанут приходить, жеребьёвка недоступна">⏹ Остановить волну</button>`
+        ${w.status === 'drawing' ? '' : w.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" data-wave-act="close" data-n="${w.n}" title="Напоминания этой волны перестанут приходить, жеребьёвка недоступна">⏹ Остановить волну</button>`
           : `<button class="btn btn-ghost btn-sm" data-wave-act="reopen" data-n="${w.n}">▶️ Возобновить волну</button>`}
         ${isLast ? `<button class="btn btn-ghost btn-sm" data-ws-new ${canNew ? '' : 'disabled title="Сначала проведите жеребьёвку или остановите волну"'}>➕ Создать ${w.n + 1}-ю волну</button>` : ''}
       </div>
-      <p class="muted" style="font-size:13px;margin-top:12px">Раздача случайная, никто не дарит сам себе, забаненные не участвуют.${w.n > 1 ? ' Участникам с ⭐ приоритетом достаётся надёжный Санта (уже отправлял подарок раньше).' : ''} Пары и участники ниже показаны только для этой волны. «Остановить» — когда волна закончилась: напоминания по ней больше не приходят; потом создайте следующую.</p>`;
+      <p class="muted" style="font-size:13px;margin-top:12px">Жеребьёвка в два шага: сначала пары видите только вы, после «Подтвердить» — участники (и им приходят уведомления). Раздача случайная, никто не дарит сам себе, забаненные не участвуют.${w.n > 1 ? ' Участникам с ⭐ приоритетом достаётся надёжный Санта (уже отправлял подарок раньше).' : ''} Пары и участники ниже показаны только для этой волны. «Остановить» — когда волна закончилась: напоминания по ней больше не приходят; потом создайте следующую.</p>`;
   }
   document.addEventListener('click', async (e) => {
     const t = e.target.closest('[data-ws-toggle]');
@@ -426,19 +436,41 @@
       if (await act('/api/admin/wave-create', {}, `${last.n + 1}-я волна создана 🌊`)) setWave(last.n + 1);
       return;
     }
+    const cf = e.target.closest('[data-wave-confirm]');
+    if (cf) {
+      const n = Number(cf.dataset.waveConfirm);
+      const w = (state.waves || []).find((x) => x.n === n);
+      if (!confirm(`Подтвердить жеребьёвку ${n}-й волны?\n\nВсе ${w.pairs} Сант увидят своих получателей в кабинете и получат уведомления (на сайте и в Telegram). На сайте появится «Жеребьёвка проведена».`)) return;
+      if (await act('/api/admin/wave-confirm', { n }, 'Жеребьёвка подтверждена — участники видят получателей 🎅')) FX.burstFrom(cf, { count: 60, power: 15 });
+      return;
+    }
+    const sw = e.target.closest('[data-swap]');
+    if (sw) {
+      sw.disabled = true;
+      try {
+        const res = await Api.post('/api/admin/pair-swap', { round: Number(sw.dataset.round), userId: sw.dataset.uid, side: sw.dataset.swap }, A);
+        lastSwapped = new Set((res.swapped || []).map((x) => x.santaId));
+        state = res;
+        render();
+        const nick = (id) => { const u = state.users.find((x) => x.id === id); return u ? '@' + u.tg : '—'; };
+        FX.toast('🔄 Новые пары: ' + (res.swapped || []).map((x) => `${nick(x.santaId)} → ${nick(x.recipientId)}`).join(', '), 'success');
+        setTimeout(() => { lastSwapped = new Set(); renderPairs(); }, 6000);
+      } catch (ex) { FX.toast(ex.message, 'error'); sw.disabled = false; }
+      return;
+    }
     const sh = e.target.closest('[data-wave-shuffle]');
     if (sh) {
       const n = Number(sh.dataset.waveShuffle);
       const w = (state.waves || []).find((x) => x.n === n);
       const again = !!w.drawnAt;
-      if (!confirm(again ? `Перемешать ${n}-ю волну заново? Её пары будут заменены.` : `Раскидать ${n}-ю волну (${w.members} чел.)? Все увидят своих получателей.` + (w.pending ? `\n\n⚠️ ${w.pending} анкет на модерации — в раздачу НЕ попадут.` : '') + (w.invited ? `\n\n⚠️ ${w.invited} чел. не подтвердили участие — в раздачу НЕ попадут.` : ''))) return;
+      if (!confirm(again ? `Перемешать ${n}-ю волну заново? Её пары будут заменены` + (w.status === 'drawn' ? ', участники перестанут видеть получателей до нового подтверждения.' : '.') : `Раскидать ${n}-ю волну (${w.members} чел.)? Пары увидите только вы — участникам они откроются после «Подтвердить».` + (w.pending ? `\n\n⚠️ ${w.pending} анкет на модерации — в раздачу НЕ попадут.` : '') + (w.invited ? `\n\n⚠️ ${w.invited} чел. не подтвердили участие — в раздачу НЕ попадут.` : ''))) return;
       let force = false;
       if (again && wavePairs(n).some((p) => p.status !== 'assigned')) {
         if (!confirm('В этой волне кто-то уже отправил подарок! Всё равно перемешать?')) return;
         force = true;
       }
       sh.classList.add('shuffle-anim');
-      const ok = await act('/api/admin/shuffle', { round: n, force }, 'Пары сформированы! 🎅');
+      const ok = await act('/api/admin/shuffle', { round: n, force }, 'Пары готовы — проверьте и подтвердите 🎲');
       if (ok) FX.burstFrom(sh, { count: 60, power: 15 });
       return;
     }
@@ -458,7 +490,9 @@
     const f = e.target.closest('[data-wave-dates]');
     if (!f) return;
     e.preventDefault();
-    act('/api/admin/wave-set', { n: Number(f.dataset.waveDates), start: f.start.value + ':00+03:00', end: f.end.value + ':59+03:00' }, 'Даты волны сохранены — на сайте они уже обновились');
+    const body = { n: Number(f.dataset.waveDates), start: f.start.value + ':00+03:00', end: f.end.value + ':59+03:00' };
+    if (f.drawAt) body.drawAt = f.drawAt.value ? f.drawAt.value + ':00+03:00' : '';
+    act('/api/admin/wave-set', body, 'Сохранено — на сайте даты уже обновились');
   });
 
   // ---------- центр уведомлений ----------

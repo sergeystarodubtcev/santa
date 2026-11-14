@@ -116,6 +116,7 @@ function drawnDb() {
   site(db, 'POST', '/api/admin/approve-all', {}, { isAdmin: true });
   const n0 = db.notifications.length;
   site(db, 'POST', '/api/admin/shuffle', {}, { isAdmin: true });
+  site(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, { isAdmin: true });
   return { db, ids, n0 };
 }
 
@@ -215,6 +216,7 @@ test('«Кому я дарю» в боте: сначала пожелания, �
     return r.user.id;
   });
   core.handle(db, Object.assign({}, ctx, { isAdmin: true }), 'POST', '/api/admin/shuffle', {});
+  core.handle(db, Object.assign({}, ctx, { isAdmin: true }), 'POST', '/api/admin/wave-confirm', { n: 1 });
   db.users[0].tgChatId = 901;
   const r = bot.handleUpdate(db, ctx, { update_id: 1, callback_query: { id: 'c', data: 'whom', from: { id: 901 }, message: { chat: { id: 901, type: 'private' } } } });
   const t = r.out.map((o) => o.text).join('\n');

@@ -27,6 +27,7 @@ test('второй круг: без подтверждения в жеребьё
   const db = core.emptyDb();
   [0, 1, 2].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const a = user(db, 3, { wave2: true });
   const b = user(db, 4, { wave2: true });
@@ -42,6 +43,7 @@ test('второй круг: без подтверждения в жеребьё
   // кабинет: видно приглашение
   assert.equal(call(db, 'GET', '/api/me', null, as(c)).wave2.status, 'invited');
   call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
   const r2 = db.pairs.filter((p) => p.round === 2);
   assert.equal(r2.length, 2);
   assert.ok(!r2.some((p) => p.santaId === c || p.recipientId === c), 'неподтвердивший не в парах');
@@ -53,6 +55,7 @@ test('пострадавший: Санта не отправил → во вто
   const db = core.emptyDb();
   const first = [0, 1, 2, 3, 4, 5].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   // все, кроме одного Санты, отправили подарки
   const bad = first[0];
@@ -88,6 +91,7 @@ test('пострадавший: Санта не отправил → во вто
   for (let k = 0; k < 30; k++) {
     seed = k + 7;
     call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+    call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
     const p = db.pairs.find((x) => x.round === 2 && x.recipientId === victim);
     assert.ok(p && p.priority, 'пара с приоритетом');
     assert.equal(p.santaId, helper, 'надёжный Санта (отправил в первом круге), не новичок');
@@ -113,6 +117,7 @@ test('организатор: пригласить, подтвердить за 
   const ids = [0, 1, 2].map((i) => user(db, i));
   assert.throws(() => call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin), /после первой жеребьёвки/);
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   call(db, 'POST', '/api/admin/wave2-set', { userId: ids[0], action: 'invite' }, admin);
   assert.equal(db.wave2[ids[0]].status, 'invited');
@@ -133,6 +138,7 @@ test('анкета через бота после первой жеребьёв�
   const db = core.emptyDb();
   [0, 1].forEach((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
   call(db, 'POST', '/api/admin/wave-create', {}, admin);
   const r = call(db, 'POST', '/api/register', { name: 'Bot', phone: '+79552999999', tg: 'bot_user', password: 'qwerty1', pdConsent: true });
   db.users.find((u) => u.id === r.user.id).tgChatId = 7007;

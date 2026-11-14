@@ -110,6 +110,7 @@
     $('[data-sub]').textContent = !me.participation ? 'Вы ещё не заполнили анкету участника.'
       : me.wave2 && me.wave2.status === 'invited' && !me.wave2.drawn ? `Подтвердите участие в ${me.wave2.round}-й волне 👇`
       : me.wave2 && me.wave2.status === 'waiting' ? 'Вы в листе ожидания следующей волны — мы напишем, когда она откроется 🌊'
+      : me.drawing && !me.assignment ? '🎲 Идёт жеребьёвка — организаторы проверяют пары. Скоро здесь появится ваш получатель!'
       : me.assignment ? (me.assignment.round > 1 ? `Жеребьёвка ${me.assignment.round}-й волны проведена — пора собирать посылку!` : 'Жеребьёвка проведена — пора собирать посылку!')
       : me.round > 1 && mod === 'approved' ? `Вы в ${me.round}-й волне ✅ Ждём её жеребьёвку. Отправка: ${FX.fmtDate(me.dates.start)} — ${FX.fmtDate(me.dates.end)}`
       : mod === 'approved' ? 'Анкета одобрена ✅ Ждём жеребьёвку ☕'
@@ -174,6 +175,8 @@
       host.innerHTML = `<div class="sealed"><div class="env">🕵️</div><p><b>Анкета на модерации</b></p><p class="muted">Перед жеребьёвкой организаторы проверяют всех участников. Как только анкету одобрят, вы попадёте в раздачу.</p></div>`;
     } else if (!a && me.participation.moderation === 'rejected') {
       host.innerHTML = `<div class="sealed"><div class="env">🚫</div><p><b>Анкета не прошла модерацию</b></p><p class="muted">${esc(me.participation.moderationNote) || 'Исправьте анкету или напишите организаторам.'}</p><button class="btn btn-primary" data-open-part>Исправить анкету</button></div>`;
+    } else if (!a && me.drawing) {
+      host.innerHTML = `<div class="sealed"><div class="env">🎲</div><p><b>Идёт жеребьёвка</b></p><p class="muted">Пары уже раскиданы — организаторы их проверяют. Как только подтвердят, здесь появятся пожелания и данные вашего получателя, а мы пришлём уведомление.</p></div>`;
     } else if (!a) {
       host.innerHTML = `<div class="sealed"><div class="env">🔒</div><p class="muted">Анкета одобрена ✅ Конверт запечатан. Как только организаторы перемешают участников, здесь появится имя, ПВЗ и пожелания вашего получателя.</p></div>`;
     } else {

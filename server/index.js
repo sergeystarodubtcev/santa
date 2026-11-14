@@ -293,6 +293,12 @@ if (require.main === module) {
       }
     }
     server.listen(PORT, () => console.log(`[santa] http://localhost:${PORT}  (база: ${DB_FILE}${GH_URL ? ' + github:' + GH_REPO : ''})`));
+    // автожеребьёвка в назначенное время (черновик пар — до подтверждения организатором)
+    setInterval(() => {
+      try {
+        if (core.tick(db, { now: () => Date.now(), id: () => crypto.randomBytes(8).toString('hex'), random: Math.random })) save();
+      } catch (e) { console.error('[santa] автожеребьёвка:', e.message); }
+    }, 30000).unref();
   })().catch((e) => { console.error('[santa] не удалось запуститься:', e.message); process.exit(1); });
 }
 module.exports = server;

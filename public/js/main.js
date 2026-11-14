@@ -78,7 +78,7 @@
 
   let settingsKey = '';
   function applySettings(s, p) {
-    const key = JSON.stringify(s) + p.drawn;
+    const key = JSON.stringify(s) + p.drawn + p.drawing + p.confirmed;
     if (key === settingsKey) return;
     settingsKey = key;
     // волны: на таймерах — ближайшая действующая (у которой ещё не прошёл конец отправки)
@@ -104,6 +104,16 @@
       $('[data-budget-badge]').classList.add('set');
     }
     if (s.chatUrl) $$('[data-chat-link]').forEach((a) => (a.href = s.chatUrl));
+    // статус жеребьёвки: скоро / идёт (организатор проверяет пары) / проведена
+    const ds = $('[data-draw-status]');
+    const dw = p.drawing ? waves.find((w) => w.n === p.drawing) : null;
+    const cw = p.confirmed ? waves.find((w) => w.n === p.confirmed) : null;
+    const soon = waves.find((w) => w.status === 'open' && w.drawAt && Date.parse(w.drawAt) > Date.now());
+    const wn = (w) => (w.n > 1 ? ` ${w.n}-й волны` : '');
+    if (dw) { ds.className = 'draw-status drawing'; ds.innerHTML = `🎲 Сейчас идёт жеребьёвка${wn(dw)} — организаторы проверяют пары. Скоро результаты появятся в личных кабинетах.`; }
+    else if (cw && cw.status !== 'closed') { ds.className = 'draw-status done'; ds.innerHTML = `✅ Жеребьёвка${wn(cw)} проведена! <a href="cabinet.html">Заходите в личный кабинет</a> — там ваш получатель.`; }
+    else if (soon) { ds.className = 'draw-status soon'; ds.innerHTML = `🎲 Жеребьёвка${wn(soon)}: ${FX.fmtDateTime(soon.drawAt)}`; }
+    ds.hidden = !(dw || (cw && cw.status !== 'closed') || soon);
     // после первой жеребьёвки — запись в открытую волну или в лист ожидания следующей
     const later = p.drawn && s.round2Open && s.regOpen;
     const ow = later && s.openWave ? waves.find((w) => w.n === s.openWave) : null;
@@ -115,7 +125,8 @@
         $('[data-join-note]').textContent = 'Участники волны дарят подарки друг другу — у каждой волны своя жеребьёвка.';
       } else {
         $('[data-join-label]').innerHTML = 'Записаться<br>в следующую волну';
-        $('.join-sub').innerHTML = 'Первая жеребьёвка уже прошла — но ещё не поздно! Заполните анкету, и когда откроется <b>следующая волна</b>, мы пришлём даты и попросим подтвердить участие.';
+        $('.join-sub').innerHTML = (dw ? 'Сейчас идёт жеребьёвка — в неё уже не попасть, но ещё не поздно!' : 'Жеребьёвка уже прошла — но ещё не поздно!')
+          + ' Заполните анкету, и когда откроется <b>следующая волна</b>, мы пришлём даты и попросим подтвердить участие.';
         $('[data-join-note]').textContent = 'Пока волна не открыта, вы в листе ожидания.';
       }
     } else if (closed && !(me && me.participation)) {
