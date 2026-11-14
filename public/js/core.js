@@ -869,7 +869,8 @@
       drawnAt: db.drawnAt,
       users: db.users.map((u) => {
         const part = db.participations[u.id];
-        return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null });
+        return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null,
+          waveAnketas: (db.waveAnketas || {})[u.id] || null });
       }),
       pairs: db.pairs.map((p) => Object.assign({}, p, {
         santa: byId[p.santaId] ? '@' + byId[p.santaId].tg : '—',

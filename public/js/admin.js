@@ -54,7 +54,9 @@
     const noForm = state.users.filter((u) => !u.participation);
     const noFormBot = noForm.filter((u) => u.tgLinked).length;
     const pend = state.users.filter((u) => u.participation && u.participation.moderation === 'pending').length;
-    $('[data-fold-users]').textContent = `${state.users.length} аккаунтов · ${state.users.length - noForm.length} с анкетой` + (pend ? ` · ⏳ на модерации: ${pend}` : '');
+    const wv = wave();
+    $('[data-fold-users]').textContent = wv ? `Волна ${wv.n}: ${waveUserIds(wv.n).size} чел. · все аккаунты — во вкладке «📊 Все волны»`
+      : `${state.users.length} аккаунтов · ${state.users.length - noForm.length} с анкетой` + (pend ? ` · ⏳ на модерации: ${pend}` : '');
     const pairs = state.pairs || [];
     const sentN = pairs.filter((x) => x.status && x.status !== 'assigned').length;
     $('[data-fold-pairs]').textContent = pairs.length ? `${pairs.length} пар · отправлено: ${sentN}` : 'Жеребьёвки ещё не было';
@@ -144,18 +146,36 @@
     }
   });
 
+  // Кто относится к волне: в 1-й — основные анкеты, во 2-й и дальше — только записавшиеся в неё (и те, у кого там уже есть пара)
+  function waveUserIds(n) {
+    const ids = new Set();
+    state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === n).forEach((p) => { ids.add(p.santaId); ids.add(p.recipientId); });
+    if (n === 1) state.users.forEach((u) => { if (u.participation && (u.participation.round == null || u.participation.round === 1)) ids.add(u.id); });
+    else (state.wave2 || []).forEach((w) => { if (w.round === n && w.status !== 'declined') ids.add(w.userId); });
+    return ids;
+  }
   function renderUsers() {
     const q = $('[data-search]').value.trim().toLowerCase();
+    const w = wave();
+    const inWave = w ? waveUserIds(w.n) : null;
+    const w2 = Object.fromEntries((state.wave2 || []).map((x) => [x.userId, x]));
+    const W2S = { invited: '⏳ ждём подтверждения', confirmed: '✅ участвует', waiting: '📝 лист ожидания' };
     const onlyPending = $('[data-only-pending]').checked;
     const rank = (u) => !u.participation ? 3 : ({ pending: 0, approved: 1, rejected: 2 })[u.participation.moderation];
     const users = state.users
+      .filter((u) => !inWave || inWave.has(u.id))
       .filter((u) => !q || [u.name, u.phone, u.tg, u.participation && u.participation.fullName].join(' ').toLowerCase().includes(q))
       .filter((u) => !onlyPending || (u.participation && u.participation.moderation === 'pending' && !u.banned))
       .sort((a, b) => rank(a) - rank(b) || b.createdAt - a.createdAt);
+    const title = $('[data-users-title]');
+    if (title) title.textContent = w ? `👥 Участники · волна ${w.n}` : '👥 Участники';
     $('[data-users]').innerHTML = users.map((u) => {
-      const p = u.participation;
+      // во 2-й волне и дальше — анкета этой волны (если человек её поправлял при записи)
+      const wa = w && w.n > 1 && u.waveAnketas && u.waveAnketas[w.n];
+      const p = u.participation && wa ? Object.assign({}, u.participation, wa) : u.participation;
+      const tag = w && w.n > 1 && w2[u.id] && w2[u.id].round === w.n ? `<small>${W2S[w2[u.id].status] || ''}${w2[u.id].reason === 'victim' ? ' · 😢 пострадавший' : w2[u.id].reason === 'self' ? ' · 🔁 повторно' : ''}${w2[u.id].priority ? ' · ⭐' : ''}</small>` : '';
       return `<tr class="${u.banned ? 'banned' : ''}">
-        <td><b>${esc(u.name)}</b><small>${FX.fmtDateTime(u.createdAt)}</small></td>
+        <td><b>${esc(u.name)}</b><small>${FX.fmtDateTime(u.createdAt)}</small>${tag}</td>
         <td>${esc(u.phone)}<small><a href="https://t.me/${esc(u.tg)}" target="_blank" rel="noopener">@${esc(u.tg)}</a></small></td>
         <td>${p ? `${esc(p.address)}<small>${esc(p.fullName || '')}</small>${p.city ? `<small>🏙️ ${esc(p.city)}</small>` : '<small class="important">⚠️ город не распознан</small>'}` : '<span class="muted">анкета не заполнена</span>'}</td>
         <td>${p ? `${esc(SantaCore.PREFS[p.prefs])}<small>${esc(p.wishes) || '—'}</small>${p.notes ? `<small class="important">⚠️ ${esc(p.notes)}</small>` : ''}` : ''}</td>
@@ -554,7 +574,6 @@
     ['noform', '🚫 Без анкеты', (u) => !u.participation],
     ['pending', '⏳ На модерации', (u) => u.participation && u.participation.moderation === 'pending'],
     ['approved', '✅ Одобрены', (u) => u.participation && u.participation.moderation === 'approved'],
-    ['wave', '🌊 Выбранная волна (переключатель сверху)', (u) => !wave() || waveMembers(wave().n).includes(u.id)],
     ['noack', '🤷 Не подтвердили, что собирают', (u) => state.pairs.some((p) => p.santaId === u.id && p.status === 'assigned' && !p.ackAt)],
     ['notsent', '📦 Ещё не отправили подарок', (u) => state.pairs.some((p) => p.santaId === u.id && p.status === 'assigned')],
     ['sent', '🚚 Уже отправили', (u) => state.pairs.some((p) => p.santaId === u.id && p.status !== 'assigned')],
@@ -594,14 +613,16 @@
   const bcPicked = new Set();
   let bcTouched = false; // пока галочки не трогали руками — список следует за фильтрами
   $('[data-bc-filters]').innerHTML = BC_FILTERS.map(([k, label]) => `<label class="chip"><input type="checkbox" data-bc-f="${k}"><span>${label}</span></label>`).join('');
-  const bcMatch = () => state.users.filter((u) => BC_FILTERS.every(([k, , fn]) => !bcActive.has(k) || fn(u)));
+  // в выбранной волне — только её участники; все — во вкладке «📊 Все волны»
+  const bcPool = () => { const w = wave(); const ids = w ? waveUserIds(w.n) : null; return state.users.filter((u) => !ids || ids.has(u.id)); };
+  const bcMatch = () => bcPool().filter((u) => BC_FILTERS.every(([k, , fn]) => !bcActive.has(k) || fn(u)));
   function bcSyncFromFilters() { bcPicked.clear(); bcMatch().forEach((u) => bcPicked.add(u.id)); bcTouched = false; }
   function renderBroadcast() {
     if (!bcTouched) bcSyncFromFilters();
-    [...bcPicked].forEach((id) => { if (!state.users.some((u) => u.id === id)) bcPicked.delete(id); });
+    [...bcPicked].forEach((id) => { { const pool = bcPool(); if (!pool.some((u) => u.id === id)) bcPicked.delete(id); } });
     const q = $('[data-bc-search]').value.trim().toLowerCase();
     const match = new Set(bcMatch().map((u) => u.id));
-    const list = state.users
+    const list = bcPool()
       .filter((u) => !q || (u.name + ' ' + u.tg).toLowerCase().includes(q))
       .sort((a, b) => (match.has(b.id) - match.has(a.id)) || a.name.localeCompare(b.name));
     $('[data-bc-people]').innerHTML = list.map((u) => `<label class="bc-person ${match.has(u.id) ? '' : 'dim'}">
