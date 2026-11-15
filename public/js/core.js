@@ -279,6 +279,8 @@
     const add = (a) => { a.wishes = str(((a.wishes || '') + (a.wishes ? '\n' : '') + '➕ ' + text), 1500); a.updatedAt = ctx.now(); };
     add(part);
     Object.values((db.waveAnketas || {})[uid] || {}).forEach(add);
+    const u = db.users.find((x) => x.id === uid);
+    if (u) notifyAdmins(db, ctx, `➕ ${who(u)} дополнил пожелания: «${text}»`);
     tellSantas(db, ctx, uid, `➕ Ваш получатель дополнил пожелания: «${text}». Загляните в «Кому я дарю».`);
     return part;
   }
@@ -326,6 +328,12 @@
   const ADMINS = '@admins';
   function notifyAdmins(db, ctx, text) {
     notify(db, ctx, ADMINS, text, 'admin-log', 'admin');
+  }
+  // что поменялось в анкете — строками «поле: «было» → «стало»» (для уведомления организаторам)
+  const ANKETA_FIELDS = [['fullName', 'ФИО'], ['address', 'ПВЗ'], ['prefs', 'тематика'], ['wishes', 'пожелания'], ['notes', 'пометки']];
+  function anketaDiff(a, b) {
+    const show = (k, v) => { const t = k === 'prefs' ? (PREFS[v] || v || '—') : (v || '—'); return t.length > 300 ? t.slice(0, 300) + '…' : t; };
+    return ANKETA_FIELDS.filter(([k]) => (a[k] || '') !== (b[k] || '')).map(([k, l]) => `${l}: «${show(k, a[k])}» → «${show(k, b[k])}»`);
   }
   const nick = (db, id) => { const u = db.users.find((x) => x.id === id); return u ? '@' + u.tg : '(удалён)'; };
   const who = (u) => `${u.name} @${u.tg} ${u.phone}`;
@@ -463,7 +471,12 @@
     if (!body.agree) fail(400, target ? `Подтвердите участие в ${waveIn(target)}` : 'Подтвердите участие в следующей волне');
     db.waveAnketas = db.waveAnketas || {};
     db.waveAnketas[userId] = db.waveAnketas[userId] || {};
+    const before = db.waveAnketas[userId][target || 'next'];
     db.waveAnketas[userId][target || 'next'] = Object.assign(a, { updatedAt: ctx.now() });
+    if (before) {
+      const diff = anketaDiff(before, a);
+      if (diff.length) notifyAdmins(db, ctx, [`✏️ ${who(user)} изменил анкету ${target ? `для ${target}-й волны` : "для следующей волны"}:`].concat(diff).join('\n'));
+    }
     const prev = wave2Of(db, userId);
     const already = prev && prev.round === target && prev.status === 'confirmed';
     db.wave2[userId] = Object.assign({ reason: 'self', priority: 0, addedAt: ctx.now() }, prev && (prev.round === target || prev.status === 'waiting') ? prev : {}, {
@@ -527,6 +540,10 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
+    if (existing) {
+      const diff = anketaDiff(existing, db.participations[userId]);
+      if (diff.length) notifyAdmins(db, ctx, [`✏️ ${who(getUser(db, userId))} изменил анкету:`].concat(diff).join('\n'));
+    }
     if (changedFields.length) tellSantas(db, ctx, userId, `📝 Ваш получатель обновил анкету: ${changedFields.join(', ')}. Загляните в «Кому я дарю».`);
     if (round > 1 && body.wave2 && !inWave(db, userId, round)) {
       db.wave2[userId] = Object.assign({ reason: 'new', priority: 0, addedAt: ctx.now() }, wave2Of(db, userId) || {}, { round, status: 'confirmed', confirmedAt: ctx.now() });

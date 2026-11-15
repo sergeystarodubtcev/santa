@@ -59,7 +59,7 @@ test('повторное участие: запись во 2-ю волну с к
   assert.deepEqual([db.wave2[A].round, db.wave2[A].status], [2, 'confirmed']);
   // повторная запись — без дублей
   const nn = db.notifications.length;
-  call(db, 'POST', '/api/wave-join', { fullName: 'Участник Номер 0', address: 'ПВЗ Ozon, Москва, Тверская 1', wishes: 'теперь чай', agree: true }, as(A));
+  call(db, 'POST', '/api/wave-join', { fullName: 'Участник Номер 0', address: 'ПВЗ Ozon, Москва, Тверская 1', wishes: 'теперь чай', prefs: 'noncoffee', agree: true }, as(A));
   assert.equal(db.notifications.length, nn, 'повторное сохранение — без лишних уведомлений');
   assert.equal(Object.keys(db.wave2).filter((k) => k === A).length, 1);
   // B и C — с прошлыми данными; новичок — напрямую во 2-ю волну

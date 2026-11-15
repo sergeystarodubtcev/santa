@@ -124,3 +124,21 @@ test('бот организатора: «🔎 Досье» по @нику — к
   const stranger = bot.handleUpdate(db, ctx, { update_id: ++n, message: { message_id: n, chat: { id: 701, type: 'private' }, from: { id: 701 }, text: '/who @chat_u0' } }).out;
   assert.ok(!stranger.some((o) => /Досье/.test(o.text || '')));
 });
+
+test('организаторам приходит уведомление о правке анкеты и «дополнить пожелания» — что было и что стало', () => {
+  const { db, ids } = seed();
+  const n0 = db.notifications.length;
+  call(db, 'POST', '/api/participate', { fullName: 'Чатов 1', address: 'ПВЗ Ozon, Казань 1', wishes: 'весы', agree: true }, { userId: ids[1] });
+  const a = db.notifications.slice(n0).find((x) => x.userId === '@admins');
+  assert.match(a.text, /Чат1 @chat_u1 .*изменил анкету:\nпожелания: «кофе» → «весы»/);
+  // без изменений — тишина
+  const n1 = db.notifications.length;
+  call(db, 'POST', '/api/participate', { fullName: 'Чатов 1', address: 'ПВЗ Ozon, Казань 1', wishes: 'весы', agree: true }, { userId: ids[1] });
+  assert.ok(!db.notifications.slice(n1).some((x) => x.userId === '@admins'));
+  call(db, 'POST', '/api/wishes-add', { text: 'или дрип-пакеты' }, { userId: ids[1] });
+  assert.ok(db.notifications.some((x) => x.userId === '@admins' && /дополнил пожелания: «или дрип-пакеты»/.test(x.text)));
+  // в бот админам уходит
+  db.tgAdmins = [990];
+  const out = bot.pushNotifications(db, [a], null);
+  assert.ok(out.some((o) => o.chat_id === 990 && /изменил анкету/.test(o.text)));
+});
