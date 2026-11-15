@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261115e">
+  <link rel="stylesheet" href="css/style.css?v=20261115f">
 </head>
 <body>
   <div class="banners" data-banners></div>
@@ -23,6 +23,7 @@
     <nav class="nav">
       <a href="./">Главная</a>
       <a href="./#rules">Правила</a>
+      <button class="btn btn-ghost btn-sm reload-btn" type="button" title="Обновить страницу" aria-label="Обновить страницу" onclick="location.replace(location.pathname + '?r=' + Date.now() + location.hash)">🔄</button>
       <button class="btn btn-ghost btn-sm" data-logout hidden>Выйти</button>
     </nav>
   </header>
@@ -188,11 +189,11 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=20261115e"></script>
-  <script src="js/cities.js?v=20261115e"></script>
-  <script src="js/core.js?v=20261115e"></script>
-  <script src="js/api.js?v=20261115e"></script>
-  <script src="js/fx.js?v=20261115e"></script>
-  <script src="js/cabinet.js?v=20261115e"></script>
+  <script src="js/config.js?v=20261115f"></script>
+  <script src="js/cities.js?v=20261115f"></script>
+  <script src="js/core.js?v=20261115f"></script>
+  <script src="js/api.js?v=20261115f"></script>
+  <script src="js/fx.js?v=20261115f"></script>
+  <script src="js/cabinet.js?v=20261115f"></script>
 </body>
 </html>

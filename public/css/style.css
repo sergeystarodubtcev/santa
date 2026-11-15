@@ -734,3 +734,5 @@ td small { display: block; }
 .chat-form { display: flex; gap: 8px; align-items: flex-end; }
 .chat-form textarea { flex: 1; min-height: 40px; resize: vertical; }
 .add-wish { margin-top: 12px; }
+.reload-btn { padding-left: 10px; padding-right: 10px; font-size: 16px; }
+.reload-btn:active { transform: rotate(180deg); transition: transform .3s; }
