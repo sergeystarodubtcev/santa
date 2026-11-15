@@ -30,8 +30,8 @@ const BTN = {
   done: '✅ Готово',
 };
 const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.chat }, { text: BTN.wave }], [{ text: BTN.help }]], resize_keyboard: true };
-const ADM = { status: '📊 Статус', send: '📣 Рассылка' };
-const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.status }, { text: ADM.send }], [{ text: '🛡 Модерация' }]]), resize_keyboard: true };
+const ADM = { status: '📊 Статус', send: '📣 Рассылка', who: '🔎 Досье' };
+const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.status }, { text: ADM.send }], [{ text: '🛡 Модерация' }, { text: ADM.who }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
@@ -97,6 +97,75 @@ function createBot({ core, secret, siteUrl, username }) {
       : st.users.filter((u) => u.participation && !u.banned).map((u) => u.id);
     return [...new Set(ids)].map((id) => st.users.find((u) => u.id === id)).filter(Boolean);
   }
+  // ---------- «🔎 Досье»: организатор присылает @ник (или телефон / имя) — бот отвечает всем, что знает о человеке ----------
+  const fmtDT = (ms) => (ms ? new Date(ms).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }) : '');
+  function findUsers(db, q) {
+    const raw = String(q || '').trim();
+    const t = raw.replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '').toLowerCase();
+    if (!t) return [];
+    const exact = db.users.filter((u) => (u.tg || '').toLowerCase() === t);
+    if (exact.length) return exact;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 6) {
+      const byPhone = db.users.filter((u) => (u.phone || '').replace(/\D/g, '').endsWith(digits.slice(-10)));
+      if (byPhone.length) return byPhone;
+    }
+    return db.users.filter((u) => {
+      const p = db.participations[u.id] || {};
+      return [(u.tg || ''), (u.name || ''), (p.fullName || '')].some((x) => x.toLowerCase().includes(t));
+    });
+  }
+  function dossier(db, uid) {
+    const u = db.users.find((x) => x.id === uid);
+    if (!u) return 'Не нашёл такого участника.';
+    const who = (id) => { const x = db.users.find((y) => y.id === id); if (!x) return '(аккаунт удалён)'; const pp = db.participations[x.id]; return `${esc(x.name)} @${esc(x.tg)}` + (pp && pp.fullName ? ` (${esc(pp.fullName)})` : ''); };
+    const p = db.participations[uid];
+    const L = [`🔎 <b>Досье: ${esc(u.name)}</b> @${esc(u.tg)}`,
+      `📱 ${esc(u.phone || '—')} · ${u.tgChatId ? '✈️ бот подключён' : '🔕 бот не подключён'}` + (u.banned ? ' · 🛑 в чёрном списке' : ''),
+      `🗓 Зарегистрирован: ${fmtDT(u.createdAt) || '—'}`];
+    if (!p) L.push('', '📝 Анкета не заполнена.');
+    else {
+      const mod = core.modStatus(p);
+      L.push('', `📝 <b>Анкета</b> (${mod === 'approved' ? '✅ одобрена' : mod === 'rejected' ? '🚫 отклонена' : '⏳ на модерации'}${p.round > 1 ? `, записался в ${p.round}-ю волну` : ''})`,
+        `ФИО: ${esc(p.fullName || '—')}`, `ПВЗ: ${esc(p.address || '—')}`, `Тематика: ${esc(core.PREFS[p.prefs] || p.prefs || '—')}`,
+        `Пожелания: ${esc(p.wishes || '—')}`, `Пометки: ${esc(p.notes || '—')}`);
+      if (p.moderationNote) L.push(`Комментарий модерации: ${esc(p.moderationNote)}`);
+      for (const [n, a] of Object.entries((db.waveAnketas || {})[uid] || {})) {
+        if (!a || (a.wishes === p.wishes && a.address === p.address && a.notes === p.notes)) continue;
+        L.push(`↳ анкета ${n === 'next' ? 'следующей' : n + '-й'} волны: ПВЗ ${esc(a.address || '—')}; пожелания: ${esc(a.wishes || '—')}` + (a.notes ? `; пометки: ${esc(a.notes)}` : ''));
+      }
+    }
+    const w2 = (db.wave2 || {})[uid];
+    if (w2) L.push('', `🌊 Следующая волна: ${{ waiting: 'в листе ожидания', invited: 'приглашён, не подтвердил', confirmed: 'подтвердил участие', declined: 'отказался' }[w2.status] || w2.status}` + (w2.round ? ` (${w2.round}-я)` : '') + (w2.reason === 'victim' ? ' · ⭐ приоритет: Санта не отправил ему подарок' : ''));
+    const wst = (n) => { const w = (db.waves || []).find((x) => x.n === n); return w && w.status === 'drawing' ? ' · 🎲 черновик, не подтверждён' : ''; };
+    const pst = (x) => x.failed ? '❌ не отправлено, пара снята'
+      : x.status === 'received' ? `🥳 получено ${fmtDT(x.receivedAt)}`
+      : x.status === 'sent' ? `🚚 отправлено ${fmtDT(x.sentAt)}` + (x.track ? `, трек ${esc(x.track)}` : '') + (x.photoId || x.tgPhoto ? ', 📷 есть фото' : '')
+      : x.ackAt ? `✅ подтвердил сборы ${fmtDT(x.ackAt)}, ещё не отправил` : '⏳ не подтвердил сборы, не отправил';
+    const outs = db.pairs.filter((x) => x.santaId === uid), ins = db.pairs.filter((x) => x.recipientId === uid);
+    const rn = (x) => core.pairRound(x);
+    if (!outs.length && !ins.length) L.push('', '🎲 Пар пока нет.');
+    for (const x of outs) {
+      const rp = db.participations[x.recipientId] || {};
+      L.push('', `🎅 <b>Дарит</b> (${rn(x)}-я волна${wst(rn(x))}): ${who(x.recipientId)}`, `   ПВЗ: ${esc(rp.address || '—')} · 📱 ${esc((db.users.find((y) => y.id === x.recipientId) || {}).phone || '—')}`,
+        `   Пожелания: ${esc(rp.wishes || '—')}`, `   Статус: ${pst(x)}`);
+    }
+    for (const x of ins) L.push('', `🎁 <b>Ему дарит</b> (${rn(x)}-я волна${wst(rn(x))}): ${who(x.santaId)}`, `   Статус: ${pst(x)}`);
+    const msgs = (db.messages || []).filter((m) => m.santaId === uid || m.recipientId === uid);
+    if (msgs.length) L.push('', `💬 Анонимная переписка: ${msgs.length} ${core.plural(msgs.length, 'сообщение', 'сообщения', 'сообщений')}`);
+    const t = L.join('\n');
+    return t.length > 4000 ? t.slice(0, 3990) + '…' : t;
+  }
+  function admWho(db, out, chatId, q) {
+    const list = findUsers(db, q);
+    if (!list.length) { out.push({ chat_id: chatId, text: `Никого не нашёл по «${esc(q)}». Пришлите @ник, телефон или имя. /cancel — выход.` }); return; }
+    if (list.length > 1) {
+      out.push({ chat_id: chatId, text: `Нашёл ${list.length}. Кого показать?`, reply_markup: ib(list.slice(0, 10).map((u) => [[`${u.name} @${u.tg}`, 'adm:who:' + u.id]])) });
+      return;
+    }
+    out.push({ chat_id: chatId, text: dossier(db, list[0].id) });
+  }
+
   const WST = { open: '📝 идёт запись', drawing: '🎲 ждёт вашего подтверждения', drawn: '✅ пары у участников', closed: '⏹ остановлена' };
   function admStatus(db, ctx, out, chatId, n) {
     const st = admState(db, ctx);
@@ -166,6 +235,7 @@ function createBot({ core, secret, siteUrl, username }) {
     const n = Number(nRaw) || 0;
     const st0 = db.tgState[chatId];
     if (act === 'st') return admStatus(db, ctx, out, chatId, Number(cat) || 0);
+    if (act === 'who') { out.push({ chat_id: chatId, text: dossier(db, cat) }); return; }
     if (act === 'send') return admSendMenu(out, chatId);
     if (act === 'l') return admList(db, ctx, out, chatId, cat, n);
     if (act === 'r') return admConfirm(db, ctx, out, chatId, cat, n, ADM_CATS[cat].text);
@@ -728,6 +798,17 @@ function createBot({ core, secret, siteUrl, username }) {
     }
     if ((text === '🛡 Модерация' || text === '/moderation') && isAdmin(db, chatId)) { modPanel(db, out, chatId); return { out, actingUid }; }
     if ((text === ADM.status || text === '/status') && isAdmin(db, chatId)) { delete db.tgState[chatId]; admStatus(db, ctx, out, chatId, 0); return { out, actingUid }; }
+    if ((text === ADM.who || /^\/who(\s|$)/.test(text)) && isAdmin(db, chatId)) {
+      const q = text.startsWith('/who') ? text.slice(4).trim() : '';
+      if (q) { delete db.tgState[chatId]; admWho(db, out, chatId, q); return { out, actingUid }; }
+      db.tgState[chatId] = { flow: 'admwho' };
+      out.push({ chat_id: chatId, text: '🔎 Пришлите @ник участника (можно телефон или имя) — покажу всё досье: анкету, кому дарит, кто дарит ему, статусы отправки. Можно присылать по одному нику подряд. /cancel — выход.' });
+      return { out, actingUid };
+    }
+    if (st && st.flow === 'admwho' && isAdmin(db, chatId) && text && text !== '/cancel' && !Object.values(BTN).includes(text) && !Object.values(ADM).includes(text) && !text.startsWith('/')) {
+      admWho(db, out, chatId, text);
+      return { out, actingUid };
+    }
     if ((text === ADM.send || text === '/send') && isAdmin(db, chatId)) { delete db.tgState[chatId]; admSendMenu(out, chatId); return { out, actingUid }; }
     if (st && st.flow === 'admtext' && isAdmin(db, chatId) && text && text !== '/cancel') {
       admConfirm(db, ctx, out, chatId, st.cat, st.n, text.slice(0, 1000));

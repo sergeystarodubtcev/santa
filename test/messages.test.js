@@ -95,3 +95,32 @@ test('бот: кнопка «💬 Переписка» и «Написать п�
   assert.ok(m.reply_markup.inline_keyboard.flat().some((b) => b.callback_data === 'msg:s:1'));
   assert.ok(ids.length);
 });
+
+test('бот организатора: «🔎 Досье» по @нику — кто кому дарит, анкета, статусы', () => {
+  const { db, ids } = seed();
+  const ctxA = Object.assign({}, ctx, { checkAdmin: (p) => p === 'pw' });
+  let n = 100;
+  const say = (text) => bot.handleUpdate(db, ctxA, { update_id: ++n, message: { message_id: n, chat: { id: 990, type: 'private' }, from: { id: 990 }, text } }).out;
+  say('/admin pw');
+  const pair = pairOf(db, ids[0]);
+  call(db, 'POST', '/api/sent', { round: 1, track: 'TRK-77' }, { userId: ids[0] });
+  assert.match(say('🔎 Досье')[0].text, /Пришлите @ник/);
+  const t = say('@chat_u0')[0].text;
+  assert.match(t, /Досье: Чат0/);
+  assert.match(t, /ФИО: Чатов 0/);
+  const rec = db.users.find((u) => u.id === pair.recipientId);
+  assert.ok(t.includes('Дарит') && t.includes('@' + rec.tg), 'кому дарит');
+  assert.match(t, /отправлено .*трек TRK-77/);
+  assert.match(t, /Ему дарит/);
+  // по телефону и несколько совпадений
+  assert.match(say('+7955920001')[0].text, /Досье: Чат1/);
+  const many = say('чат')[0];
+  assert.match(many.text, /Нашёл 3/);
+  const id = many.reply_markup.inline_keyboard[1][0].callback_data;
+  const r = bot.handleUpdate(db, ctxA, { update_id: ++n, callback_query: { id: 'q', data: id, from: { id: 990 }, message: { chat: { id: 990, type: 'private' } } } }).out;
+  assert.match(r.map((o) => o.text || '').join(' '), /Досье: Чат1/);
+  assert.match(say('/who @nobody_here')[0].text, /Никого не нашёл/);
+  // не админ досье не получает
+  const stranger = bot.handleUpdate(db, ctx, { update_id: ++n, message: { message_id: n, chat: { id: 701, type: 'private' }, from: { id: 701 }, text: '/who @chat_u0' } }).out;
+  assert.ok(!stranger.some((o) => /Досье/.test(o.text || '')));
+});
