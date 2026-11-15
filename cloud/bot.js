@@ -26,9 +26,10 @@ const BTN = {
   got: '🎉 Я получил подарок',
   help: '🆘 Помощь администратора',
   wave: '🌊 Следующие волны',
+  chat: '💬 Переписка',
   done: '✅ Готово',
 };
-const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.wave }, { text: BTN.help }]], resize_keyboard: true };
+const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.chat }, { text: BTN.wave }], [{ text: BTN.help }]], resize_keyboard: true };
 const ADM = { status: '📊 Статус', send: '📣 Рассылка' };
 const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.status }, { text: ADM.send }], [{ text: '🛡 Модерация' }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
@@ -308,6 +309,32 @@ function createBot({ core, secret, siteUrl, username }) {
     askWaveForm(out, chatId, edit ? 'fullName' : 'agree', db.tgState[chatId]);
   }
 
+  // «💬 Переписка»: анонимно написать своему получателю или своему Санте (по каждой волне)
+  function chatMenu(db, ctx, out, chatId) {
+    const u = userByChat(db, chatId);
+    if (!u) return notLinked(out, chatId);
+    const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
+    const outs = me.assignments || [];
+    const ins = (me.incomings || []).filter((x) => !x.failed);
+    if (!outs.length && !ins.length) {
+      out.push({ chat_id: chatId, text: '💬 Переписка откроется после жеребьёвки: можно будет анонимно написать своему получателю (уточнить, что он хочет) и своему Тайному Санте.' });
+      return;
+    }
+    const many = outs.length + ins.length > 2;
+    const last = (list) => (list && list.length ? '\n' + list.slice(-3).map((m) => `${m.mine ? '🫵 Вы' : m.who}: ${esc(m.text)}`).join('\n') : '');
+    const lines = ['💬 <b>Анонимная переписка</b> — никто не узнает, кто вы.'];
+    const rows = [];
+    for (const a of outs) {
+      lines.push('', `🎅 <b>Ваш получатель</b>${many ? ` · ${a.round}-я волна` : ''}` + last((a.messages || []).map((m) => ({ mine: m.from === 'santa', who: '🎁 Получатель', text: m.text }))));
+      rows.push([[`💬 Написать получателю${many ? ` (${a.round}-я волна)` : ''}`, 'msg:r:' + a.round]]);
+    }
+    for (const g of ins) {
+      lines.push('', `🎁 <b>Ваш Тайный Санта</b>${many ? ` · ${g.round}-я волна` : ''}` + last((g.messages || []).map((m) => ({ mine: m.from === 'recipient', who: '🎅 Санта', text: m.text }))));
+      rows.push([[`💬 Написать своему Санте${many ? ` (${g.round}-я волна)` : ''}`, 'msg:s:' + g.round]]);
+    }
+    out.push({ chat_id: chatId, text: lines.join('\n'), reply_markup: ib(rows) });
+  }
+
   // «🌊 Следующие волны»: записаться (анкета из прошлой волны), лист ожидания, статус
   function waveMenu(db, ctx, out, chatId) {
     const u = userByChat(db, chatId);
@@ -454,7 +481,7 @@ function createBot({ core, secret, siteUrl, username }) {
         `📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>` +
         (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
         `\n\n📅 Отправка: до ${fmtDay((a.dates && a.dates.end) || (me.dates && me.dates.end) || me.settings.sendEnd)}`,
-      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]], [['❓ Уточнить данные у организатора', 'ask:' + a.round]]])) : undefined,
+      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]], [['💬 Написать получателю', 'msg:r:' + a.round]], [['❓ Уточнить данные у организатора', 'ask:' + a.round]]])) : ib([[['💬 Написать получателю', 'msg:r:' + a.round]]]),
     });
     }
     if (me.nextWave && !me.nextWave.joined) out.push({ chat_id: chatId, text: me.nextWave.n ? `🌊 Кстати, открыта запись в ${me.nextWave.n}-ю волну — можно подарить ещё один подарок.` : '🌊 Хотите участвовать и в следующей волне? Можно записаться в лист ожидания.', reply_markup: WAVEJOIN_BTN });
@@ -542,6 +569,22 @@ function createBot({ core, secret, siteUrl, username }) {
       } else if (d === 'keep' && st && st.flow === 'form' && st.waveJoin) {
         if (st.step === 'address') st.addrConfirmed = true;
         formInput(db, ctx, out, chatId, st, (st.prefill || {})[st.step] || '');
+      } else if (d.startsWith('msg:')) {
+        // написать получателю (r) или своему Санте (s) — следующее сообщение уйдёт анонимно
+        if (!u0) notLinked(out, chatId);
+        else {
+          const [, who, n] = d.split(':');
+          db.tgState[chatId] = { flow: 'msg', to: who === 's' ? 'santa' : 'recipient', round: Number(n) || null };
+          out.push({ chat_id: chatId, text: who === 's'
+            ? '💬 Напишите сообщение своему Тайному Санте — он не узнает, кто вы, и не увидит ваш ник. /cancel — отмена.'
+            : '💬 Напишите сообщение своему получателю — например, уточните, что он хочет. Он не узнает, кто вы. /cancel — отмена.' });
+        }
+      } else if (d === 'addwish') {
+        if (!u0) notLinked(out, chatId);
+        else {
+          db.tgState[chatId] = { flow: 'addwish' };
+          out.push({ chat_id: chatId, text: '➕ Что добавить к пожеланиям? Напишите одним сообщением — ваш Санта сразу увидит. /cancel — отмена.' });
+        }
       } else if (d.startsWith('ask:')) {
         // «Уточнить данные»: организаторы сразу получают данные пары, дальше — переписка через «Помощь»
         if (!u0) notLinked(out, chatId);
@@ -722,6 +765,22 @@ function createBot({ core, secret, siteUrl, username }) {
         formInput(db, ctx, out, chatId, st, text);
         return { out, actingUid };
       }
+      if (st.flow === 'msg' && text && !Object.values(BTN).includes(text)) {
+        delete db.tgState[chatId];
+        try {
+          call(db, ctx, 'POST', '/api/msg', { to: st.to, round: st.round || undefined, text }, { userId: u0.id });
+          out.push({ chat_id: chatId, text: st.to === 'santa' ? '✅ Отправлено вашему Санте — анонимно. Ответ придёт сюда.' : '✅ Отправлено вашему получателю — анонимно. Ответ придёт сюда.', reply_markup: MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+        return { out, actingUid };
+      }
+      if (st.flow === 'addwish' && text && !Object.values(BTN).includes(text)) {
+        delete db.tgState[chatId];
+        try {
+          call(db, ctx, 'POST', '/api/wishes-add', { text }, { userId: u0.id });
+          out.push({ chat_id: chatId, text: '✅ Добавил к вашим пожеланиям. Ваш Санта уже получил уведомление.', reply_markup: MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+        return { out, actingUid };
+      }
       // фото (например, QR-код) вместо трек-номера: подпись к фото — трек
       if (st.flow === 'sent' && update.message.photo && update.message.photo.length) {
         delete db.tgState[chatId];
@@ -746,12 +805,14 @@ function createBot({ core, secret, siteUrl, username }) {
         text: p
           ? `📝 <b>Ваша анкета</b>\n${statusLine(db, u0)}\n\nФИО: ${esc(p.fullName)}\nТелефон: ${esc(u0.phone)}\nПВЗ: ${esc(p.address)}\nТематика: ${esc(core.PREFS[p.prefs])}\nПожелания: ${esc(p.wishes) || '—'}\nПометки: ${esc(p.notes) || '—'}`
           : 'Анкета ещё не заполнена.',
-        reply_markup: ib([[[p ? '✏️ Изменить анкету' : '🎁 Заполнить анкету', 'form']]]),
+        reply_markup: ib((p ? [[['➕ Дополнить пожелания', 'addwish']]] : []).concat([[[p ? '✏️ Изменить анкету' : '🎁 Заполнить анкету', 'form']]])),
       });
     } else if (text === BTN.sent) {
       askSent(db, ctx, out, chatId, u0);
     } else if (text === BTN.wave) {
       waveMenu(db, ctx, out, chatId);
+    } else if (text === BTN.chat) {
+      chatMenu(db, ctx, out, chatId);
     } else if (text === BTN.got) {
       const me = call(db, ctx, 'GET', '/api/me', null, { userId: u0.id });
       const coming = (me.incomings || []).filter((x) => x.status === 'sent');
@@ -783,8 +844,9 @@ function createBot({ core, secret, siteUrl, username }) {
       if (u.tgChatId && u.id !== exceptUid) {
         out.push({
           chat_id: u.tgChatId,
-          text: '🔔 ' + esc(n.text),
-          reply_markup: n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
+          text: (n.action === 'msg' ? '' : '🔔 ') + esc(n.text),
+          reply_markup: n.action === 'msg' && n.msg ? ib([[[n.msg.reply === 'santa' ? '↩️ Ответить Санте' : '↩️ Ответить получателю', `msg:${n.msg.reply === 'santa' ? 's' : 'r'}:${n.msg.round}`]]])
+            : n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
         if (n.tgPhoto) out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: n.tgPhoto, caption: '📷 Фото от вашего Тайного Санты' });
       }

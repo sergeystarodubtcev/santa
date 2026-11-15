@@ -340,6 +340,7 @@
           ${a.track ? `<dt>Трек</dt><dd>${esc(a.track)}</dd>` : ''}
         </dl>
       </div>
+      ${chatBlock(a.messages, 'recipient', rn)}
       <div class="ask-box" data-ask-box data-round="${rn}">
         <button class="btn btn-ghost btn-sm btn-block" type="button" data-ask-open>❓ Не хватает данных для доставки? Уточнить у организатора</button>
         <form class="form" data-ask-form hidden>
@@ -366,6 +367,46 @@
     </div>`;
   }
 
+  // Анонимная переписка: to = 'recipient' (я Санта) или 'santa' (я получатель)
+  function chatBlock(messages, to, round) {
+    const mine = to === 'recipient' ? 'santa' : 'recipient';
+    const list = messages || [];
+    return `<div class="chat-box" data-chat="${to}:${round}">
+      <div class="chat-head">💬 ${to === 'recipient' ? 'Переписка с получателем' : 'Переписка с вашим Сантой'} <small>анонимно — никто не видит, кто вы</small></div>
+      ${list.length ? `<div class="chat-list">${list.map((m) => `<div class="chat-msg ${m.from === mine ? 'mine' : ''}"><span>${esc(m.text)}</span><time>${FX.fmtDateTime(m.at)}</time></div>`).join('')}</div>`
+        : `<p class="muted chat-empty">${to === 'recipient' ? 'Не хватает деталей? Спросите получателя, что он хочет, — он не узнает, кто вы.' : 'Можно написать своему Санте — например, поблагодарить или подсказать что-то о подарке.'}</p>`}
+      <form class="chat-form" data-chat-form data-to="${to}" data-round="${round}">
+        <textarea name="text" rows="1" maxlength="1000" placeholder="${to === 'recipient' ? 'Написать получателю…' : 'Написать Санте…'}"></textarea>
+        <button class="btn btn-primary btn-sm" type="submit">Отправить</button>
+      </form>
+    </div>`;
+  }
+  // отправка сообщения (делегирование: блоки перерисовываются)
+  document.addEventListener('submit', async (e) => {
+    const f = e.target.closest('[data-chat-form]');
+    if (!f) return;
+    e.preventDefault();
+    const text = f.text.value.trim();
+    if (!text) return;
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    try {
+      me = await Api.post('/api/msg', { to: f.dataset.to, round: Number(f.dataset.round) || undefined, text });
+      render();
+      FX.toast('Отправлено анонимно 💬', 'success');
+      const box = document.querySelector(`[data-chat="${f.dataset.to}:${f.dataset.round}"] .chat-list`);
+      if (box) box.scrollTop = box.scrollHeight;
+    } catch (ex) { FX.toast(ex.message, 'error'); btn.disabled = false; }
+  });
+  // «↩️ Ответить» из уведомления — к нужной переписке
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-reply-to]');
+    if (!b) return;
+    const box = document.querySelector(`[data-chat="${b.dataset.replyTo}:${b.dataset.round}"]`);
+    if (!box) return FX.toast('Переписка недоступна', 'error');
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => box.querySelector('textarea').focus(), 400);
+  });
   function giftPhoto(g) {
     return g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`
       : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото — оно в Telegram-боте.</p>' : '';
@@ -381,6 +422,7 @@
         ${g.status === 'assigned' ? '<p>🛷 Ваш Тайный Санта собирает посылку.</p>'
           : g.status === 'sent' ? `<p>🎁 <b>Подарок уже в пути!</b> Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `, трек: <b>${esc(g.track)}</b>` : ''}</p>${giftPhoto(g)}<button class="btn btn-primary btn-block" data-received data-round="${g.round}">🎉 Я получил подарок!</button>`
           : `<p>🥳 Подарок получен ${FX.fmtDateTime(g.receivedAt)}.</p>`}
+        ${chatBlock(g.messages, 'santa', g.round)}
       </div>`).join('<hr class="wave-sep">');
       $$('[data-received]', host).forEach((b) => b.addEventListener('click', async () => {
         b.disabled = true;
@@ -399,12 +441,14 @@
       const w = me.wave2 || {};
       host.innerHTML = `<div class="sealed"><div class="env">😢</div><p><b>Ваш Санта не отправил подарок</b></p><p class="muted">${w.status === 'confirmed' ? `Вы в ${w.round}-й волне ⭐ — там вам отправят подарок в первую очередь.` : w.status === 'declined' ? 'Вы отказались от следующей волны. Если передумали — напишите организаторам.' : w.status === 'waiting' ? 'Мы записали вас в следующую волну с приоритетом ⭐ — когда она откроется, придёт приглашение.' : 'Мы пригласили вас в следующую волну — подтвердите участие выше, и вам отправят подарок в первую очередь ⭐'}</p></div>`;
     } else if (g.status === 'assigned') {
-      host.innerHTML = `<div class="sealed"><div class="env">🛷</div><p>Ваш Тайный Санта собирает посылку.</p><p class="muted">Как только он отметит отправку — вы увидите это здесь.</p></div>`;
+      host.innerHTML = `<div class="sealed"><div class="env">🛷</div><p>Ваш Тайный Санта собирает посылку.</p><p class="muted">Как только он отметит отправку — вы увидите это здесь.</p></div>`
+        + chatBlock(g.messages, 'santa', g.round || 1);
     } else if (g.status === 'sent') {
       host.innerHTML = `<div class="gift-big">🎁</div>
         <h3 style="justify-content:center;text-align:center;font-size:22px">Вам подарок от Деда Мороза!</h3>
         <p class="muted" style="text-align:center">Отправлен ${FX.fmtDateTime(g.sentAt)}${g.track ? `<br>Трек: <b>${esc(g.track)}</b>` : ''}</p>
         ${giftPhoto(g)}
+        ${chatBlock(g.messages, 'santa', g.round || 1)}
         <button class="btn btn-primary btn-block" data-received>🎉 Я получил подарок!</button>`;
       $('[data-received]', host).addEventListener('click', async (e) => {
         e.target.disabled = true;
@@ -419,7 +463,8 @@
         setTimeout(() => FX.burstFrom(host, { count: 50 }), 400);
       }
     } else {
-      host.innerHTML = `<div class="gift-big" style="animation:none">🥳</div><p style="text-align:center">Подарок получен ${FX.fmtDateTime(g.receivedAt)}. С наступающим!</p>`;
+      host.innerHTML = `<div class="gift-big" style="animation:none">🥳</div><p style="text-align:center">Подарок получен ${FX.fmtDateTime(g.receivedAt)}. С наступающим!</p>`
+        + chatBlock(g.messages, 'santa', g.round || 1);
     }
   }
 
@@ -441,8 +486,22 @@
       </dl>
       <div class="actions">
         <button class="btn btn-ghost btn-sm" data-open-part>✏️ Изменить</button>
+        <button class="btn btn-ghost btn-sm" data-add-wish>➕ Дополнить пожелания</button>
         ${me.drawn ? '' : '<button class="btn btn-danger btn-sm" data-leave>Выйти из игры</button>'}
-      </div>`;
+      </div>
+      <form class="form add-wish" data-add-wish-form hidden>
+        <label>Что добавить к пожеланиям?<small>Ваш Санта сразу получит уведомление${(me.assignments || []).length || (me.incomings || []).length ? '' : ' (после жеребьёвки)'}</small><textarea name="text" rows="2" maxlength="500" placeholder="Например: люблю светлую обжарку, кружку не нужно"></textarea></label>
+        <div class="row2"><button class="btn btn-ghost btn-sm" type="button" data-add-wish-cancel>Отмена</button><button class="btn btn-primary btn-sm" type="submit">➕ Добавить</button></div>
+      </form>`;
+      const aw = $('[data-add-wish-form]', host);
+      $('[data-add-wish]', host).addEventListener('click', () => { aw.hidden = false; aw.text.focus(); });
+      $('[data-add-wish-cancel]', host).addEventListener('click', () => { aw.hidden = true; });
+      aw.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!aw.text.value.trim()) return;
+        try { me = await Api.post('/api/wishes-add', { text: aw.text.value }); render(); FX.toast('Добавлено — Санта уже в курсе ➕', 'success'); }
+        catch (ex) { FX.toast(ex.message, 'error'); }
+      });
       const l = $('[data-leave]', host);
       if (l) l.addEventListener('click', async () => {
         if (!confirm('Точно выйти из Тайного Санты?')) return;
@@ -466,7 +525,7 @@
   function renderNotifs() {
     const list = me.notifications;
     $('[data-notifs]').innerHTML = list.length
-      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}${notifButtons(n.buttons)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
+      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}${n.msg ? `<div class="notif-btns"><button class="btn btn-primary btn-sm" type="button" data-reply-to="${n.msg.reply === 'santa' ? 'santa' : 'recipient'}" data-round="${n.msg.round}">↩️ Ответить</button></div>` : notifButtons(n.buttons)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
       : '<li>Пока тихо. Как будто перед большим завозом зерна.</li>';
     if (list.some((n) => !n.read)) setTimeout(() => Api.post('/api/notifications/read').catch(() => {}), 2500);
   }

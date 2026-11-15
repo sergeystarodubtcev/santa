@@ -63,6 +63,8 @@
       wave2: {},
       // Анкеты для конкретных волн (если человек записался в следующую волну и поправил данные): { [userId]: { [n | 'next']: анкета } }
       waveAnketas: {},
+      // Анонимная переписка Санты и получателя: [{ id, round, santaId, recipientId, from: 'santa'|'recipient', text, at }]
+      messages: [],
       // Личный Telegram-аккаунт организатора: пишет тем, у кого не подключён бот (через ретранслятор)
       userAcc: { status: 'off' },
       userOutbox: [],
@@ -96,6 +98,7 @@
       if (p && p.round === 2 && !db.wave2[uid]) db.wave2[uid] = { round: 2, status: 'invited', reason: 'new', priority: 0, addedAt: p.joinedAt || 0 };
     }
     for (const w of Object.values(db.wave2)) if (w && w.round === undefined) w.round = w.status === 'waiting' ? null : 2;
+    if (!Array.isArray(db.messages)) db.messages = [];
     // раньше жеребьёвка публиковалась сразу — такие волны считаем подтверждёнными
     if (!db.wavesV2) {
       db.waves.forEach((w) => { if (w.drawnAt && !w.confirmedAt) w.confirmedAt = w.drawnAt; });
@@ -240,6 +243,51 @@
     return !!uid && published(db, pairRound(p)) && (p.santaId === uid || (p.recipientId === uid && p.status !== 'assigned'));
   }
 
+  // ---------- анонимная переписка: Санта ↔ получатель (по паре конкретной волны) ----------
+  // to: 'recipient' — Санта пишет своему получателю; 'santa' — получатель пишет своему Санте
+  function sendMessage(db, ctx, uid, body) {
+    const to = body.to === 'santa' ? 'santa' : 'recipient';
+    const n = Number(body.round) || null;
+    const side = to === 'recipient' ? 'santaId' : 'recipientId';
+    const pair = n ? pairOfWave(db, uid, side, n) : (to === 'recipient' ? outPair(db, uid) : inPair(db, uid));
+    if (!pair || !published(db, pairRound(pair))) fail(404, to === 'recipient' ? 'У вас пока нет получателя' : 'У вас пока нет Тайного Санты');
+    const text = str(body.text, 1000);
+    if (!text) fail(400, 'Напишите сообщение');
+    const r = pairRound(pair);
+    db.messages = db.messages || [];
+    const from = to === 'recipient' ? 'santa' : 'recipient';
+    const today = db.messages.filter((m) => m.santaId === pair.santaId && m.recipientId === pair.recipientId && m.round === r && m.from === from && ctx.now() - m.at < DAY);
+    if (today.length >= 30) fail(429, 'Слишком много сообщений за сутки — продолжите завтра');
+    const msg = { id: newId(ctx), round: r, santaId: pair.santaId, recipientId: pair.recipientId, from, text, at: ctx.now() };
+    db.messages.push(msg);
+    if (db.messages.length > 5000) db.messages = db.messages.slice(-5000);
+    const target = to === 'recipient' ? pair.recipientId : pair.santaId;
+    const wtag = r > 1 ? ` (${r}-я волна)` : '';
+    notify(db, ctx, target, (to === 'recipient' ? `💬 Ваш Тайный Санта пишет${wtag}: «${text}»` : `💬 Ваш получатель пишет${wtag}: «${text}»`), 'msg', 'msg');
+    db.notifications[db.notifications.length - 1].msg = { round: r, reply: to === 'recipient' ? 'santa' : 'recipient' };
+    return msg;
+  }
+  const threadOf = (db, p) => (db.messages || []).filter((m) => m.santaId === p.santaId && m.recipientId === p.recipientId && m.round === pairRound(p)).slice(-40)
+    .map((m) => ({ from: m.from, text: m.text, at: m.at }));
+
+  // «➕ Дополнить пожелания»: дописывается к анкете (и к анкетам волн); Санты — сразу в курсе
+  function addWishes(db, ctx, uid, body) {
+    const part = db.participations[uid];
+    if (!part) fail(400, 'Сначала заполните анкету');
+    const text = str(body.text, 500);
+    if (!text) fail(400, 'Напишите, что добавить');
+    const add = (a) => { a.wishes = str(((a.wishes || '') + (a.wishes ? '\n' : '') + '➕ ' + text), 1500); a.updatedAt = ctx.now(); };
+    add(part);
+    Object.values((db.waveAnketas || {})[uid] || {}).forEach(add);
+    tellSantas(db, ctx, uid, `➕ Ваш получатель дополнил пожелания: «${text}». Загляните в «Кому я дарю».`);
+    return part;
+  }
+  // Сантам этого человека (по всем подтверждённым волнам, где посылка ещё не отправлена) — уведомление
+  function tellSantas(db, ctx, uid, text) {
+    db.pairs.filter((p) => p.recipientId === uid && published(db, pairRound(p)) && p.status === 'assigned')
+      .forEach((p) => notify(db, ctx, p.santaId, text + (pairRound(p) > 1 ? ` (${pairRound(p)}-я волна)` : ''), 'info', 'whom'));
+  }
+
   // Кнопки под рассылкой: действия бота/кабинета или своя ссылка (до 4 штук)
   const BUTTON_KINDS = { whom: '🎁 Кому я дарю', sent: '📦 Я отправил подарок', received: '🎉 Я получил подарок', wave: '🌊 Следующие волны', form: '📝 Моя анкета', site: '🌐 Открыть сайт' };
   function cleanButtons(list) {
@@ -322,6 +370,7 @@
     delete db.participations[uid];
     if (db.wave2) delete db.wave2[uid];
     if (db.waveAnketas) delete db.waveAnketas[uid];
+    if (db.messages) db.messages = db.messages.filter((m) => m.santaId !== uid && m.recipientId !== uid);
     if (db.userOutbox) db.userOutbox = db.userOutbox.filter((x) => x.userId !== uid || (x.status !== 'queued' && x.status !== 'sending'));
     db.notifications = db.notifications.filter((n) => n.userId !== uid);
     if (db.tgState) Object.keys(db.tgState).forEach((k) => { if (db.tgState[k] && db.tgState[k].uid === uid) delete db.tgState[k]; });
@@ -462,6 +511,9 @@
     // Новая анкета (и отклонённая после правок) уходит на модерацию; одобренная остаётся одобренной.
     const auto = !db.settings.moderation;
     const moderation = (existing && modStatus(existing) === 'approved') || auto ? 'approved' : 'pending';
+    const changedFields = existing ? [['wishes', 'пожелания'], ['notes', 'особые пометки'], ['address', 'адрес ПВЗ'], ['prefs', 'тематику'], ['fullName', 'ФИО']]
+      .filter(([k]) => k === 'wishes' ? (existing.wishes || '') !== str(body.wishes, 1000) : k === 'notes' ? (existing.notes || '') !== str(body.notes, 500)
+        : k === 'address' ? existing.address !== address : k === 'prefs' ? existing.prefs !== prefs : existing.fullName !== fullName).map(([, l]) => l) : [];
     db.participations[userId] = {
       round,
       city: detectCity(address),
@@ -475,6 +527,7 @@
       joinedAt: existing ? existing.joinedAt : ctx.now(),
       updatedAt: ctx.now(),
     };
+    if (changedFields.length) tellSantas(db, ctx, userId, `📝 Ваш получатель обновил анкету: ${changedFields.join(', ')}. Загляните в «Кому я дарю».`);
     if (round > 1 && body.wave2 && !inWave(db, userId, round)) {
       db.wave2[userId] = Object.assign({ reason: 'new', priority: 0, addedAt: ctx.now() }, wave2Of(db, userId) || {}, { round, status: 'confirmed', confirmedAt: ctx.now() });
     }
@@ -793,13 +846,14 @@
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
         photoId: p.photoId || null, tgPhoto: !!p.tgPhoto,
+        messages: threadOf(db, p),
       };
     };
     // все подтверждённые пары по волнам (у повторного участника их несколько)
     out.assignments = db.pairs.filter((p) => p.santaId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b)).map(recipientView);
     out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
       .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p),
-        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto }));
+        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto, messages: threadOf(db, p) }));
     // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;
@@ -1099,6 +1153,8 @@
           + (q ? `\nВопрос: ${q}` : '') + `\nОтветить в бот: /reply @${u.tg} текст`);
         return ok({ ok: true }, true);
       }
+      case 'POST /api/msg': sendMessage(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/wishes-add': addWishes(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
       case 'POST /api/notifications/read': {
         const uid = needUser();
         db.notifications.forEach((n) => { if (n.userId === uid) n.read = true; });
@@ -1424,6 +1480,7 @@
         // бэкап без сессии аккаунта организатора
         needAdmin();
         const copy = JSON.parse(JSON.stringify(db));
+        copy.messages = (copy.messages || []).length; // переписка участников приватна — в бэкап не выгружаем
         if (copy.userAcc) { delete copy.userAcc.session; delete copy.userAcc.code; delete copy.userAcc.password; }
         return ok(copy);
       }
