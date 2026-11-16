@@ -695,8 +695,30 @@
   }
 
   // Автожеребьёвка в назначенное время (wave.drawAt, например 00:00): создаёт черновик пар.
+  // Лист ожидания не копится: если идёт запись в волну (n > 1) — все ожидающие сразу добавляются в неё, с уведомлением.
+  function absorbWaitlist(db, ctx) {
+    const ow = openWave(db);
+    if (!ow || ow.n < 2) return 0;
+    const n = ow.n;
+    const d = datesFor(db, n);
+    const added = [];
+    for (const uid of Object.keys(db.wave2 || {})) {
+      const w = db.wave2[uid];
+      const u = db.users.find((x) => x.id === uid);
+      if (!w || w.status !== 'waiting' || !u || u.banned || !db.participations[uid]) continue;
+      Object.assign(w, { round: n, status: 'confirmed', confirmedAt: ctx.now() });
+      if (roundOf(db.participations[uid]) === 0) db.participations[uid].round = n;
+      const wa = db.waveAnketas && db.waveAnketas[uid];
+      if (wa && wa.next) { wa[n] = wa.next; delete wa.next; }
+      notify(db, ctx, uid, `🌊 Вы добавлены в ${waveTo(n)} Тайного Санты! Отправка подарков ${fmtDay(d.start)} — ${fmtDay(d.end)}.` + (w.priority ? ' Вам отправят подарок в первую очередь ⭐' : '') + ' Мы напишем, когда пройдёт жеребьёвка и можно будет узнать, кому дарить.', 'success', 'wave');
+      added.push(u);
+    }
+    if (added.length) notifyAdmins(db, ctx, `🌊 Из листа ожидания в ${waveTo(n)} добавлены (${added.length}): ` + added.map((u) => '@' + u.tg).join(' '));
+    return added.length;
+  }
+
   function tick(db, ctx) {
-    let changed = false;
+    let changed = absorbWaitlist(db, ctx) > 0;
     for (const w of db.waves || []) {
       if (w.status !== 'open' || !w.drawAt || w.drawAtDone || ctx.now() < Date.parse(w.drawAt)) continue;
       w.drawAtDone = ctx.now();
@@ -765,17 +787,8 @@
     const start = body.start;
     const end = body.end;
     db.waves.push({ n, start, end, status: 'open', drawnAt: null, createdAt: ctx.now(), drawAt: body.drawAt || null });
-    let invited = 0;
-    for (const uid of Object.keys(db.wave2 || {})) {
-      const w = db.wave2[uid];
-      if (w.status !== 'waiting' || !db.users.some((u) => u.id === uid)) continue;
-      Object.assign(w, { round: n, status: 'invited' });
-      if (db.participations[uid] && roundOf(db.participations[uid]) === 0) db.participations[uid].round = n;
-      const wa = db.waveAnketas && db.waveAnketas[uid];
-      if (wa && wa.next) { wa[n] = wa.next; delete wa.next; }
-      notify(db, ctx, uid, `Открылась запись в ${waveTo(n)} Тайного Санты 🎄 Отправка подарков ${fmtDay(start)} — ${fmtDay(end)}.` + (w.priority ? ' Вам отправят подарок в первую очередь ⭐' : '') + ' Подтвердите участие.', 'info', 'wave2');
-      invited++;
-    }
+    // лист ожидания — сразу в новую волну (без лишних подтверждений), каждому уведомление «вы добавлены»
+    const invited = absorbWaitlist(db, ctx);
     // остальным участникам — предложение записаться ещё и в новую волну
     let offered = 0;
     if (db.settings.round2Open) {
@@ -786,7 +799,7 @@
         offered++;
       }
     }
-    notifyAdmins(db, ctx, `🌊 Создана ${waveName(n)}: отправка ${fmtDay(start)} — ${fmtDay(end)}.` + (invited ? ` Приглашения подтвердить участие: ${invited}.` : '') + (offered ? ` Предложение записаться отправлено участникам: ${offered}.` : ''));
+    notifyAdmins(db, ctx, `🌊 Создана ${waveName(n)}: отправка ${fmtDay(start)} — ${fmtDay(end)}.` + (invited ? ` Из листа ожидания добавлено: ${invited}.` : '') + (offered ? ` Предложение записаться отправлено участникам: ${offered}.` : ''));
     return { n, invited };
   }
 

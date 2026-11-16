@@ -62,8 +62,8 @@ test('второй круг: запись после первой жеребьё
   call(db, 'POST', '/api/admin/wave-create', { start: '2026-12-21T00:00:00+03:00', end: '2026-12-30T23:59:59+03:00' }, admin);
   assert.throws(() => call(db, 'POST', '/api/admin/wave-create', W2DATES, admin), /Сначала проведите и подтвердите жеребьёвку или остановите/);
   assert.throws(() => call(db, 'POST', '/api/admin/reset', { round: 2 }, admin), /следующая волна/);
-  assert.deepEqual([db.wave2[r.user.id].status, db.wave2[r.user.id].round], ['invited', 3], 'лист ожидания получил приглашение в 3-ю волну');
-  assert.equal(db.notifications.filter((x) => x.userId === r.user.id).pop().action, 'wave2');
+  assert.deepEqual([db.wave2[r.user.id].status, db.wave2[r.user.id].round], ['confirmed', 3], 'лист ожидания сразу добавлен в 3-ю волну');
+  assert.equal(db.notifications.filter((x) => x.userId === r.user.id).pop().action, 'wave');
   call(db, 'POST', '/api/wave2', { join: true }, { userId: r.user.id });
   assert.equal(call(db, 'GET', '/api/me', null, { userId: r.user.id }).dates.start, '2026-12-21T00:00:00+03:00');
   // остановка волны: напоминания по ней не идут, жеребьёвка недоступна; возобновление

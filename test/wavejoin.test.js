@@ -167,7 +167,7 @@ test('бот: «🌊 Следующие волны», запись с теми �
   assert.ok(db.pairs.find((p) => (p.round || 1) === 1 && p.santaId === ids[0]).ackAt);
 });
 
-test('лист ожидания → 3-я волна: анкета переезжает, приглашение, подтверждение, жеребьёвка', () => {
+test('лист ожидания → 3-я волна: анкета переезжает, сразу в волну с уведомлением, жеребьёвка', () => {
   const db = core.emptyDb();
   const ids = [0, 1, 2].map((i) => user(db, i));
   call(db, 'POST', '/api/admin/shuffle', {}, admin);
@@ -178,7 +178,8 @@ test('лист ожидания → 3-я волна: анкета переезж
   assert.equal(call(db, 'GET', '/api/me', null, as(ids[0])).nextWave.joined, true);
   // отказ из листа ожидания
   call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
-  ids.forEach((id) => assert.deepEqual([db.wave2[id].round, db.wave2[id].status], [2, 'invited']));
+  ids.forEach((id) => assert.deepEqual([db.wave2[id].round, db.wave2[id].status], [2, 'confirmed']));
+  ids.forEach((id) => assert.match(db.notifications.filter((x) => x.userId === id).pop().text, /Вы добавлены в 2-ю волну/));
   assert.ok(ids.every((id) => db.waveAnketas[id][2] && !db.waveAnketas[id].next), 'анкета переехала в волну');
   ids.forEach((id) => call(db, 'POST', '/api/wave2', { join: true }, as(id)));
   call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
@@ -212,4 +213,25 @@ test('ограничения: без анкеты, бан, закрытая за
   call(db, 'POST', '/api/admin/settings', { round2Open: false }, admin);
   assert.throws(() => call(db, 'POST', '/api/wave-join', { fullName: 'Участник Номер 2', address: 'ПВЗ Ozon, Казань', agree: true }, as(ids[2])), /закрыта/);
   assert.equal(call(db, 'GET', '/api/me', null, as(ids[2])).nextWave, null);
+});
+
+test('лист ожидания не копится: если идёт запись в волну — таймер сразу переносит туда с уведомлением', () => {
+  const db = core.emptyDb();
+  const ids = [0, 1, 2].map((i) => user(db, i));
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
+  // «застрявший» в листе ожидания (например, записался, пока волна была на жеребьёвке)
+  db.wave2[ids[0]] = { round: null, status: 'waiting', reason: 'new', priority: 0 };
+  assert.equal(core.tick(db, ctx), true);
+  assert.deepEqual([db.wave2[ids[0]].round, db.wave2[ids[0]].status], [2, 'confirmed']);
+  assert.match(db.notifications.filter((x) => x.userId === ids[0]).pop().text, /Вы добавлены в 2-ю волну/);
+  assert.ok(db.notifications.some((x) => x.userId === '@admins' && /Из листа ожидания во? 2-ю волну добавлены \(1\)/.test(x.text)));
+  assert.equal(core.tick(db, ctx), false, 'повторно — ничего');
+  // волна разыграна — новых записей нет, ждут следующую
+  db.wave2[ids[2]] = { round: 2, status: 'confirmed', reason: 'new', priority: 0 };
+  call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  db.wave2[ids[1]] = { round: null, status: 'waiting', reason: 'new', priority: 0 };
+  core.tick(db, ctx);
+  assert.equal(db.wave2[ids[1]].status, 'waiting');
 });

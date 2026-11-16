@@ -94,9 +94,9 @@ test('автожеребьёвка в 00:00 создаёт черновик; у�
   assert.equal(pub2.confirmed, 1);
   assert.throws(() => call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin), /уже подтверждена/);
   assert.throws(() => call(db, 'POST', '/api/admin/pair-swap', { round: 1, userId: ids[0], side: 'santa' }, admin), /только до подтверждения/);
-  // теперь можно создать следующую волну — лист ожидания получает приглашение
+  // теперь можно создать следующую волну — лист ожидания сразу добавлен в неё
   call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
-  assert.equal(db.wave2[late.user.id].status, 'invited');
+  assert.equal(db.wave2[late.user.id].status, 'confirmed');
 });
 
 test('«изменить пару»: сотни случайных замен на волнах разного размера — без двойных и «самому себе»', () => {
