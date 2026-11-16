@@ -239,7 +239,7 @@
         <p class="muted" style="margin:0">Получателю придёт «📬 подарок приехал, можно забирать» с кодом и фото (в бот и в личный кабинет), Санте — что код передан.</p>
         <label>Код получения (если есть)<input name="code" maxlength="100" autocomplete="off" value="${esc(p.pickupCode || '')}"></label>
         ${have.length ? `<div><small class="muted">Уже прикреплено (нажмите, чтобы открыть):</small><div class="pickup-photos">${have.map((id) => `<img class="pickup-thumb" data-photo-id="${id}" alt="">`).join('')}</div></div>` : ''}
-        ${(p.pickupTgPhotos || []).length ? `<small class="muted">📷 Ещё фото из Telegram: ${(p.pickupTgPhotos || []).length}</small>` : ''}
+        ${(p.pickupTgPhotos || []).length ? `<small class="muted">📷 Ещё фото из Telegram: ${(p.pickupTgPhotos || []).length} — появятся здесь в течение минуты</small>` : ''}
         <label class="btn btn-ghost photo-btn">📷 Добавить фото штрихкода / QR<input type="file" accept="image/*" multiple data-pk-files hidden></label>
         <div class="pickup-photos" data-pk-preview></div>
         <div class="form-err" data-err></div>
@@ -322,7 +322,7 @@
         <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}
           ${p.pickupCode ? `<small>📬 код: ${esc(p.pickupCode)}</small>` : ''}
           ${(p.pickupPhotos || []).map((id, i) => `<button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${id}" title="Штрихкод / QR ${i + 1}">📷${(p.pickupPhotos || []).length > 1 ? i + 1 : ''}</button>`).join('')}
-          ${(p.pickupTgPhotos || []).length ? `<small>📷 в боте: ${(p.pickupTgPhotos || []).length}</small>` : ''}
+          ${(p.pickupTgPhotos || []).length ? `<small>📷 из бота, загружаются: ${(p.pickupTgPhotos || []).length}</small>` : ''}
           ${!isDraftPair(p) && !p.failed && p.status !== 'received' ? `<button class="btn btn-ghost btn-sm" type="button" data-pickup="${p.santaId}" data-round="${rnd(p)}" title="Прикрепить получателю код получения и сообщить «заказ приехал»">📬 ${p.pickupCode ? 'Изменить код' : 'Код получения'}</button>` : ''}</td>
       </tr>`).join('') || `<tr><td colspan="6" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
       return;

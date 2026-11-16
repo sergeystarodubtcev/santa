@@ -449,6 +449,24 @@ module.exports.handler = async function handler(event, context) {
       return reply(200, res);
     }
 
+    // Фото из бота: ретранслятор скачивает их из Telegram и кладёт сюда — чтобы они были видны и на сайте
+    if (path === '/api/tg/photos-need' || path === '/api/tg/photo-store') {
+      if (!TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
+      const db = await loadDb(token);
+      if (path === '/api/tg/photos-need') return reply(200, { fileIds: core.tgPhotosNeeded(db, 5) });
+      const fileId = String(body.fileId || '').slice(0, 300);
+      if (!fileId) return reply(400, { error: 'нет fileId' });
+      if (body.failed) core.tgPhotoFailed(db, fileId);
+      else {
+        const img = core.parsePhoto(body.image);
+        const id = crypto.randomBytes(12).toString('hex');
+        await s3('PUT', `data/photos/${id}.json`, token, JSON.stringify(img));
+        core.storeTgPhoto(db, fileId, id);
+      }
+      await s3('PUT', DB_KEY, token, JSON.stringify(db));
+      return reply(200, { ok: true });
+    }
+
     if (path === '/api/tg/relay' || path === '/api/tg/outbox') {
       if (!bot || !TG_RELAY_SECRET || header(event, 'x-relay-secret') !== TG_RELAY_SECRET) return reply(403, { error: 'forbidden' });
       const db = await loadDb(token);

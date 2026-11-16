@@ -41,7 +41,7 @@ test('Санта в боте: «Я отправил» → кнопка «Зак�
   assert.match(note.text, /приехал в пункт выдачи — можно забирать[\s\S]*Код получения: 123-456/);
   const push = bot.pushNotifications(db, [note], null);
   assert.equal(push[0].reply_markup.inline_keyboard[0][0].callback_data, 'received');
-  assert.ok(db.notifications.some((x) => x.userId === '@admins' && /передал код получения/.test(x.text)));
+  assert.ok(db.notifications.some((x) => x.userId === '@admins' && /передал для @.*код 123-456.*Получатель уведомлён/.test(x.text)));
   // в кабинете получателя код виден
   const me = call(db, 'GET', '/api/me', null, { userId: pair.recipientId });
   assert.equal(me.incomings[0].pickupCode, '123-456');
@@ -117,4 +117,41 @@ test('сайт: фото штрихкода/QR (загруженные карт�
   press(db, 990, 'adm:pkdone');
   const p2 = db.pairs.find((p) => p.santaId === ids[1]);
   assert.deepEqual([p2.pickupTgPhotos, p2.pickupCode], [['P1', 'P2'], '12 34']);
+});
+
+test('фото из бота подтягиваются на сайт (ретранслятор), организаторам — уведомление с фото', () => {
+  const { db, ids } = seed();
+  press(db, 800, 'pick:1');
+  say(db, 800, '', { photo: [{ file_id: 'TGQR' }] });
+  press(db, 800, 'pickdone');
+  const pair = db.pairs.find((p) => p.santaId === ids[0]);
+  // организаторам — с фото
+  db.tgAdmins = [990];
+  const adm = db.notifications.filter((x) => x.userId === '@admins').pop();
+  assert.match(adm.text, /передал для .*📷 фото: 1/);
+  const push = bot.pushNotifications(db, [adm], null);
+  assert.ok(push.some((o) => o.chat_id === 990 && o.method === 'sendPhoto' && o.photo === 'TGQR'));
+  // пока не скачано — на сайте «загружается»
+  let me = call(db, 'GET', '/api/me', null, { userId: pair.recipientId });
+  assert.deepEqual([me.incomings[0].pickupPhotos, me.incomings[0].pickupTgCount], [[], 1]);
+  assert.deepEqual(core.tgPhotosNeeded(db), ['TGQR']);
+  const pid = 'c'.repeat(24);
+  core.storeTgPhoto(db, 'TGQR', pid);
+  me = call(db, 'GET', '/api/me', null, { userId: pair.recipientId });
+  assert.deepEqual([me.incomings[0].pickupPhotos, me.incomings[0].pickupTgCount], [[pid], 0]);
+  assert.ok(core.photoAccess(db, pair.recipientId, false, pid));
+  assert.deepEqual(core.tgPhotosNeeded(db), []);
+  const st = call(db, 'GET', '/api/admin/state', null, admin);
+  assert.deepEqual(st.pairs.find((p) => p.santaId === ids[0]).pickupPhotos, [pid]);
+  // фото «Я отправил» из бота — тоже
+  press(db, 801, 'sentw:1');
+  say(db, 801, '', { photo: [{ file_id: 'TRACKPH' }], caption: 'TRK' });
+  assert.deepEqual(core.tgPhotosNeeded(db), ['TRACKPH']);
+  core.storeTgPhoto(db, 'TRACKPH', 'd'.repeat(24));
+  const s1 = call(db, 'GET', '/api/me', null, { userId: ids[1] });
+  assert.equal(s1.assignments[0].photoId, 'd'.repeat(24));
+  // не скачалось 3 раза — больше не просим
+  press(db, 802, 'pick:1'); say(db, 802, '', { photo: [{ file_id: 'BROKEN' }] }); press(db, 802, 'pickdone');
+  [1, 2, 3].forEach(() => core.tgPhotoFailed(db, 'BROKEN'));
+  assert.ok(!core.tgPhotosNeeded(db).includes('BROKEN'));
 });

@@ -13,5 +13,7 @@ test('ретранслятор бота: полная короткая смен�
   assert.match(out, /SENT .*"chat_id":5.*Привет!/);
   assert.match(out, /SENT .*Из очереди/);
   assert.match(out, /SENT .*Тест/);
+  assert.match(out, /PHOTOFILE 9 QR 4/, 'фото с сайта — загружено в Telegram файлом');
+  assert.match(out, /STORED FILE1 data:image\/jpeg;base64,/, 'фото из бота — скачано и отдано сайту');
   assert.match(out, /Смена закончилась/);
 });

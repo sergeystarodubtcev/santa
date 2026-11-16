@@ -52,10 +52,47 @@ async function site(path, body) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Фото с сайта (ссылка /api/img на наш сервер): Telegram сам его скачать не может (нет связи с облаком),
+// поэтому скачиваем здесь и загружаем в Telegram файлом.
+async function sendSitePhoto(payload) {
+  try {
+    const r = await fetch(payload.photo, { signal: AbortSignal.timeout(60000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = new Blob([await r.arrayBuffer()], { type: r.headers.get('content-type') || 'image/jpeg' });
+    const fd = new FormData();
+    fd.append('chat_id', String(payload.chat_id));
+    if (payload.caption) fd.append('caption', payload.caption);
+    fd.append('photo', blob, 'photo.jpg');
+    const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendPhoto`, { method: 'POST', body: fd, signal: AbortSignal.timeout(60000) });
+    const j = await res.json();
+    if (!j.ok) log('telegram sendPhoto (файл)', j.error_code, j.description);
+  } catch (e) { log('фото с сайта не отправлено:', e.message); }
+}
+// Фото, присланные в бот: скачиваем из Telegram и отдаём сайту, чтобы их было видно и в личном кабинете
+async function syncPhotos() {
+  const need = await site('/api/tg/photos-need');
+  for (const fileId of need.fileIds || []) {
+    try {
+      const f = await tg('getFile', { file_id: fileId });
+      if (!f || !f.file_path) throw new Error('getFile');
+      const r = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${f.file_path}`, { signal: AbortSignal.timeout(60000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const buf = Buffer.from(await r.arrayBuffer());
+      const type = /\.png$/i.test(f.file_path) ? 'image/png' : /\.webp$/i.test(f.file_path) ? 'image/webp' : 'image/jpeg';
+      await site('/api/tg/photo-store', { fileId, image: `data:${type};base64,${buf.toString('base64')}` });
+      log('фото из бота сохранено на сайте');
+    } catch (e) {
+      log('фото из бота не скачалось:', e.message);
+      await site('/api/tg/photo-store', { fileId, failed: true });
+    }
+  }
+}
+
 async function deliver(out) {
   for (const item of out || []) {
     const { method = 'sendMessage', ...payload } = item;
     if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
+    if (method === 'sendPhoto' && typeof payload.photo === 'string' && /\/api\/img\?/.test(payload.photo)) { await sendSitePhoto(payload); continue; }
     await tg(method, payload);
   }
 }
@@ -108,6 +145,7 @@ async function checkWatch() {
       lastOutbox = Date.now();
       const q = await site('/api/tg/outbox');
       if (q.out && q.out.length) { log('уведомлений из очереди:', q.out.length); await deliver(q.out); }
+      await syncPhotos();
     }
     const updates = await tg('getUpdates', { offset, timeout: 20, allowed_updates: ['message', 'callback_query'] });
     if (!updates) { await sleep(3000); continue; }
@@ -115,6 +153,7 @@ async function checkWatch() {
       offset = u.update_id + 1;
       const res = await site('/api/tg/relay', { update: u });
       await deliver(res.out);
+      if (u.message && u.message.photo) lastOutbox = 0; // фото из бота — сразу скачать для сайта
       handled++;
     }
     if (updates.length) log('обработано апдейтов:', handled);

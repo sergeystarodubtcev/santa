@@ -989,8 +989,13 @@ function createBot({ core, secret, siteUrl, username }) {
     const out = [];
     for (const n of list) {
       if (n.noTg) continue;
+      const photosOf = (x) => (x.tgPhotos && x.tgPhotos.length ? x.tgPhotos : x.tgPhoto ? [x.tgPhoto] : [])
+        .concat((x.sitePhotos || []).map((id) => `${siteUrl}/api/img?id=${id}&s=${imgSig(secret, id)}`));
       if (n.userId === '@admins') {
-        (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text: '📋 ' + esc(n.text) }));
+        (db.tgAdmins || []).forEach((a) => {
+          out.push({ chat_id: a, text: '📋 ' + esc(n.text) });
+          photosOf(n).forEach((ph, i) => out.push({ method: 'sendPhoto', chat_id: a, photo: ph, caption: i ? undefined : n.tgCaption || '📷 Фото' }));
+        });
         continue;
       }
       const u = db.users.find((x) => x.id === n.userId);
@@ -1002,9 +1007,7 @@ function createBot({ core, secret, siteUrl, username }) {
           reply_markup: n.action === 'msg' && n.msg ? ib([[[n.msg.reply === 'santa' ? '↩️ Ответить Санте' : '↩️ Ответить получателю', `msg:${n.msg.reply === 'santa' ? 's' : 'r'}:${n.msg.round}`]]])
             : n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
-        const tgPh = n.tgPhotos && n.tgPhotos.length ? n.tgPhotos : n.tgPhoto ? [n.tgPhoto] : [];
-        const sitePh = (n.sitePhotos || []).map((id) => `${siteUrl}/api/img?id=${id}&s=${imgSig(secret, id)}`);
-        tgPh.concat(sitePh).forEach((ph, i) => out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: ph, caption: i ? undefined : n.tgCaption || '📷 Фото от вашего Тайного Санты' }));
+        photosOf(n).forEach((ph, i) => out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: ph, caption: i ? undefined : n.tgCaption || '📷 Фото от вашего Тайного Санты' }));
       }
       if (n.action === 'new-anketa') {
         const p = db.participations[u.id] || {};

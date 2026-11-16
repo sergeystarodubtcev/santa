@@ -366,7 +366,7 @@
         ${pickForm(rn, a.pickupCode)}
       </div>`; })() : ''}
       <div class="photo-block">
-        ${a.photoId ? `<div class="photo-label">📷 Прикреплённое фото</div><img class="photo-thumb" data-photo-id="${a.photoId}" alt="Фото к посылке">` : a.tgPhoto ? '<p class="muted">📷 Фото отправлено через Telegram-бот.</p>' : ''}
+        ${a.photoId ? `<div class="photo-label">📷 Прикреплённое фото</div><img class="photo-thumb" data-photo-id="${a.photoId}" alt="Фото к посылке">` : a.tgPhoto ? '<p class="muted">📷 Фото из Telegram загружается — обновите страницу через минуту 🔄</p>' : ''}
         <label class="btn btn-ghost btn-sm photo-btn">📷 ${a.photoId ? 'Заменить фото' : 'Прикрепить фото или QR-код'}<input type="file" accept="image/*" data-photo-upload data-round="${rn}" hidden></label>
       </div>`}
     </div>`;
@@ -420,7 +420,7 @@
     return `<div class="pickup-ready"><div class="pickup-title">📬 Подарок приехал в пункт выдачи — можно забирать!</div>
       ${g.pickupCode ? `<div class="pickup-code" data-copy-code="${esc(g.pickupCode)}" title="Нажмите, чтобы скопировать">${esc(g.pickupCode)}</div><small>код получения · нажмите, чтобы скопировать</small>` : ''}
       ${ph.length ? `${pickupThumbs(ph)}<small>📷 штрихкод / QR · нажмите на фото, чтобы открыть на весь экран и показать в пункте выдачи</small>` : ''}
-      ${g.pickupTgCount ? `<small>📷 ${ph.length ? 'Ещё фото' : 'Фото штрихкода / QR'} (${g.pickupTgCount}) — в Telegram-боте.</small>` : ''}
+      ${g.pickupTgCount ? `<small>📷 ${ph.length ? 'Ещё фото' : 'Фото штрихкода / QR'} (${g.pickupTgCount}) — загружаются из Telegram, обновите страницу через минуту 🔄</small>` : ''}
     </div>`;
   }
   document.addEventListener('click', async (e) => {
@@ -478,7 +478,7 @@
   });
   function giftPhoto(g) {
     return pickupBlock(g) + (g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`
-      : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото — оно в Telegram-боте.</p>' : '');
+      : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото в Telegram — оно загружается, обновите страницу через минуту 🔄</p>' : '');
   }
   function renderGift() {
     const host = $('[data-gift]');

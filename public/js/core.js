@@ -235,9 +235,30 @@
     return { type: m[1], data: m[2] };
   }
   // Фото видят только Санта и получатель этой пары (после подтверждения жеребьёвки) и организаторы
+  // Фото, присланные в бот (file_id Telegram), ретранслятор скачивает и кладёт в хранилище: db.tgPhotoMap[file_id] = id картинки.
+  // Так фото из Telegram видны и на сайте, а фото с сайта уходят в Telegram.
+  const tgMapOf = (db) => db.tgPhotoMap || {};
+  const pickupTgAll = (p) => (p.pickupTgPhotos || []).concat(p.pickupTgPhoto ? [p.pickupTgPhoto] : []);
+  const sitePickupPhotos = (db, p) => [...new Set((p.pickupPhotos || []).concat(pickupTgAll(p).map((f) => tgMapOf(db)[f]).filter(Boolean)))];
+  const tgOnlyPickup = (db, p) => pickupTgAll(p).filter((f) => !tgMapOf(db)[f]);
+  const trackPhotoOf = (db, p) => p.photoId || (p.tgPhoto && tgMapOf(db)[p.tgPhoto]) || null;
+  // какие фото из бота ещё не скачаны (для ретранслятора)
+  function tgPhotosNeeded(db, limit) {
+    const map = tgMapOf(db), bad = db.tgPhotoFail || {};
+    const all = [];
+    for (const p of db.pairs) [p.tgPhoto].concat(pickupTgAll(p)).forEach((f) => { if (f && !map[f] && (bad[f] || 0) < 3 && !all.includes(f)) all.push(f); });
+    return all.slice(0, limit || 5);
+  }
+  function storeTgPhoto(db, fileId, photoId) {
+    db.tgPhotoMap = Object.assign({}, db.tgPhotoMap, { [fileId]: photoId });
+  }
+  function tgPhotoFailed(db, fileId) {
+    db.tgPhotoFail = db.tgPhotoFail || {};
+    db.tgPhotoFail[fileId] = (db.tgPhotoFail[fileId] || 0) + 1;
+  }
   function photoAccess(db, uid, isAdmin, id) {
     if (!id) return false;
-    const p = db.pairs.find((x) => x.photoId === id || (x.pickupPhotos || []).includes(id));
+    const p = db.pairs.find((x) => trackPhotoOf(db, x) === id || sitePickupPhotos(db, x).includes(id));
     if (!p) return false;
     if (isAdmin) return true;
     return !!uid && published(db, pairRound(p)) && (p.santaId === uid || (p.recipientId === uid && p.status !== 'assigned'));
@@ -844,7 +865,13 @@
     if (tgPhotos.length) { n.tgPhoto = tgPhotos[0]; n.tgPhotos = tgPhotos; n.tgCaption = '📬 Штрихкод / QR для получения'; }
     if (photoIds.length) { n.sitePhotos = photoIds; n.tgCaption = '📬 Штрихкод / QR для получения'; }
     if (by === 'admin') notify(db, ctx, pair.santaId, `📬 Организатор передал вашему получателю код получения${r > 1 ? ` (${r}-я волна)` : ''}. Спасибо, Санта!`, 'info');
-    else notifyAdmins(db, ctx, `📬 ${nick(db, pair.santaId)} передал код получения для ${nick(db, pair.recipientId)}${r > 1 ? ` (${r}-я волна)` : ''}.`);
+    // организаторам — что передано, с теми же фото (в бот)
+    notifyAdmins(db, ctx, `📬 ${by === 'admin' ? 'Организатор прикрепил' : nick(db, pair.santaId) + ' передал'} для ${nick(db, pair.recipientId)}${by === 'admin' ? ` (Санта ${nick(db, pair.santaId)})` : ''}${r > 1 ? ` (${r}-я волна)` : ''}: `
+      + [code ? `код ${code}` : '', nPh ? `📷 фото: ${nPh}` : ''].filter(Boolean).join(', ') + '. Получатель уведомлён.');
+    const an = db.notifications[db.notifications.length - 1];
+    if (tgPhotos.length) an.tgPhotos = tgPhotos;
+    if (photoIds.length) an.sitePhotos = photoIds;
+    if (nPh) an.tgCaption = `📬 Штрихкод / QR для ${nick(db, pair.recipientId)}`;
     return pair;
   }
 
@@ -906,8 +933,8 @@
         recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
-        photoId: p.photoId || null, tgPhoto: !!p.tgPhoto,
-        pickupCode: p.pickupCode || null, arrivedAt: p.arrivedAt || null, pickupPhotos: p.pickupPhotos || [], pickupTgCount: (p.pickupTgPhotos || []).length + (p.pickupTgPhoto ? 1 : 0),
+        photoId: trackPhotoOf(db, p), tgPhoto: !!p.tgPhoto && !trackPhotoOf(db, p),
+        pickupCode: p.pickupCode || null, arrivedAt: p.arrivedAt || null, pickupPhotos: sitePickupPhotos(db, p), pickupTgCount: tgOnlyPickup(db, p).length,
         messages: threadOf(db, p),
       };
     };
@@ -915,8 +942,8 @@
     out.assignments = db.pairs.filter((p) => p.santaId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b)).map(recipientView);
     out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
       .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p),
-        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto, messages: threadOf(db, p),
-        pickupCode: p.pickupCode || null, pickupPhotos: p.status !== 'assigned' ? p.pickupPhotos || [] : [], pickupTgCount: (p.pickupTgPhotos || []).length + (p.pickupTgPhoto ? 1 : 0), arrivedAt: p.arrivedAt || null }));
+        photoId: p.status !== 'assigned' ? trackPhotoOf(db, p) : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto && !trackPhotoOf(db, p), messages: threadOf(db, p),
+        pickupCode: p.pickupCode || null, pickupPhotos: p.status !== 'assigned' ? sitePickupPhotos(db, p) : [], pickupTgCount: tgOnlyPickup(db, p).length, arrivedAt: p.arrivedAt || null }));
     // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;
@@ -935,13 +962,13 @@
         // получатель анонимный: только телефон, адрес ПВЗ и пожелания (имя, ФИО и ник Санте не показываем)
         recipient: { phone: r.phone, address: rp.address, wishes: rp.wishes, notes: rp.notes, prefs: rp.prefs },
         status: mine.status, track: mine.track, sentAt: mine.sentAt, receivedAt: mine.receivedAt,
-        round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null, photoId: mine.photoId || null, tgPhoto: !!mine.tgPhoto,
+        round: pairRound(mine), priority: !!mine.priority, ackAt: mine.ackAt || mine.sentAt || null, photoId: trackPhotoOf(db, mine), tgPhoto: !!mine.tgPhoto && !trackPhotoOf(db, mine),
       };
       out.dates = datesFor(db, pairRound(mine));
     }
     const incoming = inPair(db, userId);
     if (incoming) out.incoming = { status: incoming.status, track: incoming.track, sentAt: incoming.sentAt, receivedAt: incoming.receivedAt, failed: !!incoming.failed && incoming.status === 'assigned', round: pairRound(incoming),
-      photoId: incoming.status !== 'assigned' ? incoming.photoId || null : null, tgPhoto: incoming.status !== 'assigned' && !!incoming.tgPhoto };
+      photoId: incoming.status !== 'assigned' ? trackPhotoOf(db, incoming) : null, tgPhoto: incoming.status !== 'assigned' && !!incoming.tgPhoto && !trackPhotoOf(db, incoming) };
     out.deadline = deadlineNotice(db, now, mine);
     out.drawing = db.pairs.some((p) => (p.santaId === userId || p.recipientId === userId) && (waveOf(db, pairRound(p)) || {}).status === 'drawing');
     out.notifications = db.notifications.filter((n) => (n.userId === userId || n.userId === '*') && !n.hideOnSite).slice(-30).reverse();
@@ -1011,6 +1038,8 @@
       pairs: db.pairs.map((p) => Object.assign({}, p, {
         santa: byId[p.santaId] ? '@' + byId[p.santaId].tg : '—',
         recipient: byId[p.recipientId] ? '@' + byId[p.recipientId].tg : '—',
+        photoId: trackPhotoOf(db, p), tgPhoto: p.tgPhoto && !trackPhotoOf(db, p) ? p.tgPhoto : undefined,
+        pickupPhotos: sitePickupPhotos(db, p), pickupTgPhotos: tgOnlyPickup(db, p),
       })),
       pairsCheck: pairsCheck(db),
       drawn2At: db.drawn2At,
@@ -1574,5 +1603,5 @@
     }
   }
 
-  return { handle, BUTTON_KINDS, parsePhoto, photoAccess, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
+  return { handle, BUTTON_KINDS, parsePhoto, photoAccess, tgPhotosNeeded, storeTgPhoto, tgPhotoFailed, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY };
 });
