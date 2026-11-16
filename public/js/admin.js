@@ -243,7 +243,7 @@
         <label class="btn btn-ghost photo-btn">📷 Добавить фото штрихкода / QR<input type="file" accept="image/*" multiple data-pk-files hidden></label>
         <div class="pickup-photos" data-pk-preview></div>
         <div class="form-err" data-err></div>
-        <button class="btn btn-primary btn-block" type="submit">📬 Отправить получателю</button>
+        <button class="btn btn-primary btn-block" type="submit">📬 ${p.pickupCode || have.length ? 'Отправить получателю (ещё раз — с новыми фото, если добавили)' : 'Отправить получателю'}</button>
       </form></div>`;
     document.body.appendChild(w);
     FX.hydratePhotos(w, A);
@@ -262,13 +262,14 @@
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = f.querySelector('[data-err]');
-      if (!f.code.value.trim() && !imgs.length) { err.textContent = 'Напишите код или добавьте фото'; return; }
+      if (!f.code.value.trim() && !imgs.length && !have.length) { err.textContent = 'Напишите код или добавьте фото'; return; }
       const btn = f.querySelector('button[type=submit]');
       btn.disabled = true;
       try {
         const photoIds = [];
         for (const [i, image] of imgs.entries()) { btn.textContent = `Загружаю фото ${i + 1}/${imgs.length}…`; photoIds.push((await Api.post('/api/upload-photo', { image }, A)).photoId); }
-        state = await Api.post('/api/admin/pickup', { santaId: p.santaId, round: r, code: f.code.value.trim(), photoIds }, A);
+        // уже прикреплённые фото тоже отправляются — получатель (и вы в боте) получают всё вместе; так можно и «отправить ещё раз»
+        state = await Api.post('/api/admin/pickup', { santaId: p.santaId, round: r, code: f.code.value.trim(), photoIds: have.concat(photoIds) }, A);
         close();
         render();
         FX.toast('Прикреплено, получатель уведомлён 📬', 'success');
