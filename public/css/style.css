@@ -746,3 +746,13 @@ td small { display: block; }
 .pickup-title { font-weight: 800; font-size: 17px; margin-bottom: 8px; }
 .pickup-code { display: inline-block; font: 800 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; padding: 8px 16px; background: #fff; border: 2px dashed #10b981; border-radius: 12px; cursor: pointer; word-break: break-all; }
 .pickup-ready small { display: block; margin-top: 6px; color: var(--muted); }
+.pickup-photos { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 10px 0 4px; }
+.pickup-thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 12px; border: 2px solid #a7f3d0; background: #fff; cursor: zoom-in; }
+.pick-prev { position: relative; display: inline-block; }
+.pick-prev button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #ef4444; color: #fff; font-size: 12px; cursor: pointer; }
+.pickup-form { flex-wrap: wrap; }
+.pickup-form input[name=code] { flex: 1 1 100%; }
+.lightbox img { background: #fff; }
+/* длинные кнопки на телефоне переносятся, а не растягивают страницу */
+.btn-block, .ask-box .btn, .pickup-box .btn { white-space: normal; line-height: 1.25; text-align: center; }
+.give-block, .reveal-card { min-width: 0; max-width: 100%; }

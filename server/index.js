@@ -269,6 +269,14 @@ const server = http.createServer(async (req, res) => {
         startedAt: STARTED_AT,
       });
     }
+    if (url.pathname === '/api/upload-photo' && req.method === 'POST') {
+      if (!ctx.userId && !ctx.isAdmin) throw new core.SantaError(401, 'Войдите в аккаунт');
+      const img = core.parsePhoto(body.image);
+      const id = crypto.randomBytes(12).toString('hex');
+      fs.mkdirSync(path.join(DATA_DIR, 'photos'), { recursive: true });
+      fs.writeFileSync(path.join(DATA_DIR, 'photos', id + '.json'), JSON.stringify(img));
+      return send(res, 200, { photoId: id });
+    }
     // Фото к посылке: файл в DATA_DIR/photos; смотреть могут Санта, получатель и организаторы
     if (url.pathname === '/api/track-photo' && req.method === 'POST') {
       const img = core.parsePhoto(body.image);

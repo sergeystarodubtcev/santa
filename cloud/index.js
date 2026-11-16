@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 let core;
 try { core = require('./core.js'); } catch (e) { core = require('../public/js/core.js'); } // при деплое core.js кладётся рядом
 
-const { createBot } = require('./bot.js');
+const { createBot, imgSig } = require('./bot.js');
 
 const BUCKET = process.env.BUCKET;
 const TG_TOKEN = process.env.TG_BOT_TOKEN || '';
@@ -367,6 +367,17 @@ module.exports.handler = async function handler(event, context) {
     const auth = makeAuth(sec.secret, sec.adminPassword);
     const bot = botFor(sec);
 
+    // Картинка по подписанной ссылке — для Telegram (бот отправляет фото штрихкода/QR, загруженное на сайте)
+    if (path === '/api/img' && method === 'GET') {
+      const q = event.queryStringParameters || {};
+      const id = String(q.id || '').replace(/[^a-f0-9]/g, '');
+      if (!id || String(q.s || '') !== imgSig(sec.secret, id)) return reply(403, { error: 'forbidden' });
+      const raw = await s3('GET', `data/photos/${id}.json`, token);
+      if (!raw) return reply(404, { error: 'not found' });
+      const img = JSON.parse(raw);
+      return { statusCode: 200, headers: { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400' }, body: img.data, isBase64Encoded: true };
+    }
+
     // Вебхук Telegram
     if (path === '/api/tg/webhook') {
       if (!bot || !TG_HOOK_SECRET || header(event, 'x-telegram-bot-api-secret-token') !== TG_HOOK_SECRET) return reply(403, { error: 'forbidden' });
@@ -517,6 +528,14 @@ module.exports.handler = async function handler(event, context) {
       return reply(200, { sent: r.sent, total: r.total });
     }
 
+    // Картинка штрихкода / QR к коду получения: сначала загружается, потом прикрепляется через /api/pickup (или /api/admin/pickup)
+    if (path === '/api/upload-photo' && method === 'POST') {
+      if (!ctx.userId && !ctx.isAdmin) throw new core.SantaError(401, 'Войдите в аккаунт');
+      const img = core.parsePhoto(body.image);
+      const id = crypto.randomBytes(12).toString('hex');
+      await s3('PUT', `data/photos/${id}.json`, token, JSON.stringify(img));
+      return reply(200, { photoId: id });
+    }
     // Фото к посылке (QR-код и т. п.): отдельный файл в бакете; смотреть могут Санта, получатель и организаторы
     if (path === '/api/track-photo' && method === 'POST') {
       const img = core.parsePhoto(body.image);

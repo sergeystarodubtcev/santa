@@ -360,14 +360,11 @@
         <button class="btn btn-green btn-block" type="submit">📦 Я отправил подарок!</button>
         <div class="form-err" data-err></div>
       </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>
-      ${a.status === 'sent' ? `<div class="pickup-box">
-        ${a.pickupCode ? `<p>📬 Код получения передан получателю: <b>${esc(a.pickupCode)}</b></p>` : '<p><b>📬 Заказ приехал в пункт выдачи?</b> Передайте получателю код — он сразу узнает, что можно забирать.</p>'}
-        <button class="btn ${a.pickupCode ? 'btn-ghost' : 'btn-primary'} btn-sm" type="button" data-pick-open>${a.pickupCode ? '✏️ Изменить код' : '📬 Заказ приехал — передать код получения'}</button>
-        <form class="pickup-form" data-pick-form data-round="${rn}" hidden>
-          <input name="code" maxlength="100" placeholder="Код получения из Ozon" autocomplete="off">
-          <button class="btn btn-primary btn-sm" type="submit">Отправить</button>
-        </form>
-      </div>` : ''}
+      ${a.status === 'sent' ? (() => { const done = a.pickupCode || (a.pickupPhotos || []).length || a.pickupTgCount; return `<div class="pickup-box">
+        ${done ? `<p>📬 Получателю передано${a.pickupCode ? `: код <b>${esc(a.pickupCode)}</b>` : ''}${(a.pickupPhotos || []).length + (a.pickupTgCount || 0) ? ` · 📷 фото: ${(a.pickupPhotos || []).length + (a.pickupTgCount || 0)}` : ''}</p>${pickupThumbs(a.pickupPhotos)}` : '<p><b>📬 Заказ приехал в пункт выдачи?</b> Передайте получателю код и/или фото штрихкода / QR — он сразу узнает, что можно забирать.</p>'}
+        <button class="btn ${done ? 'btn-ghost' : 'btn-primary'} btn-sm" type="button" data-pick-open>${done ? '✏️ Изменить / добавить фото' : '📬 Заказ приехал — передать код'}</button>
+        ${pickForm(rn, a.pickupCode)}
+      </div>`; })() : ''}
       <div class="photo-block">
         ${a.photoId ? `<div class="photo-label">📷 Прикреплённое фото</div><img class="photo-thumb" data-photo-id="${a.photoId}" alt="Фото к посылке">` : a.tgPhoto ? '<p class="muted">📷 Фото отправлено через Telegram-бот.</p>' : ''}
         <label class="btn btn-ghost btn-sm photo-btn">📷 ${a.photoId ? 'Заменить фото' : 'Прикрепить фото или QR-код'}<input type="file" accept="image/*" data-photo-upload data-round="${rn}" hidden></label>
@@ -416,10 +413,14 @@
     setTimeout(() => box.querySelector('textarea').focus(), 400);
   });
   // «📬 Подарок приехал»: код получения от Санты или организатора
+  const pickupThumbs = (ids) => (ids && ids.length ? `<div class="pickup-photos">${ids.map((id) => `<img class="pickup-thumb" data-photo-id="${id}" alt="Штрихкод / QR — нажмите, чтобы увеличить">`).join('')}</div>` : '');
   function pickupBlock(g) {
-    if (!g.pickupCode && !g.pickupPhoto) return '';
+    const ph = g.pickupPhotos || [];
+    if (!g.pickupCode && !ph.length && !g.pickupTgCount) return '';
     return `<div class="pickup-ready"><div class="pickup-title">📬 Подарок приехал в пункт выдачи — можно забирать!</div>
-      ${g.pickupCode ? `<div class="pickup-code" data-copy-code="${esc(g.pickupCode)}" title="Нажмите, чтобы скопировать">${esc(g.pickupCode)}</div><small>код получения · нажмите, чтобы скопировать</small>` : '<small>Код получения — на фото в Telegram-боте.</small>'}
+      ${g.pickupCode ? `<div class="pickup-code" data-copy-code="${esc(g.pickupCode)}" title="Нажмите, чтобы скопировать">${esc(g.pickupCode)}</div><small>код получения · нажмите, чтобы скопировать</small>` : ''}
+      ${ph.length ? `${pickupThumbs(ph)}<small>📷 штрихкод / QR · нажмите на фото, чтобы открыть на весь экран и показать в пункте выдачи</small>` : ''}
+      ${g.pickupTgCount ? `<small>📷 ${ph.length ? 'Ещё фото' : 'Фото штрихкода / QR'} (${g.pickupTgCount}) — в Telegram-боте.</small>` : ''}
     </div>`;
   }
   document.addEventListener('click', async (e) => {
@@ -428,18 +429,52 @@
     const o = e.target.closest('[data-pick-open]');
     if (o) { const f = o.parentElement.querySelector('[data-pick-form]'); f.hidden = false; o.hidden = true; f.code.focus(); }
   });
+  // форма «Заказ приехал»: код и/или фото штрихкода / QR (несколько)
+  function pickForm(rn, code) {
+    return `<form class="pickup-form" data-pick-form data-round="${rn}" hidden>
+      <input name="code" maxlength="100" placeholder="Код получения (если есть)" autocomplete="off" value="${esc(code || '')}">
+      <label class="btn btn-ghost btn-sm photo-btn">📷 Фото штрихкода / QR<input type="file" accept="image/*" multiple data-pick-files hidden></label>
+      <div class="pickup-photos" data-pick-preview></div>
+      <button class="btn btn-primary btn-sm" type="submit">📬 Отправить получателю</button>
+    </form>`;
+  }
+  const pickImages = new WeakMap(); // форма → сжатые картинки
+  document.addEventListener('change', async (e) => {
+    const inp = e.target.closest('[data-pick-files]');
+    if (!inp) return;
+    const f = inp.closest('form');
+    const list = pickImages.get(f) || [];
+    for (const file of [...inp.files].slice(0, 10 - list.length)) {
+      try { list.push(await FX.compressImage(file)); } catch (ex) { FX.toast(ex.message, 'error'); }
+    }
+    pickImages.set(f, list);
+    inp.value = '';
+    f.querySelector('[data-pick-preview]').innerHTML = list.map((src, i) => `<span class="pick-prev"><img class="pickup-thumb" src="${src}" alt=""><button type="button" data-pick-rm="${i}" aria-label="Убрать">✕</button></span>`).join('');
+  });
+  document.addEventListener('click', (e) => {
+    const rm = e.target.closest('[data-pick-rm]');
+    if (!rm) return;
+    const f = rm.closest('form');
+    const list = pickImages.get(f) || [];
+    list.splice(Number(rm.dataset.pickRm), 1);
+    rm.parentElement.remove();
+    f.querySelectorAll('[data-pick-rm]').forEach((b, i) => { b.dataset.pickRm = i; });
+  });
   document.addEventListener('submit', async (e) => {
     const f = e.target.closest('[data-pick-form]');
     if (!f) return;
     e.preventDefault();
-    if (!f.code.value.trim()) return FX.toast('Напишите код получения', 'error');
-    const btn = f.querySelector('button');
+    const imgs = pickImages.get(f) || [];
+    if (!f.code.value.trim() && !imgs.length) return FX.toast('Напишите код или прикрепите фото штрихкода / QR', 'error');
+    const btn = f.querySelector('button[type=submit]');
     btn.disabled = true;
     try {
-      me = await Api.post('/api/pickup', { round: Number(f.dataset.round) || undefined, code: f.code.value });
+      const photoIds = [];
+      for (const [i, image] of imgs.entries()) { btn.textContent = `Загружаю фото ${i + 1}/${imgs.length}…`; photoIds.push((await Api.post('/api/upload-photo', { image })).photoId); }
+      me = await Api.post('/api/pickup', { round: Number(f.dataset.round) || undefined, code: f.code.value, photoIds });
       render();
       FX.toast('Получатель узнал, что можно забирать 📬', 'success');
-    } catch (ex) { FX.toast(ex.message, 'error'); btn.disabled = false; }
+    } catch (ex) { FX.toast(ex.message, 'error'); btn.disabled = false; btn.textContent = '📬 Отправить получателю'; }
   });
   function giftPhoto(g) {
     return pickupBlock(g) + (g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`

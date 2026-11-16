@@ -237,7 +237,7 @@
   // Фото видят только Санта и получатель этой пары (после подтверждения жеребьёвки) и организаторы
   function photoAccess(db, uid, isAdmin, id) {
     if (!id) return false;
-    const p = db.pairs.find((x) => x.photoId === id);
+    const p = db.pairs.find((x) => x.photoId === id || (x.pickupPhotos || []).includes(id));
     if (!p) return false;
     if (isAdmin) return true;
     return !!uid && published(db, pairRound(p)) && (p.santaId === uid || (p.recipientId === uid && p.status !== 'assigned'));
@@ -823,19 +823,26 @@
     if (pair.failed) fail(409, 'Эта пара снята');
     if (pair.status === 'received') fail(409, 'Подарок уже получен');
     const code = str(body && body.code, 100);
-    const tgPhoto = body && body.tgPhoto ? str(body.tgPhoto, 300) : '';
-    if (!code && !tgPhoto) fail(400, 'Напишите код получения');
+    // фото штрихкода / QR: с сайта — id картинок в хранилище, из бота — file_id Telegram (можно несколько)
+    const photoIds = [].concat((body && body.photoIds) || []).map(String).filter((x) => /^[a-f0-9]{16,40}$/.test(x)).slice(0, 10);
+    const tgPhotos = [].concat((body && body.tgPhotos) || [], body && body.tgPhoto ? [body.tgPhoto] : []).map((x) => str(x, 300)).filter(Boolean).slice(0, 10);
+    if (!code && !photoIds.length && !tgPhotos.length) fail(400, 'Напишите код получения или прикрепите фото штрихкода / QR');
     if (pair.status === 'assigned') { pair.status = 'sent'; pair.sentAt = pair.sentAt || ctx.now(); }
     if (code) pair.pickupCode = code;
-    if (tgPhoto) pair.pickupTgPhoto = tgPhoto;
+    if (pair.pickupTgPhoto) { pair.pickupTgPhotos = [pair.pickupTgPhoto]; delete pair.pickupTgPhoto; }
+    if (photoIds.length) pair.pickupPhotos = [...new Set((pair.pickupPhotos || []).concat(photoIds))].slice(-20);
+    if (tgPhotos.length) pair.pickupTgPhotos = (pair.pickupTgPhotos || []).concat(tgPhotos).slice(-20);
     pair.arrivedAt = ctx.now();
     pair.pickupBy = by;
     const r = pairRound(pair);
-    notify(db, ctx, pair.recipientId, `📬 Ваш подарок${r > 1 ? ` (${r}-я волна)` : ''} приехал в пункт выдачи — можно забирать! 🎁` + (code ? `\nКод получения: ${code}` : '\nКод получения — на фото.')
+    const nPh = photoIds.length + tgPhotos.length;
+    notify(db, ctx, pair.recipientId, `📬 Ваш подарок${r > 1 ? ` (${r}-я волна)` : ''} приехал в пункт выдачи — можно забирать! 🎁`
+      + (code ? `\nКод получения: ${code}` : '') + (nPh ? `\n📷 Штрихкод / QR — на фото${photoIds.length ? ' (и в «Мой подарок» в личном кабинете)' : ''}.` : '')
       + '\nКогда заберёте — нажмите «🎉 Я получил подарок».', 'gift', 'gift');
     const n = db.notifications[db.notifications.length - 1];
     n.buttons = [{ kind: 'received' }];
-    if (tgPhoto) { n.tgPhoto = tgPhoto; n.tgCaption = '📬 Код получения (QR)'; }
+    if (tgPhotos.length) { n.tgPhoto = tgPhotos[0]; n.tgPhotos = tgPhotos; n.tgCaption = '📬 Штрихкод / QR для получения'; }
+    if (photoIds.length) { n.sitePhotos = photoIds; n.tgCaption = '📬 Штрихкод / QR для получения'; }
     if (by === 'admin') notify(db, ctx, pair.santaId, `📬 Организатор передал вашему получателю код получения${r > 1 ? ` (${r}-я волна)` : ''}. Спасибо, Санта!`, 'info');
     else notifyAdmins(db, ctx, `📬 ${nick(db, pair.santaId)} передал код получения для ${nick(db, pair.recipientId)}${r > 1 ? ` (${r}-я волна)` : ''}.`);
     return pair;
@@ -900,7 +907,7 @@
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
         photoId: p.photoId || null, tgPhoto: !!p.tgPhoto,
-        pickupCode: p.pickupCode || null, arrivedAt: p.arrivedAt || null,
+        pickupCode: p.pickupCode || null, arrivedAt: p.arrivedAt || null, pickupPhotos: p.pickupPhotos || [], pickupTgCount: (p.pickupTgPhotos || []).length + (p.pickupTgPhoto ? 1 : 0),
         messages: threadOf(db, p),
       };
     };
@@ -909,7 +916,7 @@
     out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
       .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p),
         photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto, messages: threadOf(db, p),
-        pickupCode: p.pickupCode || null, pickupPhoto: !!p.pickupTgPhoto, arrivedAt: p.arrivedAt || null }));
+        pickupCode: p.pickupCode || null, pickupPhotos: p.status !== 'assigned' ? p.pickupPhotos || [] : [], pickupTgCount: (p.pickupTgPhotos || []).length + (p.pickupTgPhoto ? 1 : 0), arrivedAt: p.arrivedAt || null }));
     // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;

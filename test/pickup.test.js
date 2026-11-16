@@ -54,13 +54,19 @@ test('Санта в боте: «Я отправил» → кнопка «Зак�
 test('фото QR вместо кода; сайт: /api/pickup; без кода — отказ', () => {
   const { db, ids } = seed();
   press(db, 801, 'pick:1');
-  say(db, 801, '', { photo: [{ file_id: 'small' }, { file_id: 'QRFILE' }] });
+  assert.match(say(db, 801, '', { photo: [{ file_id: 'small' }, { file_id: 'QRFILE' }] })[0].text, /Фото добавлено \(1\)/);
+  const r2 = say(db, 801, '', { photo: [{ file_id: 'BARCODE' }] })[0];
+  assert.match(r2.text, /Фото добавлено \(2\)/);
+  assert.equal(r2.reply_markup.inline_keyboard[0][0].callback_data, 'pickdone');
+  press(db, 801, 'pickdone');
   const pair = db.pairs.find((p) => p.santaId === ids[1]);
-  assert.equal(pair.pickupTgPhoto, 'QRFILE');
+  assert.deepEqual(pair.pickupTgPhotos, ['QRFILE', 'BARCODE']);
   assert.equal(pair.status, 'sent', 'код без «Я отправил» — значит, отправлено');
   const note = db.notifications.filter((x) => x.userId === pair.recipientId).pop();
   const push = bot.pushNotifications(db, [note], null);
-  assert.ok(push.some((o) => o.method === 'sendPhoto' && o.photo === 'QRFILE' && /Код получения/.test(o.caption)));
+  const phs = push.filter((o) => o.method === 'sendPhoto');
+  assert.deepEqual(phs.map((o) => o.photo), ['QRFILE', 'BARCODE']);
+  assert.match(phs[0].caption, /Штрихкод/);
   assert.throws(() => call(db, 'POST', '/api/pickup', { round: 1, code: ' ' }, { userId: ids[2] }), /Напишите код/);
   call(db, 'POST', '/api/pickup', { round: 1, code: 'ABC' }, { userId: ids[2] });
   assert.equal(db.pairs.find((p) => p.santaId === ids[2]).pickupCode, 'ABC');
@@ -84,4 +90,31 @@ test('организатор прикрепляет код через «🔎 Д�
   call(db, 'POST', '/api/admin/pickup', { santaId: ids[2], round: 1, code: 'Z9' }, admin);
   assert.equal(db.pairs.find((p) => p.santaId === ids[2]).pickupCode, 'Z9');
   assert.throws(() => call(db, 'POST', '/api/admin/pickup', { santaId: ids[2], code: 'x' }), /./);
+});
+
+test('сайт: фото штрихкода/QR (загруженные картинки) — получатель видит в кабинете, в бот уходят по подписанной ссылке', () => {
+  const { db, ids } = seed();
+  const pair = db.pairs.find((p) => p.santaId === ids[0]);
+  const id1 = 'a'.repeat(24), id2 = 'b'.repeat(24);
+  call(db, 'POST', '/api/admin/pickup', { santaId: ids[0], round: 1, photoIds: [id1, id2, 'bad id'] }, admin);
+  assert.deepEqual(pair.pickupPhotos, [id1, id2]);
+  const me = call(db, 'GET', '/api/me', null, { userId: pair.recipientId });
+  assert.deepEqual(me.incomings[0].pickupPhotos, [id1, id2]);
+  assert.ok(core.photoAccess(db, pair.recipientId, false, id1) && core.photoAccess(db, ids[0], false, id2));
+  const other = ids.find((x) => x !== ids[0] && x !== pair.recipientId);
+  assert.ok(!core.photoAccess(db, other, false, id1), 'чужие не видят');
+  const note = db.notifications.filter((x) => x.userId === pair.recipientId).pop();
+  const { imgSig } = require('../cloud/bot.js');
+  const phs = bot.pushNotifications(db, [note], null).filter((o) => o.method === 'sendPhoto');
+  assert.equal(phs[0].photo, `https://santa.example/api/img?id=${id1}&s=${imgSig('s', id1)}`);
+  assert.equal(phs.length, 2);
+  // админ в боте: несколько фото → «Готово»
+  say(db, 990, '/admin pw');
+  const d = say(db, 990, '/who @' + db.users.find((u) => u.id === db.pairs.find((p) => p.santaId === ids[1]).recipientId).tg)[0];
+  press(db, 990, d.reply_markup.inline_keyboard.flat().find((x) => /Прикрепить/.test(x.text)).callback_data);
+  say(db, 990, '', { photo: [{ file_id: 'P1' }] });
+  say(db, 990, '', { photo: [{ file_id: 'P2' }], caption: '12 34' });
+  press(db, 990, 'adm:pkdone');
+  const p2 = db.pairs.find((p) => p.santaId === ids[1]);
+  assert.deepEqual([p2.pickupTgPhotos, p2.pickupCode], [['P1', 'P2'], '12 34']);
 });

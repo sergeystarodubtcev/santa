@@ -225,11 +225,56 @@
     if (!b) return;
     const rnd = (x) => (x.round > 1 ? x.round : 1);
     const p = state.pairs.find((x) => x.santaId === b.dataset.pickup && rnd(x) === Number(b.dataset.round));
-    const recName = p ? (p.recipient || '') : '';
-    const code = prompt(`Код получения для ${recName}${p && rnd(p) > 1 ? ` (${rnd(p)}-я волна)` : ''}.\nПолучатель получит «📬 заказ приехал, можно забирать» с этим кодом, Санта — что код передан.`, (p && p.pickupCode) || '');
-    if (code == null || !code.trim()) return;
-    act('/api/admin/pickup', { santaId: b.dataset.pickup, round: Number(b.dataset.round), code: code.trim() }, 'Код прикреплён, получатель уведомлён 📬');
+    if (p) openPickup(p, rnd(p));
   });
+  // окно «📬 Код получения»: код и/или фото штрихкода / QR (несколько), уже прикреплённые — превью
+  function openPickup(p, r) {
+    const w = document.createElement('div');
+    w.className = 'modal';
+    const have = (p.pickupPhotos || []);
+    w.innerHTML = `<div class="modal-backdrop" data-pk-close></div><div class="modal-card" role="dialog" aria-modal="true">
+      <button class="modal-x" data-pk-close aria-label="Закрыть">✕</button>
+      <div class="modal-head"><div class="modal-emoji">📬</div><h3>Заказ приехал — для ${esc(p.recipient || '')}${r > 1 ? ` (${r}-я волна)` : ''}</h3></div>
+      <form class="form" data-pk-form>
+        <p class="muted" style="margin:0">Получателю придёт «📬 подарок приехал, можно забирать» с кодом и фото (в бот и в личный кабинет), Санте — что код передан.</p>
+        <label>Код получения (если есть)<input name="code" maxlength="100" autocomplete="off" value="${esc(p.pickupCode || '')}"></label>
+        ${have.length ? `<div><small class="muted">Уже прикреплено (нажмите, чтобы открыть):</small><div class="pickup-photos">${have.map((id) => `<img class="pickup-thumb" data-photo-id="${id}" alt="">`).join('')}</div></div>` : ''}
+        ${(p.pickupTgPhotos || []).length ? `<small class="muted">📷 Ещё фото из Telegram: ${(p.pickupTgPhotos || []).length}</small>` : ''}
+        <label class="btn btn-ghost photo-btn">📷 Добавить фото штрихкода / QR<input type="file" accept="image/*" multiple data-pk-files hidden></label>
+        <div class="pickup-photos" data-pk-preview></div>
+        <div class="form-err" data-err></div>
+        <button class="btn btn-primary btn-block" type="submit">📬 Отправить получателю</button>
+      </form></div>`;
+    document.body.appendChild(w);
+    FX.hydratePhotos(w, A);
+    requestAnimationFrame(() => w.classList.add('open'));
+    const close = () => { w.classList.remove('open'); setTimeout(() => w.remove(), 250); };
+    w.querySelectorAll('[data-pk-close]').forEach((x) => x.addEventListener('click', close));
+    const f = w.querySelector('[data-pk-form]');
+    const imgs = [];
+    const draw = () => { f.querySelector('[data-pk-preview]').innerHTML = imgs.map((src, i) => `<span class="pick-prev"><img class="pickup-thumb" src="${src}" alt=""><button type="button" data-rm="${i}" aria-label="Убрать">✕</button></span>`).join(''); };
+    f.querySelector('[data-pk-files]').addEventListener('change', async (e) => {
+      for (const file of [...e.target.files].slice(0, 10 - imgs.length)) { try { imgs.push(await FX.compressImage(file)); } catch (ex) { FX.toast(ex.message, 'error'); } }
+      e.target.value = '';
+      draw();
+    });
+    f.addEventListener('click', (e) => { const x = e.target.closest('[data-rm]'); if (x) { imgs.splice(Number(x.dataset.rm), 1); draw(); } });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = f.querySelector('[data-err]');
+      if (!f.code.value.trim() && !imgs.length) { err.textContent = 'Напишите код или добавьте фото'; return; }
+      const btn = f.querySelector('button[type=submit]');
+      btn.disabled = true;
+      try {
+        const photoIds = [];
+        for (const [i, image] of imgs.entries()) { btn.textContent = `Загружаю фото ${i + 1}/${imgs.length}…`; photoIds.push((await Api.post('/api/upload-photo', { image }, A)).photoId); }
+        state = await Api.post('/api/admin/pickup', { santaId: p.santaId, round: r, code: f.code.value.trim(), photoIds }, A);
+        close();
+        render();
+        FX.toast('Прикреплено, получатель уведомлён 📬', 'success');
+      } catch (ex) { err.textContent = ex.message; btn.disabled = false; btn.textContent = '📬 Отправить получателю'; }
+    });
+  }
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-admin-photo]');
     if (!b) return;
@@ -275,7 +320,9 @@
         <td>${person(p.recipientId, p.recipient)}${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
         <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
         <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}
-          ${p.pickupCode || p.pickupTgPhoto ? `<small>📬 код: ${p.pickupCode ? esc(p.pickupCode) : 'на фото'}</small>` : ''}
+          ${p.pickupCode ? `<small>📬 код: ${esc(p.pickupCode)}</small>` : ''}
+          ${(p.pickupPhotos || []).map((id, i) => `<button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${id}" title="Штрихкод / QR ${i + 1}">📷${(p.pickupPhotos || []).length > 1 ? i + 1 : ''}</button>`).join('')}
+          ${(p.pickupTgPhotos || []).length ? `<small>📷 в боте: ${(p.pickupTgPhotos || []).length}</small>` : ''}
           ${!isDraftPair(p) && !p.failed && p.status !== 'received' ? `<button class="btn btn-ghost btn-sm" type="button" data-pickup="${p.santaId}" data-round="${rnd(p)}" title="Прикрепить получателю код получения и сообщить «заказ приехал»">📬 ${p.pickupCode ? 'Изменить код' : 'Код получения'}</button>` : ''}</td>
       </tr>`).join('') || `<tr><td colspan="6" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
       return;
