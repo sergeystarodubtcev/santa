@@ -219,6 +219,17 @@
   $('[data-pair-search]').addEventListener('input', () => renderPairs());
   $('[data-pf-reset]').addEventListener('click', () => { pfActive.clear(); $$('[data-pf-k]').forEach((x) => { x.checked = false; }); $('[data-pair-search]').value = ''; renderPairs(); });
   $('[data-pair-edit]').addEventListener('click', () => { pairEdit = !pairEdit; renderPairs(); });
+  // «📬 Код получения»: прикрепить получателю код, ему — «заказ приехал, забирайте», Санте — что код передан
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-pickup]');
+    if (!b) return;
+    const rnd = (x) => (x.round > 1 ? x.round : 1);
+    const p = state.pairs.find((x) => x.santaId === b.dataset.pickup && rnd(x) === Number(b.dataset.round));
+    const recName = p ? (p.recipient || '') : '';
+    const code = prompt(`Код получения для ${recName}${p && rnd(p) > 1 ? ` (${rnd(p)}-я волна)` : ''}.\nПолучатель получит «📬 заказ приехал, можно забирать» с этим кодом, Санта — что код передан.`, (p && p.pickupCode) || '');
+    if (code == null || !code.trim()) return;
+    act('/api/admin/pickup', { santaId: b.dataset.pickup, round: Number(b.dataset.round), code: code.trim() }, 'Код прикреплён, получатель уведомлён 📬');
+  });
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-admin-photo]');
     if (!b) return;
@@ -263,7 +274,9 @@
         <td>🌊 ${rnd(p)}${isDraftPair(p) ? '<small>черновик</small>' : ''}</td><td>${person(p.santaId, p.santa)}</td><td>🎁→</td>
         <td>${person(p.recipientId, p.recipient)}${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
         <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
-        <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}</td>
+        <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}
+          ${p.pickupCode || p.pickupTgPhoto ? `<small>📬 код: ${p.pickupCode ? esc(p.pickupCode) : 'на фото'}</small>` : ''}
+          ${!isDraftPair(p) && !p.failed && p.status !== 'received' ? `<button class="btn btn-ghost btn-sm" type="button" data-pickup="${p.santaId}" data-round="${rnd(p)}" title="Прикрепить получателю код получения и сообщить «заказ приехал»">📬 ${p.pickupCode ? 'Изменить код' : 'Код получения'}</button>` : ''}</td>
       </tr>`).join('') || `<tr><td colspan="6" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
       return;
     }

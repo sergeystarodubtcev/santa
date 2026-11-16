@@ -360,6 +360,14 @@
         <button class="btn btn-green btn-block" type="submit">📦 Я отправил подарок!</button>
         <div class="form-err" data-err></div>
       </form>` : `<p class="muted" style="margin-top:14px">Отправлено ${FX.fmtDateTime(a.sentAt)}. Спасибо, Санта! ${a.status === 'received' ? 'Подарок уже получен 💛' : ''}</p>
+      ${a.status === 'sent' ? `<div class="pickup-box">
+        ${a.pickupCode ? `<p>📬 Код получения передан получателю: <b>${esc(a.pickupCode)}</b></p>` : '<p><b>📬 Заказ приехал в пункт выдачи?</b> Передайте получателю код — он сразу узнает, что можно забирать.</p>'}
+        <button class="btn ${a.pickupCode ? 'btn-ghost' : 'btn-primary'} btn-sm" type="button" data-pick-open>${a.pickupCode ? '✏️ Изменить код' : '📬 Заказ приехал — передать код получения'}</button>
+        <form class="pickup-form" data-pick-form data-round="${rn}" hidden>
+          <input name="code" maxlength="100" placeholder="Код получения из Ozon" autocomplete="off">
+          <button class="btn btn-primary btn-sm" type="submit">Отправить</button>
+        </form>
+      </div>` : ''}
       <div class="photo-block">
         ${a.photoId ? `<div class="photo-label">📷 Прикреплённое фото</div><img class="photo-thumb" data-photo-id="${a.photoId}" alt="Фото к посылке">` : a.tgPhoto ? '<p class="muted">📷 Фото отправлено через Telegram-бот.</p>' : ''}
         <label class="btn btn-ghost btn-sm photo-btn">📷 ${a.photoId ? 'Заменить фото' : 'Прикрепить фото или QR-код'}<input type="file" accept="image/*" data-photo-upload data-round="${rn}" hidden></label>
@@ -407,9 +415,35 @@
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => box.querySelector('textarea').focus(), 400);
   });
+  // «📬 Подарок приехал»: код получения от Санты или организатора
+  function pickupBlock(g) {
+    if (!g.pickupCode && !g.pickupPhoto) return '';
+    return `<div class="pickup-ready"><div class="pickup-title">📬 Подарок приехал в пункт выдачи — можно забирать!</div>
+      ${g.pickupCode ? `<div class="pickup-code" data-copy-code="${esc(g.pickupCode)}" title="Нажмите, чтобы скопировать">${esc(g.pickupCode)}</div><small>код получения · нажмите, чтобы скопировать</small>` : '<small>Код получения — на фото в Telegram-боте.</small>'}
+    </div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-copy-code]');
+    if (c) { try { await navigator.clipboard.writeText(c.dataset.copyCode); FX.toast('Код скопирован 📋', 'success'); } catch (_) { /* нет доступа к буферу */ } return; }
+    const o = e.target.closest('[data-pick-open]');
+    if (o) { const f = o.parentElement.querySelector('[data-pick-form]'); f.hidden = false; o.hidden = true; f.code.focus(); }
+  });
+  document.addEventListener('submit', async (e) => {
+    const f = e.target.closest('[data-pick-form]');
+    if (!f) return;
+    e.preventDefault();
+    if (!f.code.value.trim()) return FX.toast('Напишите код получения', 'error');
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    try {
+      me = await Api.post('/api/pickup', { round: Number(f.dataset.round) || undefined, code: f.code.value });
+      render();
+      FX.toast('Получатель узнал, что можно забирать 📬', 'success');
+    } catch (ex) { FX.toast(ex.message, 'error'); btn.disabled = false; }
+  });
   function giftPhoto(g) {
-    return g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`
-      : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото — оно в Telegram-боте.</p>' : '';
+    return pickupBlock(g) + (g.photoId ? `<div class="photo-block center"><div class="photo-label">📷 Санта прикрепил фото (нажмите, чтобы увеличить)</div><img class="photo-thumb" data-photo-id="${g.photoId}" alt="Фото от Санты"></div>`
+      : g.tgPhoto ? '<p class="muted" style="text-align:center">📷 Санта прислал фото — оно в Telegram-боте.</p>' : '');
   }
   function renderGift() {
     const host = $('[data-gift]');

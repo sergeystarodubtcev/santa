@@ -737,3 +737,12 @@ td small { display: block; }
 .reload-btn { padding-left: 10px; padding-right: 10px; font-size: 16px; }
 .reload-btn:active { transform: rotate(180deg); transition: transform .3s; }
 .wd-line { overflow-wrap: anywhere; word-break: break-word; }
+/* код получения */
+.pickup-box { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.pickup-box p { margin: 0 0 8px; }
+.pickup-form { display: flex; gap: 8px; margin-top: 8px; }
+.pickup-form input { flex: 1; min-width: 0; }
+.pickup-ready { margin: 14px 0; padding: 16px; border-radius: 18px; background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2px solid #34d399; text-align: center; }
+.pickup-title { font-weight: 800; font-size: 17px; margin-bottom: 8px; }
+.pickup-code { display: inline-block; font: 800 26px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; padding: 8px 16px; background: #fff; border: 2px dashed #10b981; border-radius: 12px; cursor: pointer; word-break: break-all; }
+.pickup-ready small { display: block; margin-top: 6px; color: var(--muted); }

@@ -141,6 +141,7 @@ function createBot({ core, secret, siteUrl, username }) {
     const pst = (x) => x.failed ? '❌ не отправлено, пара снята'
       : x.status === 'received' ? `🥳 получено ${fmtDT(x.receivedAt)}`
       : x.status === 'sent' ? `🚚 отправлено ${fmtDT(x.sentAt)}` + (x.track ? `, трек ${esc(x.track)}` : '') + (x.photoId || x.tgPhoto ? ', 📷 есть фото' : '')
+        + (x.pickupCode || x.pickupTgPhoto ? `\n   📬 приехал, код: ${x.pickupCode ? '<code>' + esc(x.pickupCode) + '</code>' : 'на фото'} (${x.pickupBy === 'admin' ? 'передал организатор' : 'передал Санта'}, ${fmtDT(x.arrivedAt)})` : '')
       : x.ackAt ? `✅ подтвердил сборы ${fmtDT(x.ackAt)}, ещё не отправил` : '⏳ не подтвердил сборы, не отправил';
     const outs = db.pairs.filter((x) => x.santaId === uid), ins = db.pairs.filter((x) => x.recipientId === uid);
     const rn = (x) => core.pairRound(x);
@@ -163,7 +164,12 @@ function createBot({ core, secret, siteUrl, username }) {
       out.push({ chat_id: chatId, text: `Нашёл ${list.length}. Кого показать?`, reply_markup: ib(list.slice(0, 10).map((u) => [[`${u.name} @${u.tg}`, 'adm:who:' + u.id]])) });
       return;
     }
-    out.push({ chat_id: chatId, text: dossier(db, list[0].id) });
+    out.push(dossierMsg(db, chatId, list[0].id));
+  }
+  // досье + кнопки «📬 Прикрепить код получения» для его неполученных подарков
+  function dossierMsg(db, chatId, uid) {
+    const ins = db.pairs.filter((x) => x.recipientId === uid && !x.failed && x.status !== 'received' && ['drawn', 'closed'].includes(((db.waves || []).find((w) => w.n === core.pairRound(x)) || {}).status));
+    return { chat_id: chatId, text: dossier(db, uid), reply_markup: ins.length ? ib(ins.map((x) => [[`📬 Прикрепить ему код получения${ins.length > 1 ? ` (${core.pairRound(x)}-я волна)` : ''}`, `adm:pk:${uid}:${core.pairRound(x)}`]])) : undefined };
   }
 
   const WST = { open: '📝 идёт запись', drawing: '🎲 ждёт вашего подтверждения', drawn: '✅ пары у участников', closed: '⏹ остановлена' };
@@ -235,7 +241,13 @@ function createBot({ core, secret, siteUrl, username }) {
     const n = Number(nRaw) || 0;
     const st0 = db.tgState[chatId];
     if (act === 'st') return admStatus(db, ctx, out, chatId, Number(cat) || 0);
-    if (act === 'who') { out.push({ chat_id: chatId, text: dossier(db, cat) }); return; }
+    if (act === 'who') { out.push(dossierMsg(db, chatId, cat)); return; }
+    if (act === 'pk') {
+      db.tgState[chatId] = { flow: 'admpick', uid: cat, n };
+      const u = db.users.find((x) => x.id === cat) || {};
+      out.push({ chat_id: chatId, text: `📬 Пришлите код получения для @${esc(u.tg || '?')} (${n}-я волна) — текстом или фото QR-кода. Ему придёт «заказ приехал, забирайте», Санте — что код передан. /cancel — отмена.` });
+      return;
+    }
     if (act === 'send') return admSendMenu(out, chatId);
     if (act === 'l') return admList(db, ctx, out, chatId, cat, n);
     if (act === 'r') return admConfirm(db, ctx, out, chatId, cat, n, ADM_CATS[cat].text);
@@ -550,8 +562,10 @@ function createBot({ core, secret, siteUrl, username }) {
         `\n\n📦 <b>Данные для отправки</b> (нажмите, чтобы показать):\n` +
         `📍 ПВЗ Ozon: <tg-spoiler>${esc(r.address)}</tg-spoiler>\n📱 Телефон: <tg-spoiler>${esc(r.phone)}</tg-spoiler>` +
         (a.priority ? '\n\n⭐ <b>Получатель в приоритете:</b> в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!' : '') +
+        (a.pickupCode ? `\n\n📬 Код получения передан: <code>${esc(a.pickupCode)}</code>` : '') +
         `\n\n📅 Отправка: до ${fmtDay((a.dates && a.dates.end) || (me.dates && me.dates.end) || me.settings.sendEnd)}`,
-      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]], [['💬 Написать получателю', 'msg:r:' + a.round]], [['❓ Уточнить данные у организатора', 'ask:' + a.round]]])) : ib([[['💬 Написать получателю', 'msg:r:' + a.round]]]),
+      reply_markup: a.status === 'assigned' ? ib((a.ackAt ? [] : [[['✅ Участвую, собираю посылку', 'ack:' + a.round]]]).concat([[['📦 Я отправил подарок', 'sentw:' + a.round]], [['💬 Написать получателю', 'msg:r:' + a.round]], [['❓ Уточнить данные у организатора', 'ask:' + a.round]]]))
+        : ib((a.status === 'sent' ? [[[a.pickupCode ? '📬 Изменить код получения' : '📬 Заказ приехал — передать код', 'pick:' + a.round]]] : []).concat([[['💬 Написать получателю', 'msg:r:' + a.round]]])),
     });
     }
     if (me.nextWave && !me.nextWave.joined) out.push({ chat_id: chatId, text: me.nextWave.n ? `🌊 Кстати, открыта запись в ${me.nextWave.n}-ю волну — можно подарить ещё один подарок.` : '🌊 Хотите участвовать и в следующей волне? Можно записаться в лист ожидания.', reply_markup: WAVEJOIN_BTN });
@@ -580,8 +594,11 @@ function createBot({ core, secret, siteUrl, username }) {
   function markSent(db, ctx, out, chatId, track, round, tgPhoto) {
     const u = userByChat(db, chatId);
     try {
-      call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined, tgPhoto: tgPhoto || undefined }, { userId: u.id });
+      const p = call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined, tgPhoto: tgPhoto || undefined }, { userId: u.id });
+      const a = (p.assignments || []).filter((x) => x.status === 'sent' && (!round || x.round === round)).pop();
       out.push({ chat_id: chatId, text: '🎉 Хо-хо-хо! Отметил: подарок отправлен. Получатель увидит, что посылка в пути. Спасибо, Санта!', reply_markup: MAIN_KB });
+      out.push({ chat_id: chatId, text: '📬 Когда заказ приедет в пункт выдачи — нажмите кнопку ниже и пришлите код получения (или фото QR-кода). Получатель сразу узнает, что можно забирать.',
+        reply_markup: ib([[['📬 Заказ приехал — передать код', 'pick:' + ((a && a.round) || round || 1)]]]) });
     } catch (e) {
       if (!(e instanceof core.SantaError)) throw e;
       out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB });
@@ -648,6 +665,12 @@ function createBot({ core, secret, siteUrl, username }) {
           out.push({ chat_id: chatId, text: who === 's'
             ? '💬 Напишите сообщение своему Тайному Санте — он не узнает, кто вы, и не увидит ваш ник. /cancel — отмена.'
             : '💬 Напишите сообщение своему получателю — например, уточните, что он хочет. Он не узнает, кто вы. /cancel — отмена.' });
+        }
+      } else if (d.startsWith('pick:')) {
+        if (!u0) notLinked(out, chatId);
+        else {
+          db.tgState[chatId] = { flow: 'pick', round: Number(d.slice(5)) || null };
+          out.push({ chat_id: chatId, text: '📬 Пришлите код получения из Ozon (или фото / скриншот QR-кода). Получатель сразу получит уведомление «заказ приехал, забирайте». /cancel — отмена.' });
         }
       } else if (d === 'addwish') {
         if (!u0) notLinked(out, chatId);
@@ -805,6 +828,16 @@ function createBot({ core, secret, siteUrl, username }) {
       out.push({ chat_id: chatId, text: '🔎 Пришлите @ник участника (можно телефон или имя) — покажу всё досье: анкету, кому дарит, кто дарит ему, статусы отправки. Можно присылать по одному нику подряд. /cancel — выход.' });
       return { out, actingUid };
     }
+    if (st && st.flow === 'admpick' && isAdmin(db, chatId) && ((update.message.photo && update.message.photo.length) || (text && !text.startsWith('/') && !Object.values(BTN).includes(text) && !Object.values(ADM).includes(text)))) {
+      delete db.tgState[chatId];
+      const ph = update.message.photo && update.message.photo.length ? update.message.photo[update.message.photo.length - 1].file_id : undefined;
+      try {
+        call(db, ctx, 'POST', '/api/admin/pickup', { recipientId: st.uid, round: st.n, code: ph ? update.message.caption || '' : text, tgPhoto: ph }, { isAdmin: true });
+        const u = db.users.find((x) => x.id === st.uid) || {};
+        out.push({ chat_id: chatId, text: `✅ Код прикреплён: @${esc(u.tg || '?')} получил уведомление «заказ приехал, забирайте», код виден у него в личном кабинете.`, reply_markup: ADMIN_KB });
+      } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: ADMIN_KB }); }
+      return { out, actingUid };
+    }
     if (st && st.flow === 'admwho' && isAdmin(db, chatId) && text && text !== '/cancel' && !Object.values(BTN).includes(text) && !Object.values(ADM).includes(text) && !text.startsWith('/')) {
       admWho(db, out, chatId, text);
       return { out, actingUid };
@@ -851,6 +884,15 @@ function createBot({ core, secret, siteUrl, username }) {
         try {
           call(db, ctx, 'POST', '/api/msg', { to: st.to, round: st.round || undefined, text }, { userId: u0.id });
           out.push({ chat_id: chatId, text: st.to === 'santa' ? '✅ Отправлено вашему Санте — анонимно. Ответ придёт сюда.' : '✅ Отправлено вашему получателю — анонимно. Ответ придёт сюда.', reply_markup: MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+        return { out, actingUid };
+      }
+      if (st.flow === 'pick' && ((update.message.photo && update.message.photo.length) || (text && !Object.values(BTN).includes(text) && !text.startsWith('/')))) {
+        delete db.tgState[chatId];
+        const ph = update.message.photo && update.message.photo.length ? update.message.photo[update.message.photo.length - 1].file_id : undefined;
+        try {
+          call(db, ctx, 'POST', '/api/pickup', { round: st.round || undefined, code: ph ? update.message.caption || '' : text, tgPhoto: ph }, { userId: u0.id });
+          out.push({ chat_id: chatId, text: '✅ Передал получателю: «заказ приехал, забирайте» 📬 Спасибо, Санта!', reply_markup: MAIN_KB });
         } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
         return { out, actingUid };
       }
@@ -929,7 +971,7 @@ function createBot({ core, secret, siteUrl, username }) {
           reply_markup: n.action === 'msg' && n.msg ? ib([[[n.msg.reply === 'santa' ? '↩️ Ответить Санте' : '↩️ Ответить получателю', `msg:${n.msg.reply === 'santa' ? 's' : 'r'}:${n.msg.round}`]]])
             : n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
-        if (n.tgPhoto) out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: n.tgPhoto, caption: '📷 Фото от вашего Тайного Санты' });
+        if (n.tgPhoto) out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: n.tgPhoto, caption: n.tgCaption || '📷 Фото от вашего Тайного Санты' });
       }
       if (n.action === 'new-anketa') {
         const p = db.participations[u.id] || {};

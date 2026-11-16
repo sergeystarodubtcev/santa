@@ -817,6 +817,30 @@
     return pair;
   }
 
+  // «📬 Заказ приехал»: код получения (и/или фото QR) — получателю уведомление «забирайте». by: 'santa' | 'admin'
+  function setPickup(db, ctx, pair, body, by) {
+    if (!pair) fail(404, 'Пара не найдена');
+    if (pair.failed) fail(409, 'Эта пара снята');
+    if (pair.status === 'received') fail(409, 'Подарок уже получен');
+    const code = str(body && body.code, 100);
+    const tgPhoto = body && body.tgPhoto ? str(body.tgPhoto, 300) : '';
+    if (!code && !tgPhoto) fail(400, 'Напишите код получения');
+    if (pair.status === 'assigned') { pair.status = 'sent'; pair.sentAt = pair.sentAt || ctx.now(); }
+    if (code) pair.pickupCode = code;
+    if (tgPhoto) pair.pickupTgPhoto = tgPhoto;
+    pair.arrivedAt = ctx.now();
+    pair.pickupBy = by;
+    const r = pairRound(pair);
+    notify(db, ctx, pair.recipientId, `📬 Ваш подарок${r > 1 ? ` (${r}-я волна)` : ''} приехал в пункт выдачи — можно забирать! 🎁` + (code ? `\nКод получения: ${code}` : '\nКод получения — на фото.')
+      + '\nКогда заберёте — нажмите «🎉 Я получил подарок».', 'gift', 'gift');
+    const n = db.notifications[db.notifications.length - 1];
+    n.buttons = [{ kind: 'received' }];
+    if (tgPhoto) { n.tgPhoto = tgPhoto; n.tgCaption = '📬 Код получения (QR)'; }
+    if (by === 'admin') notify(db, ctx, pair.santaId, `📬 Организатор передал вашему получателю код получения${r > 1 ? ` (${r}-я волна)` : ''}. Спасибо, Санта!`, 'info');
+    else notifyAdmins(db, ctx, `📬 ${nick(db, pair.santaId)} передал код получения для ${nick(db, pair.recipientId)}${r > 1 ? ` (${r}-я волна)` : ''}.`);
+    return pair;
+  }
+
   function markReceived(db, ctx, userId, body) {
     const pair = body && Number(body.round) ? pairOfWave(db, userId, 'recipientId', Number(body.round))
       : db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort(byRoundDesc).find((p) => p.status === 'sent') || inPair(db, userId);
@@ -876,6 +900,7 @@
         status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt,
         round: pairRound(p), priority: !!p.priority, ackAt: p.ackAt || p.sentAt || null, dates: datesFor(db, pairRound(p)),
         photoId: p.photoId || null, tgPhoto: !!p.tgPhoto,
+        pickupCode: p.pickupCode || null, arrivedAt: p.arrivedAt || null,
         messages: threadOf(db, p),
       };
     };
@@ -883,7 +908,8 @@
     out.assignments = db.pairs.filter((p) => p.santaId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b)).map(recipientView);
     out.incomings = db.pairs.filter((p) => p.recipientId === userId && published(db, pairRound(p))).sort((a, b) => pairRound(a) - pairRound(b))
       .map((p) => ({ status: p.status, track: p.track, sentAt: p.sentAt, receivedAt: p.receivedAt, failed: !!p.failed && p.status === 'assigned', round: pairRound(p),
-        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto, messages: threadOf(db, p) }));
+        photoId: p.status !== 'assigned' ? p.photoId || null : null, tgPhoto: p.status !== 'assigned' && !!p.tgPhoto, messages: threadOf(db, p),
+        pickupCode: p.pickupCode || null, pickupPhoto: !!p.pickupTgPhoto, arrivedAt: p.arrivedAt || null }));
     // запись в следующую волну: открыта волна n>1 — «записаться», волны нет — «лист ожидания»
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;
@@ -1146,6 +1172,12 @@
         return ok(undefined, true);
       }
       case 'POST /api/sent': markSent(db, ctx, needUser(), body); return ok(me(db, ctx, ctx.userId), true);
+      case 'POST /api/pickup': {
+        const uid = needUser();
+        const pair = Number(body.round) ? pairOfWave(db, uid, 'santaId', Number(body.round)) : outPair(db, uid);
+        setPickup(db, ctx, pair, body, 'santa');
+        return ok(me(db, ctx, ctx.userId), true);
+      }
       case 'POST /api/ack': {
         // Санта подтверждает, что участвует и собирает посылку
         const pair = Number(body.round) ? pairOfWave(db, needUser(), 'santaId', Number(body.round)) : outPair(db, needUser());
@@ -1410,6 +1442,14 @@
         if (!db.drawnAt) db.drawnAt = ctx.now();
         notify(db, ctx, santa.id, 'Организаторы назначили вам получателя подарка 🎁 Загляните в «Кому я дарю».', 'warn', 'whom');
         notifyAdmins(db, ctx, `✏️ Вручную: @${santa.tg} теперь дарит @${rec.tg}.`);
+        return ok(adminState(db), true);
+      }
+      case 'POST /api/admin/pickup': {
+        needAdmin();
+        const r = Number(body.round) || null;
+        const p = db.pairs.filter((x) => (body.santaId ? x.santaId === body.santaId : x.recipientId === body.recipientId) && (!r || pairRound(x) === r) && published(db, pairRound(x)))
+          .sort(byRoundDesc).find((x) => x.status !== 'received') || null;
+        setPickup(db, ctx, p, body, 'admin');
         return ok(adminState(db), true);
       }
       case 'POST /api/admin/pair-status': {
