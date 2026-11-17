@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: telegram-bot
@@ -36,6 +37,7 @@ jobs:
           if [ -z "$TG_API_ID" ]; then echo "Аккаунт организатора не настроен (нет секрета TG_API_ID) — пропускаю"; exit 0; fi
           npm install --prefix relay --no-save --no-audit --no-fund telegram@2.26.22
       - name: Бот на смене
+      
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_API_ID: ${{ secrets.TG_API_ID }}
@@ -46,3 +48,11 @@ jobs:
         run: |
           if [ -z "$TG_BOT_TOKEN" ]; then echo "::warning::Нет секрета TG_BOT_TOKEN"; exit 0; fi
           node relay/bot-runner.js
+          
+      - name: Запустить следующую смену
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run "${{ github.workflow }}" \
+            --ref "${{ github.ref_name }}"
