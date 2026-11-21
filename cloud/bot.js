@@ -645,15 +645,15 @@ function createBot({ core, secret, siteUrl, username }) {
     const raffle = call(db, ctx, join ? 'POST' : 'GET', '/api/raffle' + (join ? '/join' : ''), null, { userId: user.id });
     const tickets = raffle.tickets.map((t) => `Волна ${t.round} — №${t.number}`);
     const status = tickets.length ? 'Ваши номерки:\n' + tickets.join('\n') : 'У вас пока нет номерков.';
-    out.push({ chat_id: chatId, text: '🎁 <b>Розыгрыш</b>\nЗа каждую посылку, отмеченную отправленной до 10 декабря 2026 по Москве, выдаётся один номерок на волну. Итоги — 10 декабря.\n\n'
+    out.push({ chat_id: chatId, text: '🎁 <b>Розыгрыш</b>\nСобрал подарок и отправил посылку? Отметь отправку в боте до конца 9 декабря — и получишь номерок. Если отправляешь подарки в нескольких волнах, за каждую будет свой номерок.\n\n<b>10 декабря подведём итоги и пришлём их сюда.</b>\n\n'
       + status + (raffle.closed ? '\nРозыгрыш завершён.' : ''), reply_markup: !raffle.joined && !raffle.closed
         ? raffleChannelButtons('Участвовать в розыгрыше') : isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
   }
 
   function raffleChannelButtons(label) {
     return ib([
-      [['Specialty Кофеёк', 'https://t.me/speccof']],
       [['Кофеманьяки', 'https://t.me/coffeemaniacs_channel']],
+      [['Specialty Кофеёк', 'https://t.me/speccof']],
       [[label, 'raffle:continue']],
     ]);
   }
