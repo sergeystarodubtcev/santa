@@ -5,6 +5,7 @@
   const esc = FX.esc;
   const A = { admin: true };
   let state = null;
+  let stateRevision = 0;
 
   const STATUS = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' };
 
@@ -16,6 +17,7 @@
   async function act(path, body, okMsg) {
     try {
       state = await Api.post(path, body, A);
+      stateRevision++;
       render();
       if (okMsg) FX.toast(okMsg, 'success');
       return true;
@@ -46,11 +48,110 @@
   });
   $('[data-logout]').addEventListener('click', showLogin);
 
+  function reviewAction({ title, detail, label, apply }) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'card pair-picker action-review';
+    dialog.innerHTML = `<h3 data-review-title></h3><p data-review-detail></p>
+      <p data-review-error class="form-err" role="alert"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-ghost" data-review-cancel autofocus>Отмена</button>
+        <button type="button" class="btn btn-primary" data-review-submit></button>
+      </div>`;
+    const cancel = $('[data-review-cancel]', dialog);
+    const submit = $('[data-review-submit]', dialog);
+    $('[data-review-title]', dialog).textContent = title;
+    $('[data-review-detail]', dialog).textContent = detail;
+    submit.textContent = label;
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('cancel', (event) => { if (submit.disabled) event.preventDefault(); });
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    submit.addEventListener('click', async () => {
+      cancel.disabled = submit.disabled = true;
+      $('[data-review-error]', dialog).textContent = '';
+      try {
+        await apply();
+        dialog.close();
+      } catch (e) {
+        $('[data-review-error]', dialog).textContent = e.message;
+        cancel.disabled = submit.disabled = false;
+      }
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+
+  const raffle = $('[data-raffle]');
+  function renderRaffle(r) {
+    const status = $('[data-raffle-status]');
+    status.className = 'status ' + (r.draw ? 'received' : 'assigned');
+    status.textContent = r.draw ? 'Завершён' : (r.eligible ? 'Готов к проведению' : 'Ждём отправок');
+    $('[data-raffle-stats]').innerHTML = [
+      [r.entries, 'Записались'], [r.eligible, 'С номерками'], [r.tickets, 'Номерков в розыгрыше'],
+    ].map(([number, label]) => `<div class="card tile"><b>${Number(number)}</b><span>${label}</span></div>`).join('');
+    $('[data-raffle-announce]').hidden = !!r.announcement || !!r.draw;
+    $('[data-raffle-announcement]').textContent = r.announcement
+      ? `Поставлено в рассылку: объявлений — ${r.announcement.users}.`
+      : r.draw ? 'Розыгрыш завершён.' : 'Участники получат одно объявление с условиями, каналами организаторов и кнопкой участия.';
+    $('[data-raffle-deadline]').textContent = r.deadline ? 'Отправки учитываются по ' + FX.fmtDate(r.deadline) + ' включительно, по Москве. Итоги — ' + r.resultsDay + '.' : '';
+    $('[data-raffle-waves]').innerHTML = (state.waves || []).map((w) =>
+      `<li><span>Волна ${w.n}</span><b>${Number((r.byRound || {})[w.n] || 0)}</b></li>`).join('');
+    $('[data-raffle-heading]').textContent = r.draw ? 'Победители' : 'Провести розыгрыш';
+    $('[data-raffle-hint]').textContent = r.draw ? 'Результат зафиксирован ' + FX.fmtDateTime(r.draw.at) + '.'
+      : !r.eligible ? 'Розыгрыш станет доступен, когда появятся участники с номерками.'
+        : 'Можно выбрать до ' + r.eligible + '. Каждый участник может выиграть один раз.';
+    $('[data-raffle-results]').innerHTML = r.draw
+      ? `<ol class="raffle-winners">${r.draw.winners.map((w) => `<li><b>${esc(w.nick)}</b><span>№${Number(w.number)} · волна ${Number(w.round)}</span></li>`).join('')}</ol>` : '';
+    const participants = r.participants || [];
+    const winnerNumbers = new Set(r.draw ? r.draw.winners.map((w) => w.number) : []);
+    $('[data-raffle-roster-empty]').hidden = !!participants.length;
+    $('[data-raffle-roster]').hidden = !participants.length;
+    $('[data-raffle-participants]').innerHTML = participants.map((person) => `<tr>
+      <th scope="row"><b>${esc(person.name)}</b><small>${esc(person.nick)}</small></th>
+      <td>${person.tickets.length ? `<div class="raffle-ticket-list">${person.tickets.map((ticket) =>
+        `<span class="raffle-ticket${winnerNumbers.has(ticket.number) ? ' raffle-ticket-winner' : ''}">
+          <b>№${Number(ticket.number)}</b> · волна ${Number(ticket.round)}${winnerNumbers.has(ticket.number) ? ' · выиграл' : ''}
+        </span>`).join('')}</div>` : '<span class="muted">Без номерка</span>'}</td>
+    </tr>`).join('');
+    const form = $('[data-raffle-draw]');
+    form.hidden = !!r.draw || !r.eligible;
+    form.elements.count.max = r.eligible;
+    if (Number(form.elements.count.value) > r.eligible && r.eligible) form.elements.count.value = r.eligible;
+  }
+
+  async function loadRaffle() {
+    $('[data-raffle-error]').textContent = '';
+    try { renderRaffle(await Api.get('/api/admin/raffle', A)); }
+    catch (e) { $('[data-raffle-error]').textContent = e.message; }
+  }
+
+  $('[data-raffle-announce]').addEventListener('click', () => reviewAction({
+    title: 'Объявить розыгрыш?',
+    detail: 'Бот поставит в очередь одно сообщение с условиями и кнопкой участия.',
+    label: 'Отправить объявление',
+    apply: async () => renderRaffle(await Api.post('/api/admin/raffle/announce', {}, A)),
+  }));
+
+  $('[data-raffle-draw]').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const count = Number(event.currentTarget.elements.count.value);
+    reviewAction({
+      title: 'Провести общий розыгрыш?',
+      detail: `Будет выбрано победителей: ${count}. Результат зафиксируется, приём номерков закроется. Итоги отправятся участникам в бот и личный кабинет.`,
+      label: 'Провести розыгрыш',
+      apply: async () => renderRaffle(await Api.post('/api/admin/raffle/draw', { count }, A)),
+    });
+  });
+
   // ---------- render ----------
   function render() {
     $('[data-login]').hidden = true;
     $('[data-dash]').hidden = false;
     $('[data-logout]').hidden = false;
+    renderWaveSwitch();
+    const raffleView = curWave === 'raffle';
+    raffle.hidden = !raffleView;
+    $('[data-waves-view]').hidden = raffleView;
+    if (raffleView) return;
     const noForm = state.users.filter((u) => !u.participation);
     const noFormBot = noForm.filter((u) => u.tgLinked).length;
     const pend = state.users.filter((u) => u.participation && u.participation.moderation === 'pending').length;
@@ -70,7 +171,6 @@
         ? `<div class="storage bad">⚠️ Не удаётся сохранить базу в GitHub (${esc(sto.repo)}): ${esc(sto.lastError)}. Проверьте GITHUB_TOKEN и GITHUB_DATA_REPO в Render!</div>`
         : `<div class="storage ok">💾 База сохраняется в приватный репозиторий ${esc(sto.repo)}${sto.lastSave ? ' · последнее сохранение ' + FX.fmtDateTime(sto.lastSave) : ''}</div>`)
       : '<div class="storage bad">⚠️ База хранится только на диске сервера и сотрётся при перезапуске Render. Задайте GITHUB_DATA_REPO и GITHUB_TOKEN.</div>';
-    renderWaveSwitch();
     renderWavePanel();
     renderBroadcast();
 
@@ -118,7 +218,9 @@
         ${!locked && w.status === 'confirmed' ? `<button class="btn btn-ghost btn-sm" data-w2="decline" data-uid="${w.userId}">🙅 Отказ</button>` : ''}
         ${!locked ? `<button class="btn btn-ghost btn-sm" data-w2="priority" data-uid="${w.userId}">${w.priority ? '☆ Снять приоритет' : '⭐ Приоритет'}</button>` : ''}
         ${ow && (w.status === 'declined' || (w.status !== 'confirmed' && w.round !== ow.n)) ? `<button class="btn btn-ghost btn-sm" data-w2="invite" data-uid="${w.userId}">📨 Пригласить в ${ow.n}-ю</button>` : ''}
-        <button class="btn btn-danger btn-sm" data-w2="remove" data-uid="${w.userId}" title="Убрать из следующих волн">✕</button>
+        ${w.round && w.status === 'confirmed'
+          ? `<button class="btn btn-danger btn-sm" data-unpair="${w.userId}" data-round="${w.round}">Снять с волны ${w.round}</button>`
+          : `<button class="btn btn-danger btn-sm" data-w2="remove" data-uid="${w.userId}">Убрать заявку</button>`}
       </td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">Пока никого.</td></tr>';
     const inW2 = new Set(list.map((w) => w.userId));
     const cand = state.users.filter((u) => u.participation && !u.banned && !inW2.has(u.id));
@@ -129,7 +231,7 @@
     const b = e.target.closest('[data-w2]');
     if (b) {
       const msgs = { confirm: 'Подтверждено ✅', decline: 'Отмечен отказ', priority: 'Приоритет изменён', invite: 'Приглашение отправлено 📨', remove: 'Убран из второго круга' };
-      if (b.dataset.w2 === 'remove' && !confirm('Убрать участника из второго круга?')) return;
+      if (b.dataset.w2 === 'remove' && !confirm('Убрать эту заявку на участие?')) return;
       return act('/api/admin/wave2-set', { userId: b.dataset.uid, action: b.dataset.w2 }, msgs[b.dataset.w2]);
     }
     if (e.target.closest('[data-w2-invite-btn]')) {
@@ -141,6 +243,10 @@
       const p = state.pairs.find((x) => x.santaId === r.dataset.rescue && String(x.round > 1 ? x.round : 1) === r.dataset.round);
       if (!p) return;
       const ow = (state.waves || []).find((w) => w.status === 'open' && !w.drawnAt && w.n > (p.round > 1 ? p.round : 1));
+      if (!ow && (state.waves || []).some((w) => w.n >= SantaCore.FINAL_WAVE)) {
+        if (!confirm(`${p.santa} не отправил подарок ${p.recipient}? Получатель получит уведомление.`)) return;
+        return act('/api/admin/wave2-rescue', { santaId: p.santaId, round: Number(r.dataset.round) }, 'Отмечено: подарок не отправлен');
+      }
       if (!confirm(`${p.santa} не отправил подарок ${p.recipient}?\n\n${p.recipient} переводим ` + (ow ? `в ${ow.n}-ю волну` : 'в лист ожидания следующей волны (приглашение придёт, когда вы её создадите)') + ' с наивысшим приоритетом ⭐: при жеребьёвке ему достанется надёжный Санта.')) return;
       return act('/api/admin/wave2-rescue', { santaId: p.santaId, round: p.round > 1 ? p.round : 1 }, `${p.recipient} — в следующую волну ⭐`);
     }
@@ -152,6 +258,7 @@
     state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === n).forEach((p) => { ids.add(p.santaId); ids.add(p.recipientId); });
     if (n === 1) state.users.forEach((u) => { if (u.participation && (u.participation.round == null || u.participation.round === 1)) ids.add(u.id); });
     else (state.wave2 || []).forEach((w) => { if (w.round === n && w.status !== 'declined') ids.add(w.userId); });
+    for (const u of state.users) if ((u.withdrawnWaves || []).includes(n)) ids.delete(u.id);
     return ids;
   }
   function renderUsers() {
@@ -189,7 +296,7 @@
           ${p && !u.banned && p.moderation !== 'rejected' ? `<button class="btn btn-ghost btn-sm" data-mod="${u.id}" data-s="rejected">🚫 Отклонить</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-ban="${u.id}" data-v="${u.banned ? 0 : 1}">${u.banned ? 'Разбанить' : '🛑 В ЧС'}</button>
           <button class="btn btn-ghost btn-sm" data-edit-user="${u.id}" title="Изменить данные">✏️</button>
-          ${state.pairs.some((x) => x.santaId === u.id || x.recipientId === u.id) ? `<button class="btn btn-ghost btn-sm" data-unpair="${u.id}" title="Убрать из жеребьёвки, аккаунт оставить">✂️ Из пар</button>` : ''}
+          ${w && inWave.has(u.id) ? `<button class="btn btn-ghost btn-sm" data-unpair="${u.id}" data-round="${w.n}">✂️ Снять с волны ${w.n}</button>` : ''}
           <button class="btn btn-danger btn-sm" data-del="${u.id}" title="Удалить">✕</button>
         </td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">Пока никого. Киньте ссылку в чат!</td></tr>';
@@ -201,7 +308,8 @@
   const isDraftPair = (p) => ((state.waves || []).find((w) => w.n === (p.round > 1 ? p.round : 1)) || {}).status === 'drawing';
   const PAIR_FILTERS = [
     ['noack', '🤷 Не подтвердили, что собирают', (p) => p.status === 'assigned' && !p.ackAt && !p.failed && !isDraftPair(p)],
-    ['notsent', '📦 Не отправили', (p) => p.status === 'assigned' && !p.failed],
+    ['ack', '👍 Подтвердили', (p) => p.status === 'assigned' && !!p.ackAt && !p.failed && !isDraftPair(p)],
+    ['notsent', '📦 Не отправили', (p) => p.status === 'assigned' && !p.failed && !isDraftPair(p)],
     ['sent', '🚚 Отправили, ждут получения', (p) => p.status === 'sent'],
     ['received', '✅ Получено', (p) => p.status === 'received'],
     ['failed', '😢 Санта не отправил', (p) => !!p.failed],
@@ -209,6 +317,20 @@
     ['draft', '🎲 Черновик (не подтверждено)', (p) => isDraftPair(p)],
     ['notrack', '🔎 Отправили без трека', (p) => p.status !== 'assigned' && !p.track],
   ];
+  const pairFilterGroups = [['noack', 'ack'], ['notsent', 'sent', 'received', 'failed', 'draft']];
+  function matchesPairFilters(pair) {
+    const active = PAIR_FILTERS.filter(([key]) => pfActive.has(key));
+    return pairFilterGroups.every((group) => {
+      const chosen = active.filter(([key]) => group.includes(key));
+      return !chosen.length || chosen.some(([, , match]) => match(pair));
+    }) && active.filter(([key]) => !pairFilterGroups.some((group) => group.includes(key))).every(([, , match]) => match(pair));
+  }
+  function pairTone(p) {
+    if (p.failed) return 'row-failed';
+    if (isDraftPair(p)) return 'row-draft';
+    if (p.status !== 'assigned') return 'row-' + p.status;
+    return p.ackAt ? 'row-confirmed' : 'row-unconfirmed';
+  }
   $('[data-pf]').innerHTML = PAIR_FILTERS.map(([k, label]) => `<label class="chip"><input type="checkbox" data-pf-k="${k}"><span>${label}</span></label>`).join('');
   document.addEventListener('change', (e) => {
     const f = e.target.closest('[data-pf-k]');
@@ -216,8 +338,14 @@
     if (f.checked) pfActive.add(f.dataset.pfK); else pfActive.delete(f.dataset.pfK);
     renderPairs();
   });
+  $('[data-chain-wave]').addEventListener('change', (event) => setWave(event.target.value));
   $('[data-pair-search]').addEventListener('input', () => renderPairs());
-  $('[data-pf-reset]').addEventListener('click', () => { pfActive.clear(); $$('[data-pf-k]').forEach((x) => { x.checked = false; }); $('[data-pair-search]').value = ''; renderPairs(); });
+  function clearPairFilters() {
+    pfActive.clear();
+    $$('[data-pf-k]').forEach((x) => { x.checked = false; });
+    $('[data-pair-search]').value = '';
+  }
+  $('[data-pf-reset]').addEventListener('click', () => { clearPairFilters(); renderPairs(); });
   $('[data-pair-edit]').addEventListener('click', () => { pairEdit = !pairEdit; renderPairs(); });
   // «📬 Код получения»: прикрепить получателю код, ему — «заказ приехал, забирайте», Санте — что код передан
   document.addEventListener('click', async (e) => {
@@ -282,6 +410,70 @@
     try { FX.lightbox((await Api.post('/api/photo', { id: b.dataset.adminPhoto }, A)).image); } catch (ex) { FX.toast(ex.message, 'error'); }
   });
 
+  function openRecipientPicker(santaId, round) {
+    const ids = waveUserIds(round);
+    const pair = state.pairs.find((p) => p.santaId === santaId && SantaCore.pairRound(p) === round);
+    if (!pair || pair.status !== 'assigned') return;
+    const people = state.users.filter((u) => ids.has(u.id) && u.id !== santaId
+      && u.participation && u.participation.moderation === 'approved' && !u.banned);
+    const taken = new Set(state.pairs.filter((p) => SantaCore.pairRound(p) === round && p.santaId !== santaId).map((p) => p.recipientId));
+    const dialog = document.createElement('dialog');
+    dialog.className = 'card pair-picker';
+    dialog.innerHTML = `<form method="dialog"><button class="btn btn-ghost btn-sm" aria-label="Закрыть">Закрыть</button></form>
+      <h3>Замена получателя · Волна ${round}</h3>
+      <p>Санта: ${esc(pair.santa)} · Сейчас дарит: ${esc(pair.recipient)}</p>
+      <label>Поиск по имени, ФИО или нику <input type="search" data-find autofocus></label>
+      <label>Новый получатель <select size="7" data-candidates></select></label>
+      <p data-plan class="muted" aria-live="polite">Выберите получателя, чтобы увидеть изменения в цепочке.</p>
+      <div class="actions"><button class="btn btn-primary" type="button" data-save>Подтвердить замену</button></div>`;
+    const input = $('[data-find]', dialog);
+    const select = $('[data-candidates]', dialog);
+    const save = $('[data-save]', dialog);
+    const summary = $('[data-plan]', dialog);
+    let revision = null;
+    let request = 0;
+    const render = () => {
+      const q = input.value.toLowerCase().trim().replace(/^@/, '');
+      const matches = people.filter((u) => `${u.name} ${u.tg} ${u.participation.fullName || ''}`.toLowerCase().includes(q));
+      select.replaceChildren(...matches.map((u) => {
+        const option = new Option(`@${u.tg} · ${u.name}` + (u.id === pair.recipientId ? ' · текущий' : taken.has(u.id) ? ' · уже есть Санта' : ''), u.id);
+        option.disabled = u.id === pair.recipientId;
+        return option;
+      }));
+      if (!matches.length) select.add(new Option('Никого не найдено', ''));
+      save.disabled = true;
+      revision = null;
+      request++;
+      summary.textContent = 'Выберите получателя, чтобы увидеть изменения в цепочке.';
+    };
+    input.addEventListener('input', render);
+    const body = () => ({ action: 'replace', userId: santaId, recipientId: select.value, round });
+    select.addEventListener('change', async () => {
+      const current = ++request;
+      save.disabled = true;
+      revision = null;
+      if (!select.value) return;
+      summary.textContent = 'Проверяем цепочку…';
+      try {
+        const plan = await Api.post('/api/admin/chain', body(), A);
+        if (request !== current) return;
+        revision = plan.revision;
+        summary.textContent = plan.summary;
+        save.disabled = false;
+      } catch (e) { if (request === current) summary.textContent = e.message; }
+    });
+    save.addEventListener('click', async () => {
+      if (!revision) return;
+      save.disabled = true;
+      if (await act('/api/admin/chain', { ...body(), revision }, 'Цепочка обновлена')) dialog.close();
+      else save.disabled = false;
+    });
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    render();
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+
   function renderPairs() {
     const players = state.users.filter((u) => u.participation && u.participation.moderation === 'approved' && !u.banned);
     const opt = (sel, except) => '<option value="">— нет —</option>' + players.filter((u) => u.id !== except)
@@ -296,7 +488,7 @@
     const givers = new Set(state.pairs.map((p) => p.santaId));
     const free = players.filter((u) => !givers.has(u.id));
     $('[data-pair-add-wrap]').hidden = !pairEdit || !state.pairs.length || !free.length;
-    $('[data-pair-edit]').textContent = pairEdit ? '✅ Готово' : '✏️ Править пары';
+    $('[data-pair-edit]').textContent = pairEdit ? '✅ Готово' : '✏️ Управлять цепочкой';
     $('[data-pair-edit]').classList.toggle('btn-gold', !pairEdit);
     $('[data-pair-edit]').classList.toggle('btn-green', pairEdit);
     $('[data-pair-edit-hint]').hidden = !pairEdit;
@@ -307,19 +499,22 @@
     $('[data-pair-add-rec]').innerHTML = opt('', null);
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     const rnd = (p) => (p.round > 1 ? p.round : 1);
+    const chainWave = $('[data-chain-wave]');
+    chainWave.replaceChildren(new Option('Все волны', 'all'), ...(state.waves || []).map((w) => new Option(`Волна ${w.n}`, w.n)));
+    chainWave.value = wave() ? String(wave().n) : 'all';
     const byWave = wave() ? state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === wave().n) : state.pairs;
     const who = (id) => { const u = state.users.find((x) => x.id === id); return u ? `@${u.tg} ${u.name}` : ''; };
     const q = $('[data-pair-search]').value.trim().toLowerCase().replace(/^@/, '');
-    const shownPairs = byWave.filter((p) => PAIR_FILTERS.every(([k, , fn]) => !pfActive.has(k) || fn(p))
+    const shownPairs = byWave.filter((p) => matchesPairFilters(p)
       && (!q || (who(p.santaId) + ' ' + who(p.recipientId) + ' ' + (p.track || '')).toLowerCase().includes(q)));
     $('[data-pairs-count]').textContent = shownPairs.length === byWave.length ? `${byWave.length} ${SantaCore.plural(byWave.length, 'пара', 'пары', 'пар')}` : `Показано ${shownPairs.length} из ${byWave.length}`;
     const person = (id, nick) => { const u = state.users.find((x) => x.id === id); return `<b>${esc(nick)}</b>${u ? `<small>${esc(u.name)}</small>` : ''}`; };
     if (!pairEdit) {
       // просмотр: без селектов и кнопок
-      $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${p.failed ? 'row-failed' : ''}">
+      $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${pairTone(p)}">
         <td>🌊 ${rnd(p)}${isDraftPair(p) ? '<small>черновик</small>' : ''}</td><td>${person(p.santaId, p.santa)}</td><td>🎁→</td>
         <td>${person(p.recipientId, p.recipient)}${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
-        <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
+        <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !isDraftPair(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил</small>' : ''}</td>
         <td>${esc(p.track) || '—'}${p.photoId ? ` <button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${p.photoId}" title="Фото к посылке">📷</button>` : p.tgPhoto ? ' <small>📷 в боте</small>' : ''}
           ${p.pickupCode ? `<small>📬 код: ${esc(p.pickupCode)}</small>` : ''}
           ${(p.pickupPhotos || []).map((id, i) => `<button class="btn btn-ghost btn-sm" type="button" data-admin-photo="${id}" title="Штрихкод / QR ${i + 1}">📷${(p.pickupPhotos || []).length > 1 ? i + 1 : ''}</button>`).join('')}
@@ -330,12 +525,16 @@
     }
     const draft = (p) => ((state.waves || []).find((w) => w.n === rnd(p)) || {}).status === 'drawing';
     const swapBtn = (p, side) => (draft(p) ? `<button class="swap-btn" type="button" data-swap="${side}" data-uid="${side === 'santa' ? p.santaId : p.recipientId}" data-round="${rnd(p)}" title="${side === 'santa' ? 'Сменить получателя у этого Санты' : 'Сменить Санту у этого получателя'} (случайно)">🔄</button>` : '');
-    $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${p.failed ? 'row-failed' : ''} ${lastSwapped.has(p.santaId) && draft(p) ? 'row-swapped' : ''}">
-      <td>🌊 ${rnd(p)}${draft(p) ? '<small>черновик</small>' : ''}</td><td>${esc(p.santa)} ${swapBtn(p, 'santa')}</td><td>🎁→</td><td><div class="rec-cell"><select data-pair-rec="${p.santaId}" data-round="${rnd(p)}">${opt(p.recipientId, p.santaId)}</select>${swapBtn(p, 'recipient')}</div>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
-      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил — получатель переведён в следующую волну</small>' : ''}</td>
+    $('[data-pairs]').innerHTML = shownPairs.map((p) => `<tr class="${pairTone(p)} ${lastSwapped.has(p.santaId) ? 'row-swapped' : ''}">
+      <td>🌊 ${rnd(p)}${draft(p) ? '<small>черновик</small>' : ''}</td><td>${esc(p.santa)} ${swapBtn(p, 'santa')}</td><td>🎁→</td><td><div class="rec-cell"><button type="button" class="btn btn-ghost btn-sm" data-replace-recipient="${p.santaId}" data-round="${rnd(p)}" ${p.status === 'assigned' ? '' : 'disabled'}>${esc(p.recipient)} · Заменить</button>${swapBtn(p, 'recipient')}</div>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
+      <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
       <td>${draft(p) ? '<span class="muted">после подтверждения</span>' : `<select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>`}
-        ${p.status === 'assigned' && !p.failed && !draft(p) ? `<button class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}" title="Санта не отправил подарок: получателя — в следующую волну с наивысшим приоритетом">😢 Не отправил → получателя в следующую волну ⭐</button>` : ''}</td>
+        ${p.status === 'assigned' && !p.sentAt ? `<details class="pair-actions"><summary>Действия с цепочкой</summary>
+          <button type="button" class="btn btn-ghost btn-sm" data-chain-exclude="${p.santaId}" data-round="${rnd(p)}">Исключить Санту</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-chain-exclude="${p.recipientId}" data-round="${rnd(p)}">Исключить получателя</button>
+          ${!p.failed && !draft(p) ? `<button type="button" class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}">Отметить неотправку</button>` : ''}
+        </details>` : ''}</td>
     </tr>`).join('') || `<tr><td colspan="7" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
   }
 
@@ -408,9 +607,40 @@
     const editBtn = e.target.closest('[data-edit-user]');
     if (editBtn) return openUserEdit(editBtn.dataset.editUser);
     const unpair = e.target.closest('[data-unpair]');
-    if (unpair && confirm('Убрать участника из жеребьёвки? Его Санта получит его получателя. Аккаунт останется.')) {
-      return act('/api/admin/remove-from-draw', { userId: unpair.dataset.unpair }, 'Убран из пар, цепочка перестроена');
+    if (unpair && confirm(`Снять участника с волны ${unpair.dataset.round}? Будут перестроены только пары этой волны.`)) {
+      return act('/api/admin/remove-from-draw', { userId: unpair.dataset.unpair, round: Number(unpair.dataset.round) }, 'Участник снят с волны');
     }
+    const exclude = e.target.closest('[data-chain-exclude]');
+    if (exclude) {
+      const body = { action: 'exclude', userId: exclude.dataset.chainExclude, round: Number(exclude.dataset.round) };
+      exclude.disabled = true;
+      try {
+        const plan = await Api.post('/api/admin/chain', body, A);
+        const user = state.users.find((u) => u.id === body.userId);
+        reviewAction({
+          title: `Исключить @${user.tg} из волны ${body.round}?`,
+          detail: `После исключения: ${plan.summary}`,
+          label: 'Исключить участника',
+          apply: async () => {
+            state = await Api.post('/api/admin/chain', { ...body, revision: plan.revision }, A);
+            stateRevision++;
+            lastSwapped = new Set(plan.changedSantas || []);
+            const result = $('[data-chain-result]');
+            result.textContent = `@${user.tg} исключён из волны ${body.round}. ${plan.summary}`;
+            result.hidden = false;
+            clearPairFilters();
+            setWave(body.round);
+          },
+        });
+      } catch (e) {
+        const result = $('[data-chain-result]');
+        result.textContent = e.message;
+        result.hidden = false;
+      } finally { exclude.disabled = false; }
+      return;
+    }
+    const replace = e.target.closest('[data-replace-recipient]');
+    if (replace) return openRecipientPicker(replace.dataset.replaceRecipient, Number(replace.dataset.round));
     if (e.target.closest('[data-pair-add]')) {
       const santaId = $('[data-pair-add-santa]').value;
       const recipientId = $('[data-pair-add-rec]').value;
@@ -418,13 +648,6 @@
     }
   });
   document.addEventListener('change', (e) => {
-    const rec = e.target.closest('[data-pair-rec]');
-    if (rec) {
-      const santa = state.users.find((u) => u.id === rec.dataset.pairRec);
-      const to = state.users.find((u) => u.id === rec.value);
-      if (!confirm(to ? `@${santa.tg} будет дарить @${to.tg}. Санта получит уведомление с новым адресом. Продолжить?` : `Убрать получателя у @${santa.tg}?`)) { renderPairs(); return; }
-      return act('/api/admin/pair-set', { santaId: rec.dataset.pairRec, round: rec.dataset.round, recipientId: rec.value || null }, 'Пара изменена');
-    }
     const sel = e.target.closest('[data-pair]');
     if (sel) act('/api/admin/pair-status', { santaId: sel.dataset.pair, round: sel.dataset.round, status: sel.value }, 'Статус обновлён');
   });
@@ -471,7 +694,12 @@
   let lastSwapped = new Set(); // подсветка пар, изменённых последней кнопкой 🔄
   const wave = () => (curWave === 'all' ? null : (state.waves || []).find((w) => String(w.n) === String(curWave)) || null);
   const fd = (iso) => FX.fmtDate(iso);
-  function setWave(v) { curWave = String(v); try { localStorage.setItem('adm_wave', curWave); } catch (e) { /* ignore */ } render(); }
+  function setWave(v) {
+    curWave = String(v);
+    try { localStorage.setItem('adm_wave', curWave); } catch (e) { /* ignore */ }
+    render();
+    if (curWave === 'raffle') loadRaffle();
+  }
   const pRound = (p) => (p.round > 1 ? p.round : 1);
   const wavePairs = (n) => state.pairs.filter((p) => pRound(p) === n);
   const nicks = (ids) => ids.map((id) => { const u = state.users.find((x) => x.id === id); return u ? '@' + esc(u.tg) : '—'; });
@@ -480,17 +708,20 @@
     return (state.wave2 || []).filter((x) => x.round === n && x.status === 'confirmed').map((x) => x.userId);
   }
   function renderWaveSwitch() {
-    if (curWave !== 'all' && !wave()) curWave = 'all';
+    if (!['all', 'raffle'].includes(curWave) && !wave()) curWave = 'all';
     const w = wave();
     const sw = $('[data-wave-switch]');
     const open = sw.querySelector('[data-ws-menu]') && !sw.querySelector('[data-ws-menu]').hidden;
     sw.hidden = false;
     const last = (state.waves || [])[state.waves.length - 1];
-    sw.innerHTML = `<button class="ws-btn" type="button" data-ws-toggle>${w ? `🌊 Волна ${w.n}` : '📊 Все волны'} <span class="ws-caret">▾</span></button>
+    const isFinal = last && last.n >= SantaCore.FINAL_WAVE;
+    const blocked = last && (last.status === 'open' || last.status === 'drawing');
+    sw.innerHTML = `<button class="ws-btn" type="button" data-ws-toggle>${curWave === 'raffle' ? '🎁 Розыгрыш' : w ? `🌊 Волна ${w.n}` : '📊 Все волны'} <span class="ws-caret">▾</span></button>
       <div class="ws-menu" data-ws-menu ${open ? '' : 'hidden'}>
-        <button type="button" data-ws="all" class="${w ? '' : 'on'}">📊 Все волны<small>сводка: кто что не сделал</small></button>
+        <button type="button" data-ws="all" class="${curWave === 'all' ? 'on' : ''}">📊 Все волны<small>сводка: кто что не сделал</small></button>
         ${(state.waves || []).map((x) => `<button type="button" data-ws="${x.n}" class="${w && w.n === x.n ? 'on' : ''}">🌊 Волна ${x.n}<small>${fd(x.start)} — ${fd(x.end)} · ${WST[x.status] || x.status}</small></button>`).join('')}
-        <button type="button" data-ws-new ${last && last.status === 'open' ? 'disabled title="Сначала проведите жеребьёвку или остановите последнюю волну"' : ''}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}<small>${last && last.status === 'open' ? 'сначала жеребьёвка или остановка текущей' : 'лист ожидания получит приглашение'}</small></button>
+        ${isFinal ? `<button type="button" data-ws="raffle" class="${curWave === 'raffle' ? 'on' : ''}">🎁 Розыгрыш<small>общий для всех волн</small></button>` : ''}
+        ${isFinal ? '' : `<button type="button" data-ws-new ${blocked ? 'disabled' : ''}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}<small>${blocked ? 'сначала жеребьёвка или остановка текущей' : 'лист ожидания получит приглашение'}</small></button>`}
       </div>`;
   }
   function tiles(list) { $('[data-tiles]').innerHTML = list.map(([v, l, cls]) => `<div class="card tile ${cls || ''}"><b>${v}</b><span>${l}</span></div>`).join(''); }
@@ -500,7 +731,8 @@
     const s = state.stats;
     const w = wave();
     const last = (state.waves || [])[state.waves.length - 1];
-    const canNew = last && last.status !== 'open' && last.status !== 'drawing';
+    const isFinal = last && last.n >= SantaCore.FINAL_WAVE;
+    const canNew = last && !isFinal && last.status !== 'open' && last.status !== 'drawing';
     if (!w) {
       tiles([[s.users, 'аккаунтов'], [s.approved, 'одобрено'], [s.pending, 'ждут модерации'], [s.banned, 'в чёрном списке'], [s.sent, 'отправили'], [s.received, 'получили']]);
       const rows = (state.waves || []).map((x) => `<tr class="ws-row" data-ws="${x.n}">
@@ -524,7 +756,7 @@
         <p class="muted" style="font-size:13px">Нажмите на волну, чтобы открыть её админку. Ники должников удобно скопировать в «📣 Уведомления → 📋 Список для общего чата».</p>
         ${details || '<p class="muted">Жеребьёвок ещё не было — здесь появится, кто что не сделал.</p>'}
         ${wl.length ? `<div class="wd"><b>📝 Лист ожидания следующей волны (${wl.length})</b><div class="wd-line">${wl.map((x) => '@' + esc(x.tg) + (x.priority ? ' ⭐' : '')).join(' ')}</div></div>` : ''}
-        <div class="actions"><button class="btn btn-ghost btn-sm" data-ws-new ${canNew ? '' : 'disabled'}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}</button>${canNew ? '' : '<span class="muted" style="font-size:13px">новую волну можно создать после жеребьёвки или остановки текущей</span>'}</div>`;
+        ${isFinal ? '<p class="muted">Третья волна — финальная.</p>' : `<div class="actions"><button class="btn btn-ghost btn-sm" data-ws-new ${canNew ? '' : 'disabled'}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}</button>${canNew ? '' : '<span class="muted" style="font-size:13px">новую волну можно создать после жеребьёвки или остановки текущей</span>'}</div>`}`;
       return;
     }
     const ps = wavePairs(w.n);
@@ -552,7 +784,7 @@
         ${w.drawnAt && isLast && w.status !== 'closed' ? `<button class="btn btn-danger btn-sm" data-wave-reset="${w.n}">Сбросить пары</button>` : ''}
         ${w.status === 'drawing' ? '' : w.status !== 'closed' ? `<button class="btn btn-ghost btn-sm" data-wave-act="close" data-n="${w.n}" title="Напоминания этой волны перестанут приходить, жеребьёвка недоступна">⏹ Остановить волну</button>`
           : `<button class="btn btn-ghost btn-sm" data-wave-act="reopen" data-n="${w.n}">▶️ Возобновить волну</button>`}
-        ${isLast ? `<button class="btn btn-ghost btn-sm" data-ws-new ${canNew ? '' : 'disabled title="Сначала проведите жеребьёвку или остановите волну"'}>➕ Создать ${w.n + 1}-ю волну</button>` : ''}
+        ${isLast && !isFinal ? `<button class="btn btn-ghost btn-sm" data-ws-new ${canNew ? '' : 'disabled title="Сначала проведите жеребьёвку или остановите волну"'}>➕ Создать ${w.n + 1}-ю волну</button>` : ''}
       </div>
       <p class="muted" style="font-size:13px;margin-top:12px">Жеребьёвка в два шага: сначала пары видите только вы, после «Подтвердить» — участники (и им приходят уведомления). Раздача случайная, никто не дарит сам себе, забаненные не участвуют.${w.n > 1 ? ' Участникам с ⭐ приоритетом достаётся надёжный Санта (уже отправлял подарок раньше).' : ''} Пары и участники ниже показаны только для этой волны. «Остановить» — когда волна закончилась: напоминания по ней больше не приходят; потом создайте следующую.</p>`;
   }
@@ -940,13 +1172,29 @@
 
   async function load() {
     state = await Api.get('/api/admin/state', A);
+    if (location.hash === '#raffle') curWave = 'raffle';
+    if (location.hash === '#chains') {
+      if (curWave === 'raffle') curWave = 'all';
+      $('#chains').open = true;
+    }
     render();
+    if (curWave === 'raffle') await loadRaffle();
   }
 
   (async () => {
     await FX.chrome();
     if (!Api.adminToken()) return showLogin();
     try { await load(); } catch (e) { showLogin(); }
-    setInterval(() => { if (!$('[data-dash]').hidden) Api.get('/api/admin/state', A).then((s) => { state = s; render(); }).catch(() => {}); }, 20000);
+    setInterval(async () => {
+      if ($('[data-dash]').hidden) return;
+      if (curWave === 'raffle') return;
+      const revision = stateRevision;
+      try {
+        const next = await Api.get('/api/admin/state', A);
+        if (revision !== stateRevision) return;
+        state = next;
+        render();
+      } catch (e) { /* refresh on the next tick */ }
+    }, 20000);
   })();
 })();

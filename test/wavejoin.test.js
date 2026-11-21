@@ -79,6 +79,10 @@ test('повторное участие: запись во 2-ю волну с к
   me = call(db, 'GET', '/api/me', null, as(A));
   assert.deepEqual(me.assignments.map((x) => x.round), [1, 2]);
   assert.deepEqual(me.incomings.map((x) => x.round), [1, 2]);
+  assert.deepEqual(me.ownAnketas.map((a) => [a.round, a.address]), [
+    [1, 'ПВЗ Ozon, Казань, Баумана 0'], [2, 'ПВЗ Ozon, Москва, Тверская 1'],
+  ]);
+  assert.deepEqual(call(db, 'GET', '/api/me', null, as(N)).ownAnketas.map((a) => [a.round, a.usesBase]), [[2, true]]);
   // Санта A во 2-й волне видит новую анкету, в 1-й — старую
   const s2 = w2.find((p) => p.recipientId === A).santaId;
   const s1 = db.pairs.find((p) => (p.round || 1) === 1 && p.recipientId === A).santaId;
@@ -154,6 +158,8 @@ test('бот: «🌊 Следующие волны», запись с теми �
   assert.match(t, /1-я волна/);
   assert.match(t, /2-я волна/);
   assert.deepEqual(buttons(r).filter((x) => /^(ack|sentw):/.test(x)).sort(), ['ack:1', 'ack:2', 'sentw:1', 'sentw:2']);
+  const own = texts(msg(db, 801, '📝 Моя анкета'));
+  assert.match(own, /Ваша анкета · Волна 1[\s\S]*дрипы 1[\s\S]*Ваша анкета · Волна 2[\s\S]*хочу свечку/);
   // «Я отправил» при двух неотправленных — спрашивает, какой
   r = msg(db, 800, '📦 Я отправил подарок');
   assert.match(texts(r), /Какой подарок/);
@@ -186,16 +192,33 @@ test('лист ожидания → 3-я волна: анкета переезж
   call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
   assertValid(db, 2);
   // и сразу в 3-ю: двое записываются
+  db.waveAnketas[ids[0]][2].wishes = 'Анкета второй волны';
   call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
+  assert.equal(call(db, 'GET', '/api/me', null, as(ids[0])).nextWave.anketa.wishes, 'Анкета второй волны');
   [ids[0], ids[1]].forEach((id) => call(db, 'POST', '/api/wave-join', Object.assign({}, call(db, 'GET', '/api/me', null, as(id)).nextWave.anketa, { agree: true }), as(id)));
+  assert.deepEqual(call(db, 'GET', '/api/me', null, as(ids[0])).ownAnketas.map((a) => a.round), [1, 2, 3]);
+  assert.deepEqual(call(db, 'GET', '/api/me', null, as(ids[2])).ownAnketas.map((a) => a.round), [1, 2]);
+  call(db, 'POST', '/api/wave-join', Object.assign({}, call(db, 'GET', '/api/me', null, as(ids[2])).nextWave.anketa, { agree: true }), as(ids[2]));
+  call(db, 'POST', '/api/wave2', { join: false }, as(ids[2]));
+  assert.deepEqual(call(db, 'GET', '/api/me', null, as(ids[2])).ownAnketas.map((a) => a.round), [1, 2]);
   call(db, 'POST', '/api/admin/shuffle', { round: 3 }, admin);
   call(db, 'POST', '/api/admin/wave-confirm', { n: 3 }, admin);
   // все три волны целы; у первого — три пары
   [1, 2, 3].forEach((w) => assertValid(db, w));
-  assert.deepEqual(call(db, 'GET', '/api/me', null, as(ids[0])).assignments.map((x) => x.round), [1, 2, 3]);
+  const me = call(db, 'GET', '/api/me', null, as(ids[0]));
+  assert.deepEqual(me.assignments.map((x) => x.round), [1, 2, 3]);
+  assert.deepEqual(me.ownAnketas.map((a) => a.wishes), ['дрипы 0', 'Анкета второй волны', 'Анкета второй волны']);
+  assert.equal(me.nextWave, null);
+  assert.throws(() => call(db, 'POST', '/api/admin/wave-create', W2DATES, admin), /финальная/);
+  assert.throws(() => call(db, 'POST', '/api/wave-join', { agree: true }, as(ids[0])), /финальную волну закрыта/);
   // в админке у 2-й волны по-прежнему 3 участника (хотя двое уже в 3-й)
   const st = core.handle(db, Object.assign({}, ctx, admin), 'GET', '/api/admin/state').data;
   assert.deepEqual(st.waves.map((w) => w.members), [3, 3, 2]);
+  const finalPair = db.pairs.find((p) => p.round === 3);
+  const previousEnrollment = db.wave2[finalPair.recipientId];
+  call(db, 'POST', '/api/admin/wave2-rescue', { santaId: finalPair.santaId, round: 3 }, admin);
+  assert.equal(finalPair.failed, true);
+  assert.equal(db.wave2[finalPair.recipientId], previousEnrollment);
 });
 
 test('ограничения: без анкеты, бан, закрытая запись', () => {
@@ -234,4 +257,146 @@ test('лист ожидания не копится: если идёт запи�
   db.wave2[ids[1]] = { round: null, status: 'waiting', reason: 'new', priority: 0 };
   core.tick(db, ctx);
   assert.equal(db.wave2[ids[1]].status, 'waiting');
+});
+
+test('переписка показывает только опубликованные пары и направление по волнам', () => {
+  const db = core.emptyDb();
+  [0, 1, 2].forEach((i) => user(db, i));
+  db.users[0].tgChatId = 901;
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
+  const menu = msg(db, 901, '💬 Переписка');
+  assert.deepEqual(buttons(menu), ['msg:r:1', 'msg:s:1']);
+  assert.match(JSON.stringify(menu.out), /Волна 1 · Я отправляю посылку/);
+  assert.match(JSON.stringify(menu.out), /Волна 1 · Мне отправляют посылку/);
+  assert.match(texts(press(db, 901, 'msg:r:2')), /больше недоступен/);
+  assert.match(texts(press(db, 901, 'msg:s:1')), /Следующее сообщение отправится анонимно/);
+  assert.equal(db.tgState[901].round, 1);
+  assert.equal(db.tgState[901].to, 'santa');
+});
+
+test('снятие с одной волны сохраняет пары и анкету остальных волн', () => {
+  const db = core.emptyDb();
+  const ids = [0, 1, 2].map((i) => user(db, i));
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
+  for (const id of ids) call(db, 'POST', '/api/wave-join', { ...call(db, 'GET', '/api/me', null, as(id)).nextWave.anketa, agree: true }, as(id));
+  call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
+  const first = JSON.stringify(db.pairs.filter((p) => core.pairRound(p) === 1));
+  call(db, 'POST', '/api/admin/remove-from-draw', { userId: ids[0], round: 2 }, admin);
+  assert.equal(JSON.stringify(db.pairs.filter((p) => core.pairRound(p) === 1)), first);
+  assert.deepEqual(call(db, 'GET', '/api/me', null, as(ids[0])).ownAnketas.map((a) => a.round), [1]);
+  assert.equal(core.checkWave(db, 2).length, 0);
+  assert.equal(db.participations[ids[0]].moderation, 'approved');
+});
+
+test('розыгрыш: один номерок на волну, повторный запрос и уникальные победители', () => {
+  const db = core.emptyDb();
+  const ids = [0, 1, 2].map((i) => user(db, i));
+  db.users[0].tgChatId = 902;
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  call(db, 'POST', '/api/admin/wave-create', W2DATES, admin);
+  for (const id of ids) call(db, 'POST', '/api/wave-join', { ...call(db, 'GET', '/api/me', null, as(id)).nextWave.anketa, agree: true }, as(id));
+  call(db, 'POST', '/api/admin/shuffle', { round: 2 }, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 2 }, admin);
+  call(db, 'POST', '/api/sent', { round: 1 }, as(ids[0]));
+  const beforeAnnounce = db.notifications.length;
+  const announced = call(db, 'POST', '/api/admin/raffle/announce', {}, admin);
+  assert.equal(announced.announcement.users, 3);
+  assert.equal(db.notifications.length - beforeAnnounce, 3);
+  const outgoing = bot.pushNotifications(db, db.notifications.slice(beforeAnnounce));
+  assert.equal(outgoing.length, 1);
+  assert.match(outgoing[0].text, /Всем привет! У нас объявляется розыгрыш/);
+  assert.match(outgoing[0].text, /Итоги — 10 декабря/);
+  assert.deepEqual(outgoing[0].reply_markup.inline_keyboard.flat().map((button) => button.url || button.callback_data), [
+    'https://t.me/speccof', 'https://t.me/coffeemaniacs_channel', 'raffle:continue',
+  ]);
+  const afterAnnounce = db.notifications.length;
+  call(db, 'POST', '/api/admin/raffle/announce', {}, admin);
+  assert.equal(db.notifications.length, afterAnnounce);
+  assert.ok(buttons(msg(db, 902, '/start raffle')).includes('raffle:continue'));
+  assert.match(texts(press(db, 902, 'raffle:continue')), /Волна 1 — №1/);
+  call(db, 'POST', '/api/sent', { round: 2 }, as(ids[0]));
+  call(db, 'POST', '/api/sent', { round: 2 }, as(ids[0]));
+  assert.deepEqual(call(db, 'GET', '/api/raffle', null, as(ids[0])).tickets, [{ round: 1, number: 1 }, { round: 2, number: 2 }]);
+  const menu = msg(db, 902, '🎁 Розыгрыш');
+  assert.match(texts(menu), /Итоги — 10 декабря/);
+  assert.match(texts(menu), /Волна 1 — №1/);
+  assert.match(texts(menu), /Волна 2 — №2/);
+  assert.ok(menu.out.some((o) => o.reply_markup?.keyboard?.flat().some((button) => button.text === '🎁 Розыгрыш')));
+  call(db, 'POST', '/api/raffle/join', {}, as(ids[1]));
+  call(db, 'POST', '/api/sent', { round: 1 }, as(ids[1]));
+  call(db, 'POST', '/api/raffle/join', {}, as(ids[2]));
+  const roster = call(db, 'GET', '/api/admin/raffle', null, admin).participants;
+  assert.deepEqual(roster.map(({ nick, tickets }) => [nick, tickets.map((ticket) => ticket.number)]), [
+    ['@wj_user0', [1, 2]], ['@wj_user1', [3]], ['@wj_user2', []],
+  ]);
+  assert.throws(() => call(db, 'POST', '/api/admin/raffle/draw', { count: 3 }, admin), /больше/);
+  const beforeDraw = db.notifications.length;
+  const result = call(db, 'POST', '/api/admin/raffle/draw', { count: 2 }, admin);
+  const results = db.notifications.slice(beforeDraw);
+  assert.deepEqual(results.map((n) => n.userId), ids);
+  assert.equal(results.filter((n) => n.text.includes('Ваш номерок')).length, 2);
+  assert.match(bot.pushNotifications(db, results)[0].text, /Итоги розыгрыша.*[\s\S]*Выигравшие номерки/);
+  assert.equal(new Set(result.draw.winners.map((w) => w.nick)).size, 2);
+  assert.throws(() => call(db, 'POST', '/api/admin/raffle/draw', { count: 2 }, admin), /уже проведён/);
+});
+
+test('регистрация из розыгрыша закрепляет новые реквизиты и открывает условия', () => {
+  const db = core.emptyDb();
+  msg(db, 903, '/start raffle');
+  assert.ok(buttons(press(db, 903, 'raffle:continue')).includes('raffle:reg'));
+  press(db, 903, 'raffle:reg');
+  msg(db, 903, 'Иван');
+  msg(db, 903, '+79557009030');
+  const registered = press(db, 903, 'consent');
+  const pinned = registered.out.find((item) => item.pin);
+  assert.match(pinned.text, /логин <code>@tg903<\/code>, пароль <code>/);
+  assert.match(texts(registered), /У вас пока нет номерков/);
+  assert.equal(call(db, 'GET', '/api/raffle', null, as(db.users[0].id)).joined, true);
+});
+
+test('правка цепочки показывает обмен, проверяет подтверждение и сохраняет уникальных получателей', () => {
+  const db = core.emptyDb();
+  [0, 1, 2, 3, 4].forEach((i) => user(db, i));
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  const current = db.pairs[0];
+  const other = db.pairs.find((p) => p !== current && p.recipientId !== current.santaId && p.santaId !== current.recipientId);
+  const body = { action: 'replace', userId: current.santaId, recipientId: other.recipientId, round: 1 };
+  const plan = call(db, 'POST', '/api/admin/chain', body, admin);
+  assert.match(plan.summary, /→.* · .*→/);
+  assert.equal(db.pairs[0], current);
+  call(db, 'POST', '/api/ack', { round: 1 }, as(other.santaId));
+  assert.throws(() => call(db, 'POST', '/api/admin/chain', { ...body, revision: plan.revision }, admin), /Пары изменились/);
+  const next = call(db, 'POST', '/api/admin/chain', body, admin);
+  call(db, 'POST', '/api/admin/chain', { ...body, revision: next.revision }, admin);
+  assert.equal(db.pairs.find((p) => p.santaId === other.santaId).recipientId, current.recipientId);
+  assert.deepEqual(core.checkWave(db, 1), []);
+  call(db, 'POST', '/api/sent', { round: 1 }, as(current.santaId));
+  assert.throws(() => call(db, 'POST', '/api/admin/chain', { action: 'exclude', userId: current.santaId, round: 1 }, admin), /уже была отправлена/);
+});
+
+test('админские уведомления и настройки участника применяются по типам', () => {
+  const db = core.emptyDb();
+  const participant = user(db, 0);
+  db.users[0].tgChatId = 601;
+  db.tgAdmins = [801, 802];
+  press(db, 801, 'adm:alert:log:off');
+  press(db, 801, 'adm:useralert:' + participant + ':broadcasts:off');
+  const notices = [
+    { userId: '@admins', text: 'Запись журнала' },
+    { userId: participant, text: 'Общая рассылка', broadcastId: 'b' },
+    { userId: participant, text: 'Личное уведомление', broadcastId: 'b2', direct: true },
+  ];
+  assert.deepEqual(bot.pushNotifications(db, notices).map((m) => m.chat_id), [802, 601]);
+  press(db, 601, 'adm:alert:log:on');
+  assert.equal(db.tgAdminPrefs[801].log, false);
+  assert.equal(db.tgAdminPrefs[601], undefined);
+  const dossier = press(db, 801, 'adm:who:' + participant);
+  assert.match(texts(dossier), /wj_user0/);
 });

@@ -147,7 +147,7 @@ function rateLimited(ip) {
 async function tgSend(list) {
   if (!TG_TOKEN) return;
   for (const item of list) {
-    const { method = 'sendMessage', ...payload } = item;
+    const { method = 'sendMessage', pin, ...payload } = item;
     if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
     try {
       const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`, {
@@ -155,6 +155,13 @@ async function tgSend(list) {
       });
       const j = await r.json().catch(() => ({}));
       if (!j.ok) console.error('telegram', method, payload.chat_id, j.description);
+      else if (pin && method === 'sendMessage' && j.result && j.result.message_id) {
+        const pinned = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/pinChatMessage`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: payload.chat_id, message_id: j.result.message_id, disable_notification: true }),
+        }).then((response) => response.json());
+        if (!pinned.ok) console.error('telegram pinChatMessage', pinned.description);
+      }
     } catch (e) { console.error('telegram', method, e.message); }
   }
 }
@@ -163,7 +170,7 @@ const botFor = (sec) => ((TG_TOKEN || TG_RELAY_SECRET) && TG_USERNAME ? createBo
 // В режиме ретранслятора вызывать ДО сохранения базы.
 function queueOut(db, out) {
   if (!TG_RELAY_SECRET || !out.length) return false;
-  db.tgOutbox = (db.tgOutbox || []).concat(out).slice(-500);
+  db.tgOutbox = (db.tgOutbox || []).concat(out);
   return true;
 }
 
@@ -478,10 +485,10 @@ module.exports.handler = async function handler(event, context) {
       }
       const queue = db.tgOutbox || [];
       if (path === '/api/tg/relay' || queue.length) {
-        db.tgOutbox = [];
+        db.tgOutbox = queue.slice(100);
         await s3('PUT', DB_KEY, token, JSON.stringify(db));
       }
-      return reply(200, { out: out.concat(queue) });
+      return reply(200, { out: out.concat(queue.slice(0, 100)) });
     }
 
     const t = auth.readToken(header(event, 'authorization').replace(/^Bearer\s+/i, ''));

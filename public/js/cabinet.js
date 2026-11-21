@@ -246,8 +246,7 @@
       host.innerHTML = `<div class="sealed"><div class="env">🔒</div><p class="muted">Анкета одобрена ✅ Конверт запечатан. Как только организаторы перемешают участников, здесь появится имя, ПВЗ и пожелания вашего получателя.</p></div>`;
     } else {
       const list = me.assignments && me.assignments.length ? me.assignments : [a];
-      const many = list.length > 1;
-      host.innerHTML = `<div class="${revealedOnce ? '' : 'flip'}">${list.map((x) => giveBlock(x, many)).join('<hr class="wave-sep">')}</div>`;
+      host.innerHTML = `<div class="${revealedOnce ? '' : 'flip'}">${list.map((x) => giveBlock(x)).join('<hr class="wave-sep">')}</div>`;
       revealedOnce = true;
       $$('[data-ack]', host).forEach((ab) => ab.addEventListener('click', async () => {
         ab.disabled = true;
@@ -317,14 +316,14 @@
     }));
   }
 
-  function giveBlock(a, many) {
+  function giveBlock(a) {
     const r = a.recipient;
     const rn = a.round || 1;
     const shown = shipShown.has(String(rn));
     const statusTxt = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
     return `<div class="give-block">
-      ${many ? `<div class="wave-head">🌊 ${rn}-я волна${a.dates ? ` · отправка до ${FX.fmtDate(a.dates.end)}` : ''}</div>` : ''}
-      <p style="margin-bottom:14px">${!many && rn > 1 ? `<span class="pill">🌊 ${rn}-я волна</span> ` : ''}<b>Вы — Тайный Санта</b> 🎅 <span class="status ${a.status}">${statusTxt}</span></p>
+      <div class="wave-head">🌊 Волна ${rn}${a.dates ? ` · отправка до ${FX.fmtDate(a.dates.end)}` : ''}</div>
+      <p style="margin-bottom:14px"><b>Вы — Тайный Санта</b> 🎅 <span class="status ${a.status}">${statusTxt}</span></p>
       ${a.priority && a.status === 'assigned' ? '<div class="big-notice warn" style="margin-bottom:14px">⭐ Получатель в приоритете: в прошлой волне он остался без подарка. Пожалуйста, отправьте посылку в первую очередь!</div>' : ''}
       <div class="wish-box">
         <div class="wish-head">🎁 Что хочет получить</div>
@@ -508,7 +507,13 @@
       host.innerHTML = `<div class="sealed"><div class="env">🎄</div><p class="muted">${me.drawn ? 'Ваш Санта уже знает о вас. Ждём!' : 'После жеребьёвки кто-то станет вашим Тайным Сантой.'}</p></div>`;
     } else if (g.failed) {
       const w = me.wave2 || {};
-      host.innerHTML = `<div class="sealed"><div class="env">😢</div><p><b>Ваш Санта не отправил подарок</b></p><p class="muted">${w.status === 'confirmed' ? `Вы в ${w.round}-й волне ⭐ — там вам отправят подарок в первую очередь.` : w.status === 'declined' ? 'Вы отказались от следующей волны. Если передумали — напишите организаторам.' : w.status === 'waiting' ? 'Мы записали вас в следующую волну с приоритетом ⭐ — когда она откроется, придёт приглашение.' : 'Мы пригласили вас в следующую волну — подтвердите участие выше, и вам отправят подарок в первую очередь ⭐'}</p></div>`;
+      const rescue = w.reason === 'victim' && (w.round > g.round || (w.status === 'waiting' && me.settings.round2Open));
+      const detail = !rescue ? 'Если нужна помощь, напишите организаторам.'
+        : w.status === 'confirmed' ? `Вы в ${w.round}-й волне ⭐ — там вам отправят подарок в первую очередь.`
+        : w.status === 'declined' ? 'Вы отказались от следующей волны. Если передумали — напишите организаторам.'
+        : w.status === 'waiting' ? 'Мы записали вас в следующую волну с приоритетом ⭐ — когда она откроется, придёт приглашение.'
+        : 'Мы пригласили вас в следующую волну — подтвердите участие выше, и вам отправят подарок в первую очередь ⭐';
+      host.innerHTML = `<div class="sealed"><div class="env">😢</div><p><b>Ваш Санта не отправил подарок</b></p><p class="muted">${detail}</p></div>`;
     } else if (g.status === 'assigned') {
       host.innerHTML = `<div class="sealed"><div class="env">🛷</div><p>Ваш Тайный Санта собирает посылку.</p><p class="muted">Как только он отметит отправку — вы увидите это здесь.</p></div>`
         + chatBlock(g.messages, 'santa', g.round || 1);
@@ -544,22 +549,27 @@
       host.innerHTML = `<p class="muted">Анкета не заполнена.</p>${me.user.banned ? '' : '<button class="btn btn-primary" data-open-part>🎅 Участвовать</button>'}`;
     } else {
       const MOD = { pending: '<span class="status assigned">⏳ на модерации</span>', approved: '<span class="status received">✅ одобрена</span>', rejected: '<span class="status banned">🚫 отклонена</span>' };
-      host.innerHTML = `<dl class="kv">
-        <dt>Статус</dt><dd>${MOD[p.moderation] || ''}${p.moderation === 'rejected' && p.moderationNote ? `<small class="important" style="display:block">${esc(p.moderationNote)}</small>` : ''}</dd>
-        <dt>ФИО</dt><dd>${esc(p.fullName) || '<span class="important">не указано — заполните!</span>'}</dd>
+      const forms = me.ownAnketas && me.ownAnketas.length ? me.ownAnketas : [{ ...p, round: null }];
+      host.innerHTML = `<p>${MOD[p.moderation] || ''} ${p.moderation === 'rejected' && p.moderationNote ? `<small class="important">${esc(p.moderationNote)}</small>` : ''}</p>
+      ${forms.map((a) => `<section class="give-block">
+        <h4 class="wave-head">${a.round > 0 ? `🌊 Волна ${a.round}` : 'Основная анкета'}</h4>
+        ${a.round > 0 && a.usesBase ? '<p class="muted">Для этой волны используется основная анкета.</p>' : ''}
+        <dl class="kv">
+        <dt>ФИО</dt><dd>${esc(a.fullName) || '<span class="important">не указано — заполните!</span>'}</dd>
         <dt>Телефон</dt><dd>${esc(me.user.phone)}</dd>
-        <dt>ПВЗ Ozon</dt><dd>${esc(p.address)}</dd>
-        <dt>Тематика</dt><dd>${esc(PREFS[p.prefs])}</dd>
-        <dt>Пожелания</dt><dd>${esc(p.wishes) || '—'}</dd>
-        <dt>Пометки</dt><dd>${esc(p.notes) || '—'}</dd>
+        <dt>ПВЗ Ozon</dt><dd>${esc(a.address)}</dd>
+        <dt>Тематика</dt><dd>${esc(PREFS[a.prefs])}</dd>
+        <dt>Пожелания</dt><dd>${esc(a.wishes) || '—'}</dd>
+        <dt>Пометки</dt><dd>${esc(a.notes) || '—'}</dd>
       </dl>
+      </section>`).join('')}
       <div class="actions">
-        <button class="btn btn-ghost btn-sm" data-open-part>✏️ Изменить</button>
+        <button class="btn btn-ghost btn-sm" data-open-part>✏️ Изменить основную анкету</button>
         <button class="btn btn-ghost btn-sm" data-add-wish>➕ Дополнить пожелания</button>
         ${me.drawn ? '' : '<button class="btn btn-danger btn-sm" data-leave>Выйти из игры</button>'}
       </div>
       <form class="form add-wish" data-add-wish-form hidden>
-        <label>Что добавить к пожеланиям?<small>Ваш Санта сразу получит уведомление${(me.assignments || []).length || (me.incomings || []).length ? '' : ' (после жеребьёвки)'}</small><textarea name="text" rows="2" maxlength="500" placeholder="Например: люблю светлую обжарку, кружку не нужно"></textarea></label>
+        <label>Что добавить к пожеланиям?<small>Дополнение появится в анкетах всех ваших волн.</small><textarea name="text" rows="2" maxlength="500" placeholder="Например: люблю светлую обжарку, кружку не нужно"></textarea></label>
         <div class="row2"><button class="btn btn-ghost btn-sm" type="button" data-add-wish-cancel>Отмена</button><button class="btn btn-primary btn-sm" type="submit">➕ Добавить</button></div>
       </form>`;
       const aw = $('[data-add-wish-form]', host);
@@ -594,7 +604,8 @@
   function renderNotifs() {
     const list = me.notifications;
     $('[data-notifs]').innerHTML = list.length
-      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}${n.msg ? `<div class="notif-btns"><button class="btn btn-primary btn-sm" type="button" data-reply-to="${n.msg.reply === 'santa' ? 'santa' : 'recipient'}" data-round="${n.msg.round}">↩️ Ответить</button></div>` : notifButtons(n.buttons)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
+      ? list.map((n) => `<li class="${n.read ? '' : 'unread'} ${n.kind}">${esc(n.text)}${n.msg ? `<div class="notif-btns"><button class="btn btn-primary btn-sm" type="button" data-reply-to="${n.msg.reply === 'santa' ? 'santa' : 'recipient'}" data-round="${n.msg.round}">↩️ Ответить</button></div>` : n.action === 'raffle-start' ? '<div class="notif-btns"><a class="btn btn-ghost btn-sm" href="https://t.me/coffeemaniacs_bot?start=raffle" target="_blank" rel="noopener">🎁 Участвовать в розыгрыше</a></div>'
+        : notifButtons(n.buttons)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('')
       : '<li>Пока тихо. Как будто перед большим завозом зерна.</li>';
     if (list.some((n) => !n.read)) setTimeout(() => Api.post('/api/notifications/read').catch(() => {}), 2500);
   }

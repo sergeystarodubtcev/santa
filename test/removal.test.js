@@ -45,7 +45,7 @@ test('после жеребьёвки: удаление перестраивае
   assert.ok(!db.users.some((u) => u.id === B));
   assert.ok(!db.pairs.some((p) => p.santaId === B || p.recipientId === B));
   const toA = db.notifications.filter((n) => n.userId === A).pop();
-  assert.match(toA.text, /получатель вышел из игры[\s\S]*новые имя, ФИО и адрес/i);
+  assert.match(toA.text, /Твой новый подопечный:[\s\S]*Пожелания[\s\S]*Кому я дарю/i);
   assert.equal(toA.action, 'whom');
   assert.match(adminLog(db), /🗑 U1 @user_1 .* удалил аккаунт ПОСЛЕ жеребьёвки[\s\S]*@user_0 теперь дарит @user_2/);
   assert.deepEqual(call(db, 'GET', '/api/admin/state', null, admin).pairsCheck, { noRecipient: [], noSanta: [], doubleSanta: [] });
@@ -100,7 +100,7 @@ test('админ: удаление и «из пар» с перестройко�
   call(db, 'POST', '/api/admin/pair-set', { santaId: C, recipientId: E }, admin);
   chk = call(db, 'GET', '/api/admin/state', null, admin).pairsCheck;
   assert.deepEqual(chk.doubleSanta, []);
-  assert.match(db.notifications.filter((n) => n.userId === C).pop().text, /назначили вам получателя/);
+  assert.match(db.notifications.filter((n) => n.userId === C).pop().text, /Организаторы сменили получателя/);
   assert.match(adminLog(db), /✏️ Вручную: @user_2 теперь дарит @user_4/);
 });
 
