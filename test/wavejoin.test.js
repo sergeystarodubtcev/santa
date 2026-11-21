@@ -313,7 +313,7 @@ test('розыгрыш: один номерок на волну, повторн�
   assert.match(outgoing[0].text, /Всем привет! У нас объявляется розыгрыш/);
   assert.match(outgoing[0].text, /Итоги — 10 декабря/);
   assert.deepEqual(outgoing[0].reply_markup.inline_keyboard.flat().map((button) => button.url || button.callback_data), [
-    'https://t.me/speccof', 'https://t.me/coffeemaniacs_channel', 'raffle:continue',
+    'https://t.me/coffeemaniacs_channel', 'https://t.me/speccof', 'raffle:continue',
   ]);
   const afterAnnounce = db.notifications.length;
   call(db, 'POST', '/api/admin/raffle/announce', {}, admin);
@@ -324,7 +324,7 @@ test('розыгрыш: один номерок на волну, повторн�
   call(db, 'POST', '/api/sent', { round: 2 }, as(ids[0]));
   assert.deepEqual(call(db, 'GET', '/api/raffle', null, as(ids[0])).tickets, [{ round: 1, number: 1 }, { round: 2, number: 2 }]);
   const menu = msg(db, 902, '🎁 Розыгрыш');
-  assert.match(texts(menu), /Итоги — 10 декабря/);
+  assert.match(texts(menu), /10 декабря подведём итоги и пришлём их сюда/);
   assert.match(texts(menu), /Волна 1 — №1/);
   assert.match(texts(menu), /Волна 2 — №2/);
   assert.ok(menu.out.some((o) => o.reply_markup?.keyboard?.flat().some((button) => button.text === '🎁 Розыгрыш')));
