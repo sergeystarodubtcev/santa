@@ -90,10 +90,13 @@ async function syncPhotos() {
 
 async function deliver(out) {
   for (const item of out || []) {
-    const { method = 'sendMessage', ...payload } = item;
+    const { method = 'sendMessage', pin, ...payload } = item;
     if (method === 'sendMessage') Object.assign(payload, { parse_mode: 'HTML', disable_web_page_preview: true });
     if (method === 'sendPhoto' && typeof payload.photo === 'string' && /\/api\/img\?/.test(payload.photo)) { await sendSitePhoto(payload); continue; }
-    await tg(method, payload);
+    const result = await tg(method, payload);
+    if (pin && method === 'sendMessage' && result && result.message_id) {
+      await tg('pinChatMessage', { chat_id: payload.chat_id, message_id: result.message_id, disable_notification: true });
+    }
   }
 }
 

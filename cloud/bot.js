@@ -27,11 +27,12 @@ const BTN = {
   help: '🆘 Помощь администратора',
   wave: '🌊 Следующие волны',
   chat: '💬 Переписка',
+  raffle: '🎁 Розыгрыш',
   done: '✅ Готово',
 };
-const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.chat }, { text: BTN.wave }], [{ text: BTN.help }]], resize_keyboard: true };
-const ADM = { status: '📊 Статус', send: '📣 Рассылка', who: '🔎 Досье' };
-const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.status }, { text: ADM.send }], [{ text: '🛡 Модерация' }, { text: ADM.who }]]), resize_keyboard: true };
+const MAIN_KB = { keyboard: [[{ text: BTN.whom }, { text: BTN.sent }], [{ text: BTN.form }, { text: BTN.got }], [{ text: BTN.chat }, { text: BTN.wave }], [{ text: BTN.help }], [{ text: BTN.raffle }]], resize_keyboard: true };
+const ADM = { menu: '⚙️ Админка', status: '📊 Статус', send: '📣 Рассылка', who: '🔎 Досье' };
+const ADMIN_KB = { keyboard: MAIN_KB.keyboard.concat([[{ text: ADM.menu }]]), resize_keyboard: true };
 const HELP_KB = { keyboard: [[{ text: BTN.done }]], resize_keyboard: true };
 const ib = (rows) => ({ inline_keyboard: rows.map((r) => r.map(([text, data]) => (/^https?:/.test(data) ? { text, url: data } : { text, callback_data: data }))) });
 const WHOM_BTN = ib([[['🎁 Узнать кому', 'whom']]]);
@@ -236,10 +237,117 @@ function createBot({ core, secret, siteUrl, username }) {
       reply_markup: ib([[[ADM_CATS.all.label, 'adm:o:all:0']], [[ADM_CATS.noform.label, 'adm:l:noform:0']], [[ADM_CATS.nobot.label, 'adm:l:nobot:0']], [['📊 По волнам — через статус', 'adm:st']]]),
     });
   }
+  const ADMIN_NOTICE = { forms: 'Новые анкеты', log: 'Журнал изменений', deadline: 'Сроки отправки', help: 'Обращения участников' };
+  const USER_NOTICE = { reminders: 'Автоматические напоминания', broadcasts: 'Рассылки в Telegram' };
+  const noticeOn = (prefs, kind) => !prefs || prefs[kind] !== false;
+  const adminsFor = (db, kind) => (db.tgAdmins || []).filter((id) => noticeOn((db.tgAdminPrefs || {})[id], kind));
+  const userNotices = (db, uid) => (db.tgUserPrefs || {})[uid];
+  const noticeButtons = (options, prefs, key) => Object.entries(options).map(([kind, label]) => [
+    [`${noticeOn(prefs, kind) ? '✅' : '🔕'} ${label}`, key(kind, noticeOn(prefs, kind) ? 'off' : 'on')],
+  ]);
+
+  function adminNoticeMenu(db, out, chatId) {
+    out.push({ chat_id: chatId, text: '🔔 Уведомления в ваш админский чат', reply_markup: ib(
+      noticeButtons(ADMIN_NOTICE, (db.tgAdminPrefs || {})[chatId], (kind, mode) => `adm:alert:${kind}:${mode}`)
+    ) });
+  }
+
+  function manageParticipant(db, out, chatId, uid) {
+    const u = db.users.find((user) => user.id === uid);
+    if (!u) return out.push({ chat_id: chatId, text: 'Участник больше недоступен.' });
+    const rounds = [...new Set(db.pairs.filter((p) => p.santaId === uid || p.recipientId === uid).map(core.pairRound))].sort((a, b) => a - b);
+    const rows = rounds.map((round) => [[`Волна ${round} · Пары`, `adm:chain:${uid}:${round}`]]);
+    rows.push([['🔔 Уведомления участника', `adm:useralerts:${uid}`], ['🔎 Досье', `adm:who:${uid}`]]);
+    rows.push([['✉️ Отправить уведомление', `adm:usermsg:${uid}`]]);
+    out.push({ chat_id: chatId, text: `Управление участником @${esc(u.tg)}`, reply_markup: ib(rows) });
+  }
+
+  function showChainPlan(db, ctx, out, chatId, body) {
+    try {
+      const plan = call(db, ctx, 'POST', '/api/admin/chain', body, { isAdmin: true });
+      const key = crypto.randomBytes(5).toString('hex');
+      db.tgState[chatId] = { flow: 'admchainconfirm', body: { ...body, revision: plan.revision }, key };
+      const action = body.action === 'exclude' ? 'Исключение участника' : 'Замена получателя';
+      out.push({ chat_id: chatId, text: `<b>${action} · Волна ${plan.round}</b>\n${esc(plan.summary)}`,
+        reply_markup: ib([[['Подтвердить', `adm:chainok:${key}`], ['Отмена', 'adm:x']]]) });
+    } catch (e) {
+      if (!(e instanceof core.SantaError)) throw e;
+      out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
+    }
+  }
+
+  function admMenu(out, chatId) {
+    out.push({ chat_id: chatId, text: '⚙️ <b>Админка Тайного Санты</b>', reply_markup: ib([
+      [[ADM.status, 'adm:st'], [ADM.who, 'adm:search']],
+      [[ADM.send, 'adm:send'], ['🛡 Модерация', 'adm:moderation']],
+      [['Участник: пары и уведомления', 'adm:manage'], ['🔔 Мои уведомления', 'adm:alerts']],
+      [['🎁 Розыгрыш', siteUrl + '/admin.html#raffle']],
+      [['🌐 Пары, волны и настройки', siteUrl + '/admin.html']],
+    ]) });
+  }
+
   function admCallback(db, ctx, out, chatId, d) {
-    const [, act, cat, nRaw] = d.split(':');
+    const [, act, cat, nRaw, value] = d.split(':');
     const n = Number(nRaw) || 0;
     const st0 = db.tgState[chatId];
+    if (act === 'alerts' || act === 'alert') {
+      if (act === 'alert' && Object.hasOwn(ADMIN_NOTICE, cat) && ['on', 'off'].includes(nRaw)) {
+        db.tgAdminPrefs = db.tgAdminPrefs || {};
+        db.tgAdminPrefs[chatId] = { ...db.tgAdminPrefs[chatId], [cat]: nRaw === 'on' };
+      }
+      return adminNoticeMenu(db, out, chatId);
+    }
+    if (act === 'manage') {
+      db.tgState[chatId] = { flow: 'admmanage' };
+      return out.push({ chat_id: chatId, text: 'Введите имя, телефон или @ник участника.' });
+    }
+    if (act === 'user') return manageParticipant(db, out, chatId, cat);
+    if (act === 'useralerts' || act === 'useralert') {
+      const u = db.users.find((user) => user.id === cat);
+      if (!u) return out.push({ chat_id: chatId, text: 'Участник больше недоступен.' });
+      if (act === 'useralert' && Object.hasOwn(USER_NOTICE, nRaw) && ['on', 'off'].includes(value)) {
+        db.tgUserPrefs = db.tgUserPrefs || {};
+        db.tgUserPrefs[cat] = { ...db.tgUserPrefs[cat], [nRaw]: value === 'on' };
+      }
+      return out.push({ chat_id: chatId, text: `Уведомления @${esc(u.tg)}`,
+        reply_markup: ib(noticeButtons(USER_NOTICE, userNotices(db, cat), (kind, mode) => `adm:useralert:${cat}:${kind}:${mode}`)) });
+    }
+    if (act === 'usermsg') {
+      if (!db.users.some((u) => u.id === cat)) return;
+      db.tgState[chatId] = { flow: 'admusermsg', uid: cat };
+      return out.push({ chat_id: chatId, text: 'Введите уведомление для личного кабинета участника и его Telegram. /cancel — отмена.' });
+    }
+    if (act === 'chain') {
+      const rows = [[['Исключить из этой волны', `adm:exclude:${cat}:${n}`]]];
+      if (db.pairs.some((p) => p.santaId === cat && core.pairRound(p) === n)) rows.unshift([['Заменить получателя', `adm:replace:${cat}:${n}`]]);
+      return out.push({ chat_id: chatId, text: `Волна ${n} · действия с цепочкой`, reply_markup: ib(rows) });
+    }
+    if (act === 'exclude') return showChainPlan(db, ctx, out, chatId, { action: 'exclude', userId: cat, round: n });
+    if (act === 'replace') {
+      db.tgState[chatId] = { flow: 'admreplace', uid: cat, round: n };
+      return out.push({ chat_id: chatId, text: 'Введите имя или @ник нового получателя этой волны.' });
+    }
+    if (act === 'picknew' && st0 && st0.flow === 'admreplace' && (st0.candidates || []).includes(cat)) {
+      return showChainPlan(db, ctx, out, chatId, { action: 'replace', userId: st0.uid, recipientId: cat, round: st0.round });
+    }
+    if (act === 'chainok') {
+      if (!st0 || st0.flow !== 'admchainconfirm' || st0.key !== cat) return out.push({ chat_id: chatId, text: 'Подтверждение устарело. Откройте действие заново.' });
+      delete db.tgState[chatId];
+      try {
+        call(db, ctx, 'POST', '/api/admin/chain', st0.body, { isAdmin: true });
+        out.push({ chat_id: chatId, text: `✅ Цепочка волны ${st0.body.round} обновлена.`, reply_markup: ADMIN_KB });
+      } catch (e) {
+        if (!(e instanceof core.SantaError)) throw e;
+        out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
+      }
+      return;
+    }
+    if (act === 'moderation') return modPanel(db, out, chatId);
+    if (act === 'search') {
+      db.tgState[chatId] = { flow: 'admwho' };
+      out.push({ chat_id: chatId, text: 'Напишите имя или @ник участника.' });
+      return;
+    }
     if (act === 'st') return admStatus(db, ctx, out, chatId, Number(cat) || 0);
     if (act === 'who') { out.push(dossierMsg(db, chatId, cat)); return; }
     if (act === 'pkdone') {
@@ -341,12 +449,12 @@ function createBot({ core, secret, siteUrl, username }) {
     if (msg.text) toAdmins(db, out, `🆘 <b>@${esc(key)}</b>${u ? ' (' + esc(u.name) + ')' : ''}:\n${esc(msg.text)}\n\n<code>/reply @${esc(key)} </code>`);
     else {
       toAdmins(db, out, `🆘 <b>@${esc(key)}</b> прислал вложение 👇`);
-      (db.tgAdmins || []).forEach((a) => out.push({ method: 'forwardMessage', chat_id: a, from_chat_id: chatId, message_id: msg.message_id }));
+      adminsFor(db, 'help').forEach((a) => out.push({ method: 'forwardMessage', chat_id: a, from_chat_id: chatId, message_id: msg.message_id }));
     }
     out.push({ chat_id: chatId, text: '📨 Передал организатору.' });
   }
   function toAdmins(db, out, text) {
-    (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text }));
+    adminsFor(db, 'help').forEach((a) => out.push({ chat_id: a, text }));
   }
 
   // ---------- сценарии ----------
@@ -402,9 +510,14 @@ function createBot({ core, secret, siteUrl, username }) {
   }
 
   // «💬 Переписка»: анонимно написать своему получателю или своему Санте (по каждой волне)
+  function chatButton(side, round) {
+    return [`Волна ${round} · ${side === 'r' ? 'Я отправляю посылку' : 'Мне отправляют посылку'}`, `msg:${side}:${round}`];
+  }
+
   function chatMenu(db, ctx, out, chatId) {
     const u = userByChat(db, chatId);
     if (!u) return notLinked(out, chatId);
+    delete db.tgState[chatId];
     const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
     const outs = me.assignments || [];
     const ins = (me.incomings || []).filter((x) => !x.failed);
@@ -412,19 +525,10 @@ function createBot({ core, secret, siteUrl, username }) {
       out.push({ chat_id: chatId, text: '💬 Переписка откроется после жеребьёвки: можно будет анонимно написать своему получателю (уточнить, что он хочет) и своему Тайному Санте.' });
       return;
     }
-    const many = outs.length + ins.length > 2;
-    const last = (list) => (list && list.length ? '\n' + list.slice(-3).map((m) => `${m.mine ? '🫵 Вы' : m.who}: ${esc(m.text)}`).join('\n') : '');
-    const lines = ['💬 <b>Анонимная переписка</b> — никто не узнает, кто вы.'];
-    const rows = [];
-    for (const a of outs) {
-      lines.push('', `🎅 <b>Ваш получатель</b>${many ? ` · ${a.round}-я волна` : ''}` + last((a.messages || []).map((m) => ({ mine: m.from === 'santa', who: '🎁 Получатель', text: m.text }))));
-      rows.push([[`💬 Написать получателю${many ? ` (${a.round}-я волна)` : ''}`, 'msg:r:' + a.round]]);
-    }
-    for (const g of ins) {
-      lines.push('', `🎁 <b>Ваш Тайный Санта</b>${many ? ` · ${g.round}-я волна` : ''}` + last((g.messages || []).map((m) => ({ mine: m.from === 'recipient', who: '🎅 Санта', text: m.text }))));
-      rows.push([[`💬 Написать своему Санте${many ? ` (${g.round}-я волна)` : ''}`, 'msg:s:' + g.round]]);
-    }
-    out.push({ chat_id: chatId, text: lines.join('\n'), reply_markup: ib(rows) });
+    const rows = outs.map((a) => [chatButton('r', a.round)])
+      .concat(ins.map((a) => [chatButton('s', a.round)]))
+      .sort((a, b) => Number(a[0][1].split(':')[2]) - Number(b[0][1].split(':')[2]));
+    out.push({ chat_id: chatId, text: '💬 <b>Анонимная переписка</b>\nВыберите волну и направление посылки.', reply_markup: ib(rows) });
   }
 
   // «🌊 Следующие волны»: записаться (анкета из прошлой волны), лист ожидания, статус
@@ -439,8 +543,12 @@ function createBot({ core, secret, siteUrl, username }) {
       return;
     }
     if (!nw) {
-      const w1 = (me.settings.waves || [])[0] || {};
-      out.push({ chat_id: chatId, text: w1.status === 'open'
+      const waves = me.settings.waves || [];
+      const w1 = waves[0] || {};
+      const final = waves.find((wave) => wave.n === core.FINAL_WAVE);
+      out.push({ chat_id: chatId, text: final && final.status !== 'open'
+        ? '🌊 Запись в третью, финальную волну закрыта.'
+        : w1.status === 'open'
         ? '🌊 Сейчас идёт запись в первую волну — вы уже в ней! Следующие волны откроются после жеребьёвки.'
         : '🌊 Запись в следующие волны сейчас закрыта. Я напишу, когда она откроется.' });
       return;
@@ -471,6 +579,27 @@ function createBot({ core, secret, siteUrl, username }) {
     askForm(out, chatId, 'fullName', db);
   }
 
+  function myForms(db, ctx, out, chatId, user) {
+    const me = call(db, ctx, 'GET', '/api/me', null, { userId: user.id });
+    const part = me.participation;
+    if (!part) {
+      out.push({ chat_id: chatId, text: 'Анкета ещё не заполнена.', reply_markup: ib([[['🎁 Заполнить анкету', 'form']]]) });
+      return;
+    }
+    const forms = me.ownAnketas.length ? me.ownAnketas : [{ ...part, round: null }];
+    for (const a of forms) {
+      const heading = a.round > 0 ? `Ваша анкета · Волна ${a.round}` : 'Ваша основная анкета';
+      out.push({
+        chat_id: chatId,
+        text: `📝 <b>${heading}</b>\n\nФИО: ${esc(a.fullName)}\nТелефон: ${esc(user.phone)}\nПВЗ: ${esc(a.address)}\nТематика: ${esc(core.PREFS[a.prefs])}\nПожелания: ${esc(a.wishes) || '—'}\nПометки: ${esc(a.notes) || '—'}`,
+      });
+    }
+    out.push({ chat_id: chatId, text: statusLine(db, user), reply_markup: ib([
+      [['✏️ Изменить основную анкету', 'form']],
+      [['➕ Дополнить пожелания во всех волнах', 'addwish']],
+    ]) });
+  }
+
   function formInput(db, ctx, out, chatId, st, value) {
     if (st.step === 'address' && Cities && !Cities.hasLocality(value) && !st.addrConfirmed) {
       st.pendingAddress = value;
@@ -490,7 +619,7 @@ function createBot({ core, secret, siteUrl, username }) {
       try {
         call(db, ctx, 'POST', '/api/wave-join', Object.assign({}, st.data, { agree: true }), { userId: u.id });
         delete db.tgState[chatId];
-        out.push({ chat_id: chatId, text: st.waveN ? `🌊 Готово! Вы в ${st.waveN}-й волне. Я напишу, когда пройдёт её жеребьёвка.` : '🌊 Готово! Вы в листе ожидания следующей волны — я напишу, когда она откроется.', reply_markup: MAIN_KB });
+        out.push({ chat_id: chatId, text: st.waveN ? `🌊 Готово! Вы в ${st.waveN}-й волне. Я напишу, когда пройдёт её жеребьёвка.` : '🌊 Готово! Вы в листе ожидания следующей волны — я напишу, когда она откроется.', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
       } catch (e) {
         if (!(e instanceof core.SantaError)) throw e;
         const back = /ПВЗ|адрес|пункта/i.test(e.message) ? 'address' : /ФИО/i.test(e.message) ? 'fullName' : null;
@@ -502,7 +631,7 @@ function createBot({ core, secret, siteUrl, username }) {
     try {
       call(db, ctx, 'POST', '/api/participate', Object.assign({ phone: u.phone }, st.data, { agree: true, wave2: !!db.drawnAt }), { userId: u.id });
       delete db.tgState[chatId];
-      out.push({ chat_id: chatId, text: '🎉 Анкета сохранена!\n\n' + statusLine(db, u), reply_markup: MAIN_KB });
+      out.push({ chat_id: chatId, text: '🎉 Анкета сохранена!\n\n' + statusLine(db, u), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
     } catch (e) {
       if (!(e instanceof core.SantaError)) throw e;
       // вернуться к шагу, где ошибка
@@ -510,6 +639,32 @@ function createBot({ core, secret, siteUrl, username }) {
       out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
       if (back) { st.step = back; askForm(out, chatId, back, db); } else delete db.tgState[chatId];
     }
+  }
+
+  function raffleMessage(db, ctx, out, chatId, user, join) {
+    const raffle = call(db, ctx, join ? 'POST' : 'GET', '/api/raffle' + (join ? '/join' : ''), null, { userId: user.id });
+    const tickets = raffle.tickets.map((t) => `Волна ${t.round} — №${t.number}`);
+    const status = tickets.length ? 'Ваши номерки:\n' + tickets.join('\n') : 'У вас пока нет номерков.';
+    out.push({ chat_id: chatId, text: '🎁 <b>Розыгрыш</b>\nЗа каждую посылку, отмеченную отправленной до 10 декабря 2026 по Москве, выдаётся один номерок на волну. Итоги — 10 декабря.\n\n'
+      + status + (raffle.closed ? '\nРозыгрыш завершён.' : ''), reply_markup: !raffle.joined && !raffle.closed
+        ? raffleChannelButtons('Участвовать в розыгрыше') : isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+  }
+
+  function raffleChannelButtons(label) {
+    return ib([
+      [['Specialty Кофеёк', 'https://t.me/speccof']],
+      [['Кофеманьяки', 'https://t.me/coffeemaniacs_channel']],
+      [[label, 'raffle:continue']],
+    ]);
+  }
+
+  function raffleChannels(out, chatId) {
+    out.push({ chat_id: chatId, text: '🎁 Розыгрыш Тайного Санты. Подпишитесь на каналы организаторов и нажмите «Продолжить».',
+      reply_markup: raffleChannelButtons('Продолжить') });
+  }
+
+  function raffleAccount(out, chatId, user) {
+    out.push({ chat_id: chatId, pin: true, text: `Аккаунт для входа на сайт: <code>@${esc(user.tg)}</code>\n<a href="${siteUrl}/cabinet.html">Личный кабинет</a>` });
   }
 
   function regInput(db, ctx, out, chatId, st, value, from) {
@@ -538,7 +693,8 @@ function createBot({ core, secret, siteUrl, username }) {
         const u = db.users.find((x) => x.id === r.user.id);
         u.tgChatId = chatId;
         delete db.tgState[chatId];
-        out.push({ chat_id: chatId, text: `✅ Готово, ${esc(u.name)}! Аккаунт создан.\nДля входа на сайт (${siteUrl}/cabinet.html): логин <code>@${esc(u.tg)}</code>, пароль <code>${esc(password)}</code>`, reply_markup: MAIN_KB });
+        out.push({ chat_id: chatId, ...(st.raffle ? { pin: true } : {}), text: `✅ Готово, ${esc(u.name)}! Аккаунт создан.\nДля входа на сайт (${siteUrl}/cabinet.html): логин <code>@${esc(u.tg)}</code>, пароль <code>${esc(password)}</code>`, reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+        if (st.raffle) raffleMessage(db, ctx, out, chatId, u, true);
         startForm(db, out, chatId);
       } catch (e) {
         if (!(e instanceof core.SantaError)) throw e;
@@ -559,14 +715,13 @@ function createBot({ core, secret, siteUrl, username }) {
         : me.drawn ? 'Вас нет в жеребьёвке этого года.' : '🔒 Жеребьёвки ещё не было. Я напишу, как только организаторы раскидают участников!\n\n' + statusLine(db, u) });
       return;
     }
-    const many = list.length > 1;
     for (const a of list) {
     const r = a.recipient;
     const st = { assigned: '⏳ ждёт отправки', sent: '🚚 отправлено', received: '✅ получено' }[a.status];
     out.push({
       chat_id: chatId,
       // сначала пожелания, данные для отправки — под спойлером (нажать, чтобы показать)
-      text: (many ? `🌊 <b>${a.round}-я волна</b>\n` : '') + `🎅 <b>Вы — Тайный Санта</b> (${st})\n\n` +
+      text: `🌊 <b>${a.round}-я волна</b>\n🎅 <b>Вы — Тайный Санта</b> (${st})\n\n` +
         `🎁 <b>Что хочет получить:</b>\n${esc(r.wishes) || 'не написал(а) — сюрприз на ваш вкус!'}\n🎯 Тематика: ${esc(core.PREFS[r.prefs] || '—')}` +
         (r.notes ? `\n⚠️ <b>Важно: ${esc(r.notes)}</b>` : '') +
         `\n\n📦 <b>Данные для отправки</b> (нажмите, чтобы показать):\n` +
@@ -605,13 +760,15 @@ function createBot({ core, secret, siteUrl, username }) {
     const u = userByChat(db, chatId);
     try {
       const p = call(db, ctx, 'POST', '/api/sent', { track: track || '', round: round || undefined, tgPhoto: tgPhoto || undefined }, { userId: u.id });
+      const raffle = call(db, ctx, 'GET', '/api/raffle', null, { userId: u.id });
       const a = (p.assignments || []).filter((x) => x.status === 'sent' && (!round || x.round === round)).pop();
-      out.push({ chat_id: chatId, text: '🎉 Хо-хо-хо! Отметил: подарок отправлен. Получатель увидит, что посылка в пути. Спасибо, Санта!', reply_markup: MAIN_KB });
+      out.push({ chat_id: chatId, text: '🎉 Хо-хо-хо! Отметил: подарок отправлен. Получатель увидит, что посылка в пути. Спасибо, Санта!', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+      if (raffle.joined && !raffle.closed && raffle.tickets.some((t) => t.round === ((a && a.round) || round || 1))) raffleMessage(db, ctx, out, chatId, u, false);
       out.push({ chat_id: chatId, text: '📬 Когда заказ приедет в пункт выдачи — нажмите кнопку ниже и пришлите код получения (или фото QR-кода). Получатель сразу узнает, что можно забирать.',
         reply_markup: ib([[['📬 Заказ приехал — передать код', 'pick:' + ((a && a.round) || round || 1)]]]) });
     } catch (e) {
       if (!(e instanceof core.SantaError)) throw e;
-      out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB });
+      out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
     }
   }
 
@@ -634,10 +791,24 @@ function createBot({ core, secret, siteUrl, username }) {
     // ----- кнопки под сообщениями -----
     if (cb) {
       const d = cb.data || '';
-      if (d === 'reg') {
+      if (d === 'raffle:start') {
+        raffleChannels(out, chatId);
+      } else if (d === 'raffle:continue') {
+        if (u0 && !u0.banned) {
+          raffleAccount(out, chatId, u0);
+          raffleMessage(db, ctx, out, chatId, u0, true);
+        } else if (u0) {
+          out.push({ chat_id: chatId, text: 'Для участия обратитесь к организаторам.' });
+        } else {
+          out.push({ chat_id: chatId, text: 'Зарегистрируйтесь в боте или войдите на сайте и привяжите Telegram в личном кабинете. Затем снова откройте розыгрыш.',
+            reply_markup: ib([[['Зарегистрироваться', 'raffle:reg']], [['Войти на сайте', siteUrl + '/cabinet.html']]]) });
+        }
+      } else if (d === 'reg' || d === 'raffle:reg') {
         if (u0) { greet(out, db, chatId, u0); return { out, actingUid }; }
-        db.tgState[chatId] = { flow: 'reg', step: 'name', data: {} };
+        db.tgState[chatId] = { flow: 'reg', step: 'name', data: {}, raffle: d === 'raffle:reg' };
         out.push({ chat_id: chatId, text: 'Отлично! Как вас зовут? (Только имя, например «Сергей»)', reply_markup: { remove_keyboard: true } });
+      } else if (d === 'form:show') {
+        if (!u0) notLinked(out, chatId); else myForms(db, ctx, out, chatId, u0);
       } else if (d === 'form') {
         if (!u0) notLinked(out, chatId); else startForm(db, out, chatId);
       } else if (d === 'whom') {
@@ -671,10 +842,23 @@ function createBot({ core, secret, siteUrl, username }) {
         if (!u0) notLinked(out, chatId);
         else {
           const [, who, n] = d.split(':');
-          db.tgState[chatId] = { flow: 'msg', to: who === 's' ? 'santa' : 'recipient', round: Number(n) || null };
-          out.push({ chat_id: chatId, text: who === 's'
-            ? '💬 Напишите сообщение своему Тайному Санте — он не узнает, кто вы, и не увидит ваш ник. /cancel — отмена.'
-            : '💬 Напишите сообщение своему получателю — например, уточните, что он хочет. Он не узнает, кто вы. /cancel — отмена.' });
+          const round = Number(n);
+          const me = call(db, ctx, 'GET', '/api/me', null, { userId: u0.id });
+          const pair = (who === 's' ? me.incomings : me.assignments).find((p) => p.round === round && !p.failed);
+          if (!pair || !['s', 'r'].includes(who)) {
+            out.push({ chat_id: chatId, text: 'Этот диалог больше недоступен. Откройте «Переписку», чтобы выбрать другой.' });
+          } else {
+            const active = db.pairs.find((p) => core.pairRound(p) === round && (who === 's' ? p.recipientId : p.santaId) === u0.id && !p.failed);
+            const expectedPeer = who === 's' ? active.santaId : active.recipientId;
+            db.tgState[chatId] = { flow: 'msg', to: who === 's' ? 'santa' : 'recipient', round, expectedPeer };
+            const history = (pair.messages || []).slice(-3).map((m) => {
+              const mine = m.from === (who === 's' ? 'recipient' : 'santa');
+              return `${mine ? 'Вы' : 'Собеседник'}: ${esc(m.text)}`;
+            });
+            out.push({ chat_id: chatId, text: `💬 <b>${chatButton(who, round)[0]}</b>\n`
+              + (history.length ? history.join('\n') + '\n\n' : '')
+              + 'Следующее сообщение отправится анонимно. /cancel — отмена.' });
+          }
         }
       } else if (d === 'pickdone') {
         const s0 = db.tgState[chatId];
@@ -683,8 +867,8 @@ function createBot({ core, secret, siteUrl, username }) {
           delete db.tgState[chatId];
           try {
             call(db, ctx, 'POST', '/api/pickup', { round: s0.round || undefined, code: s0.code || '', tgPhotos: s0.tgPhotos }, { userId: u0.id });
-            out.push({ chat_id: chatId, text: '✅ Передал получателю: «заказ приехал, забирайте» 📬 Спасибо, Санта!', reply_markup: MAIN_KB });
-          } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+            out.push({ chat_id: chatId, text: '✅ Передал получателю: «заказ приехал, забирайте» 📬 Спасибо, Санта!', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+          } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB }); }
         }
       } else if (d.startsWith('pick:')) {
         if (!u0) notLinked(out, chatId);
@@ -808,7 +992,10 @@ function createBot({ core, secret, siteUrl, username }) {
       const uname = String(from.username || '').toLowerCase();
       const byName = !byLink && uname && db.users.find((x) => x.tg === uname);
       const u = byLink || byName || u0;
-      if (u) {
+      if (startParam === 'raffle') {
+        if (u && (!u.tgChatId || u.tgChatId === chatId)) u.tgChatId = chatId;
+        raffleChannels(out, chatId);
+      } else if (u) {
         if (startParam.startsWith('help-')) { u.tgChatId = chatId; startHelp(db, out, chatId, from); }
         else link(db, out, chatId, u);
       } else if (startParam === 'help') startHelp(db, out, chatId, from);
@@ -826,6 +1013,7 @@ function createBot({ core, secret, siteUrl, username }) {
       if (ctx.checkAdmin(pw)) {
         if (!db.tgAdmins.includes(chatId)) db.tgAdmins.push(chatId);
         out.push({ chat_id: chatId, reply_markup: ADMIN_KB, text: '🔐 Готово, вы админ. Буду присылать сюда новые анкеты на модерацию, всё про удаление аккаунтов и перестройку пар, обращения в «Помощь администратора» и тех, кто не успевает отправить подарок.\nОтветить человеку: /reply @ник текст' });
+        admMenu(out, chatId);
       } else out.push({ chat_id: chatId, text: 'Неверный пароль администратора.' });
       return { out, actingUid };
     }
@@ -840,6 +1028,11 @@ function createBot({ core, secret, siteUrl, username }) {
       return { out, actingUid };
     }
     if ((text === '🛡 Модерация' || text === '/moderation') && isAdmin(db, chatId)) { modPanel(db, out, chatId); return { out, actingUid }; }
+    if (text === ADM.menu && isAdmin(db, chatId)) {
+      delete db.tgState[chatId];
+      admMenu(out, chatId);
+      return { out, actingUid };
+    }
     if ((text === ADM.status || text === '/status') && isAdmin(db, chatId)) { delete db.tgState[chatId]; admStatus(db, ctx, out, chatId, 0); return { out, actingUid }; }
     if ((text === ADM.who || /^\/who(\s|$)/.test(text)) && isAdmin(db, chatId)) {
       const q = text.startsWith('/who') ? text.slice(4).trim() : '';
@@ -863,6 +1056,34 @@ function createBot({ core, secret, siteUrl, username }) {
       } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: ADMIN_KB }); }
       return { out, actingUid };
     }
+    if (st && isAdmin(db, chatId) && text && !text.startsWith('/') && !Object.values(BTN).includes(text)
+        && !Object.values(ADM).includes(text) && ['admmanage', 'admreplace', 'admusermsg'].includes(st.flow)) {
+      if (st.flow === 'admusermsg') {
+        delete db.tgState[chatId];
+        try {
+          call(db, ctx, 'POST', '/api/admin/broadcast', { userIds: [st.uid], text, personal: true }, { isAdmin: true });
+          out.push({ chat_id: chatId, text: '✅ Уведомление сохранено в личном кабинете. Если бот подключён, оно также поставлено в доставку Telegram.' });
+        } catch (e) {
+          if (!(e instanceof core.SantaError)) throw e;
+          out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message) });
+        }
+      } else {
+        const replace = st.flow === 'admreplace';
+        const list = findUsers(db, text).filter((u) => {
+          if (!replace) return true;
+          const part = db.participations[u.id];
+          const enrollment = (db.wave2 || {})[u.id];
+          return u.id !== st.uid && part && !u.banned && ((st.round === 1 && core.roundOf(part) === 1)
+            || (enrollment && enrollment.round === st.round && enrollment.status === 'confirmed')
+            || db.pairs.some((p) => core.pairRound(p) === st.round && (p.santaId === u.id || p.recipientId === u.id)));
+        }).slice(0, 10);
+        if (replace) st.candidates = list.map((u) => u.id);
+        if (list.length) out.push({ chat_id: chatId, text: 'Выберите участника:', reply_markup: ib(list.map((u) =>
+          [[`${u.name} · @${u.tg}`, `adm:${replace ? 'picknew' : 'user'}:${u.id}`]])) });
+        else out.push({ chat_id: chatId, text: 'Никого не найдено. Уточните поиск.' });
+      }
+      return { out, actingUid };
+    }
     if (st && st.flow === 'admwho' && isAdmin(db, chatId) && text && text !== '/cancel' && !Object.values(BTN).includes(text) && !Object.values(ADM).includes(text) && !text.startsWith('/')) {
       admWho(db, out, chatId, text);
       return { out, actingUid };
@@ -876,7 +1097,7 @@ function createBot({ core, secret, siteUrl, username }) {
     if (st && st.flow === 'help') {
       if (text === BTN.done || text === '/cancel') {
         delete db.tgState[chatId];
-        out.push({ chat_id: chatId, text: 'Спасибо! Организатор ответит здесь. Если появится что-то ещё — снова нажмите «🆘 Помощь администратора».', reply_markup: u0 ? MAIN_KB : { remove_keyboard: true } });
+        out.push({ chat_id: chatId, text: 'Спасибо! Организатор ответит здесь. Если появится что-то ещё — снова нажмите «🆘 Помощь администратора».', reply_markup: u0 ? (isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB) : { remove_keyboard: true } });
         return { out, actingUid };
       }
       helpMessage(db, out, chatId, update.message, from);
@@ -884,7 +1105,7 @@ function createBot({ core, secret, siteUrl, username }) {
     }
     if (text === '/cancel' || text.toLowerCase() === 'отмена') {
       delete db.tgState[chatId];
-      out.push({ chat_id: chatId, text: 'Ок, отменил.', reply_markup: u0 ? MAIN_KB : { remove_keyboard: true } });
+      out.push({ chat_id: chatId, text: 'Ок, отменил.', reply_markup: u0 ? (isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB) : { remove_keyboard: true } });
       return { out, actingUid };
     }
 
@@ -907,9 +1128,9 @@ function createBot({ core, secret, siteUrl, username }) {
       if (st.flow === 'msg' && text && !Object.values(BTN).includes(text)) {
         delete db.tgState[chatId];
         try {
-          call(db, ctx, 'POST', '/api/msg', { to: st.to, round: st.round || undefined, text }, { userId: u0.id });
-          out.push({ chat_id: chatId, text: st.to === 'santa' ? '✅ Отправлено вашему Санте — анонимно. Ответ придёт сюда.' : '✅ Отправлено вашему получателю — анонимно. Ответ придёт сюда.', reply_markup: MAIN_KB });
-        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+          call(db, ctx, 'POST', '/api/msg', { to: st.to, round: st.round || undefined, expectedPeer: st.expectedPeer, text }, { userId: u0.id });
+          out.push({ chat_id: chatId, text: st.to === 'santa' ? '✅ Отправлено вашему Санте — анонимно. Ответ придёт сюда.' : '✅ Отправлено вашему получателю — анонимно. Ответ придёт сюда.', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB }); }
         return { out, actingUid };
       }
       if (st.flow === 'pick' && update.message.photo && update.message.photo.length) {
@@ -923,16 +1144,16 @@ function createBot({ core, secret, siteUrl, username }) {
         delete db.tgState[chatId];
         try {
           call(db, ctx, 'POST', '/api/pickup', { round: st.round || undefined, code: text, tgPhotos: st.tgPhotos || [] }, { userId: u0.id });
-          out.push({ chat_id: chatId, text: '✅ Передал получателю: «заказ приехал, забирайте» 📬 Спасибо, Санта!', reply_markup: MAIN_KB });
-        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+          out.push({ chat_id: chatId, text: '✅ Передал получателю: «заказ приехал, забирайте» 📬 Спасибо, Санта!', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB }); }
         return { out, actingUid };
       }
       if (st.flow === 'addwish' && text && !Object.values(BTN).includes(text)) {
         delete db.tgState[chatId];
         try {
           call(db, ctx, 'POST', '/api/wishes-add', { text }, { userId: u0.id });
-          out.push({ chat_id: chatId, text: '✅ Добавил к вашим пожеланиям. Ваш Санта уже получил уведомление.', reply_markup: MAIN_KB });
-        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: MAIN_KB }); }
+          out.push({ chat_id: chatId, text: '✅ Добавил к вашим пожеланиям. Ваш Санта уже получил уведомление.', reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB });
+        } catch (e) { if (!(e instanceof core.SantaError)) throw e; out.push({ chat_id: chatId, text: '⚠️ ' + esc(e.message), reply_markup: isAdmin(db, chatId) ? ADMIN_KB : MAIN_KB }); }
         return { out, actingUid };
       }
       // фото (например, QR-код) вместо трек-номера: подпись к фото — трек
@@ -952,19 +1173,13 @@ function createBot({ core, secret, siteUrl, username }) {
     // ----- кнопки меню -----
     if (!u0) { notLinked(out, chatId); return { out, actingUid }; }
     if (text === BTN.whom) whom(db, ctx, out, chatId);
-    else if (text === BTN.form) {
-      const p = db.participations[u0.id];
-      out.push({
-        chat_id: chatId,
-        text: p
-          ? `📝 <b>Ваша анкета</b>\n${statusLine(db, u0)}\n\nФИО: ${esc(p.fullName)}\nТелефон: ${esc(u0.phone)}\nПВЗ: ${esc(p.address)}\nТематика: ${esc(core.PREFS[p.prefs])}\nПожелания: ${esc(p.wishes) || '—'}\nПометки: ${esc(p.notes) || '—'}`
-          : 'Анкета ещё не заполнена.',
-        reply_markup: ib((p ? [[['➕ Дополнить пожелания', 'addwish']]] : []).concat([[[p ? '✏️ Изменить анкету' : '🎁 Заполнить анкету', 'form']]])),
-      });
-    } else if (text === BTN.sent) {
+    else if (text === BTN.form) myForms(db, ctx, out, chatId, u0);
+    else if (text === BTN.sent) {
       askSent(db, ctx, out, chatId, u0);
     } else if (text === BTN.wave) {
       waveMenu(db, ctx, out, chatId);
+    } else if (text === BTN.raffle) {
+      raffleMessage(db, ctx, out, chatId, u0, false);
     } else if (text === BTN.chat) {
       chatMenu(db, ctx, out, chatId);
     } else if (text === BTN.got) {
@@ -979,7 +1194,7 @@ function createBot({ core, secret, siteUrl, username }) {
 
   // кнопки рассылки → кнопки Telegram (действия бота или ссылки)
   function notifButtons(list) {
-    const CB = { whom: 'whom', sent: 'sent', received: 'received', wave: 'wave', form: 'form' };
+    const CB = { whom: 'whom', sent: 'sent', received: 'received', wave: 'wave', form: 'form:show' };
     return { inline_keyboard: list.map((b) => [b.url ? { text: b.text, url: b.url }
       : b.kind === 'site' ? { text: b.text, url: siteUrl + '/cabinet.html' } : { text: b.text, callback_data: CB[b.kind] }]) };
   }
@@ -992,7 +1207,7 @@ function createBot({ core, secret, siteUrl, username }) {
       const photosOf = (x) => (x.tgPhotos && x.tgPhotos.length ? x.tgPhotos : x.tgPhoto ? [x.tgPhoto] : [])
         .concat((x.sitePhotos || []).map((id) => `${siteUrl}/api/img?id=${id}&s=${imgSig(secret, id)}`));
       if (n.userId === '@admins') {
-        (db.tgAdmins || []).forEach((a) => {
+        adminsFor(db, 'log').forEach((a) => {
           out.push({ chat_id: a, text: '📋 ' + esc(n.text) });
           photosOf(n).forEach((ph, i) => out.push({ method: 'sendPhoto', chat_id: a, photo: ph, caption: i ? undefined : n.tgCaption || '📷 Фото' }));
         });
@@ -1000,18 +1215,19 @@ function createBot({ core, secret, siteUrl, username }) {
       }
       const u = db.users.find((x) => x.id === n.userId);
       if (!u) continue;
-      if (u.tgChatId && u.id !== exceptUid) {
+      if (u.tgChatId && u.id !== exceptUid && (!n.broadcastId || n.direct || noticeOn(userNotices(db, u.id), 'broadcasts'))) {
         out.push({
           chat_id: u.tgChatId,
           text: (n.action === 'msg' ? '' : '🔔 ') + esc(n.text),
           reply_markup: n.action === 'msg' && n.msg ? ib([[[n.msg.reply === 'santa' ? '↩️ Ответить Санте' : '↩️ Ответить получателю', `msg:${n.msg.reply === 'santa' ? 's' : 'r'}:${n.msg.round}`]]])
+            : n.action === 'raffle-start' ? raffleChannelButtons('🎁 Участвовать в розыгрыше')
             : n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });
         photosOf(n).forEach((ph, i) => out.push({ method: 'sendPhoto', chat_id: u.tgChatId, photo: ph, caption: i ? undefined : n.tgCaption || '📷 Фото от вашего Тайного Санты' }));
       }
       if (n.action === 'new-anketa') {
         const p = db.participations[u.id] || {};
-        for (const a of db.tgAdmins || []) {
+        for (const a of adminsFor(db, 'forms')) {
           out.push({
             chat_id: a,
             text: `📝 <b>Новая анкета</b> (модерация выключена — уже в игре)\n${esc(u.name)} · @${esc(u.tg)} · ${esc(u.phone)}\nФИО: ${esc(p.fullName)}\nПВЗ: ${esc(p.address)}${p.city ? '' : '\n⚠️ город не распознан'}`,
@@ -1021,7 +1237,7 @@ function createBot({ core, secret, siteUrl, username }) {
       }
       if (n.action === 'moderation') {
         const p = db.participations[u.id] || {};
-        for (const a of db.tgAdmins || []) {
+        for (const a of adminsFor(db, 'forms')) {
           out.push({
             chat_id: a,
             text: `📝 <b>Новая анкета на модерации</b>\n${esc(u.name)} · @${esc(u.tg)} · ${esc(u.phone)}\nФИО: ${esc(p.fullName)}\nПВЗ: ${esc(p.address)}`,
@@ -1046,7 +1262,7 @@ function createBot({ core, secret, siteUrl, username }) {
   function askNoForm(db, ctx) {
     db.tgReminders = db.tgReminders || {};
     const noForm = db.users.filter((u) => !db.participations[u.id]);
-    const withBot = noForm.filter((u) => u.tgChatId);
+    const withBot = noForm.filter((u) => u.tgChatId && noticeOn(userNotices(db, u.id), 'reminders'));
     withBot.forEach((u) => { db.tgReminders[`${u.id}:noform`] = ctx.now(); });
     return { out: withBot.map(noFormMsg), total: noForm.length, sent: withBot.length, users: withBot };
   }
@@ -1057,17 +1273,17 @@ function createBot({ core, secret, siteUrl, username }) {
     db.tgReminders = db.tgReminders || {};
     const now = ctx.now();
     const once = (key) => { if (db.tgReminders[key]) return false; db.tgReminders[key] = now; return true; };
-    const toAdmins = (text) => (db.tgAdmins || []).forEach((a) => out.push({ chat_id: a, text }));
+    const toAdmins = (text) => adminsFor(db, 'deadline').forEach((a) => out.push({ chat_id: a, text }));
 
     // Аккаунт есть, анкеты нет (прошли сутки) — спросить, будет ли участвовать
     for (const u of db.users) {
-      if (!u.tgChatId || db.participations[u.id] || now - (u.createdAt || 0) < DAY) continue;
+      if (!u.tgChatId || !noticeOn(userNotices(db, u.id), 'reminders') || db.participations[u.id] || now - (u.createdAt || 0) < DAY) continue;
       if (!once(`${u.id}:noform`)) continue;
       out.push(noFormMsg(u));
     }
 
     for (const pair of db.pairs) {
-      if (pair.status !== 'assigned') continue;
+      if (pair.status !== 'assigned' || pair.failed) continue;
       const wave = core.waveOf(db, core.pairRound(pair));
       if (wave && (wave.status === 'closed' || !wave.confirmedAt)) continue; // волна остановлена или жеребьёвка не подтверждена — не напоминаем
       const dates = core.datesFor(db, core.pairRound(pair));
@@ -1076,11 +1292,13 @@ function createBot({ core, secret, siteUrl, username }) {
       const u = db.users.find((x) => x.id === pair.santaId);
       if (!u) continue;
       const chat = u.tgChatId;
+      const remind = chat && noticeOn(userNotices(db, u.id), 'reminders');
+      const key = core.pairRound(pair) === 1 ? u.id : `${u.id}:wave${core.pairRound(pair)}`;
       const who = `${esc(u.name)} · @${esc(u.tg)} · ${esc(u.phone)}`;
-      if (toStart <= 0 && toEnd >= 0 && chat && once(`${u.id}:start`)) {
+      if (toStart <= 0 && toEnd >= 0 && remind && once(`${key}:start`)) {
         out.push({ chat_id: chat, text: '🎄 Пора отправлять подарки! Отправка открыта — успейте собрать посылку.', reply_markup: WHOM_BTN });
       }
-      if ([7, 5, 3, 2].includes(toEnd) && chat && once(`${u.id}:d${toEnd}`)) {
+      if ([7, 5, 3, 2].includes(toEnd) && remind && once(`${key}:d${toEnd}`)) {
         out.push({
           chat_id: chat,
           text: toEnd === 7
@@ -1089,8 +1307,8 @@ function createBot({ core, secret, siteUrl, username }) {
           reply_markup: ib([[['🎁 Узнать кому', 'whom'], ['📦 Я отправил', 'sent']]]),
         });
       }
-      if (toEnd === 0 && once(`${u.id}:last`)) {
-        if (chat) {
+      if (toEnd === 0 && once(`${key}:last`)) {
+        if (remind) {
           out.push({
             chat_id: chat,
             text: '🚨 <b>Сегодня последний день отправки!</b>\nЕсли не отправите подарок сегодня — попадёте в чёрный список. Отправили? Нажмите кнопку ниже.',
@@ -1099,7 +1317,7 @@ function createBot({ core, secret, siteUrl, username }) {
         }
         toAdmins(`⚠️ <b>Сегодня последний день</b>, а подарок ещё не отправлен:\n${who}${chat ? '' : '\n(бот не подключён — напомнить вручную)'}\nСвяжитесь, чтобы узнать, в чём дело.`);
       }
-      if (toEnd < 0 && once(`${u.id}:late`)) {
+      if (toEnd < 0 && once(`${key}:late`)) {
         toAdmins(`❌ <b>Срок отправки прошёл</b>, подарок не отправлен:\n${who}\nКандидат в чёрный список.`);
       }
     }

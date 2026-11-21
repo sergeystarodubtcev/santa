@@ -64,6 +64,7 @@
     try { auth = token ? JSON.parse(atob(token)) : null; } catch (e) { auth = null; }
     const ctx = {
       now: () => Date.now(),
+      random: Math.random,
       hash: demoHash,
       verify: (pw, h) => demoHash(pw) === h,
       issueToken: (p) => btoa(JSON.stringify(p)),

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261116f">
+  <link rel="stylesheet" href="css/style.css?v=20261122g">
 </head>
 <body>
   <header class="topbar">
@@ -39,6 +39,49 @@
       </section>
 
       <section data-dash hidden>
+        <section class="raffle-panel" id="raffle" data-raffle hidden aria-labelledby="raffle-title">
+          <div class="card raffle-hero">
+            <div>
+              <h1 id="raffle-title">🎁 Розыгрыш</h1>
+              <p>Один розыгрыш для всех волн. Каждая подходящая отправка даёт отдельный номерок.</p>
+            </div>
+            <span class="status assigned" data-raffle-status>Загрузка</span>
+          </div>
+          <p class="form-err" data-raffle-error role="alert"></p>
+          <section class="card raffle-card">
+            <h2>Объявление о розыгрыше</h2>
+            <p class="muted" data-raffle-announcement></p>
+            <button type="button" class="btn btn-ghost" data-raffle-announce hidden>Объявить розыгрыш</button>
+          </section>
+          <div class="raffle-metrics" data-raffle-stats aria-live="polite"></div>
+          <div class="raffle-columns">
+            <section class="card raffle-card">
+              <h2>Номерки по волнам</h2>
+              <p class="muted" data-raffle-deadline></p>
+              <ul class="raffle-waves" data-raffle-waves></ul>
+            </section>
+            <section class="card raffle-card">
+              <h2 data-raffle-heading>Провести розыгрыш</h2>
+              <p class="muted" data-raffle-hint></p>
+              <div data-raffle-results></div>
+              <form class="form" data-raffle-draw hidden>
+                <label>Число победителей <input name="count" type="number" min="1" value="1" required></label>
+                <button type="submit" class="btn btn-primary">Продолжить</button>
+              </form>
+            </section>
+          </div>
+          <section class="card raffle-card" aria-labelledby="raffle-roster-title">
+            <h2 id="raffle-roster-title">Участники и номерки</h2>
+            <p class="muted" data-raffle-roster-empty>Пока никто не записался.</p>
+            <div class="table-wrap" data-raffle-roster hidden>
+              <table>
+                <thead><tr><th scope="col">Участник</th><th scope="col">Номерки и волны</th></tr></thead>
+                <tbody data-raffle-participants></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+        <div data-waves-view>
         <h1 class="page-title">Пульт <span class="grad">Деда Мороза</span></h1>
         <div data-storage></div>
         <div class="tiles" data-tiles></div>
@@ -147,20 +190,22 @@
           </table></div>
         </details>
 
-        <details class="card fold" style="margin-top:18px">
-          <summary><h3>🔗 Пары</h3><span class="fold-hint" data-fold-pairs>Кто кому дарит, статусы и треки</span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
+        <details class="card fold" id="chains" style="margin-top:18px">
+          <summary><h3>🔗 Цепочки подарков</h3><span class="fold-hint" data-fold-pairs>Кто кому дарит, статусы и треки</span><span class="fold-arrow" aria-hidden="true">▾</span></summary>
           <div class="pairs-tools">
             <div class="chips" data-pf></div>
             <div class="toolbar" style="margin:0">
               <b data-pairs-count></b>
+              <label>Волна <select data-chain-wave aria-label="Волна в цепочках"><option value="all">Все волны</option></select></label>
               <div class="actions" style="margin:0">
                 <input type="search" placeholder="Найти: ник, имя, трек" data-pair-search style="max-width:240px">
                 <button class="btn btn-ghost btn-sm" type="button" data-pf-reset>Сбросить фильтры</button>
-                <button class="btn btn-gold btn-sm" type="button" data-pair-edit>✏️ Править пары</button>
+                <button class="btn btn-gold btn-sm" type="button" data-pair-edit>✏️ Управлять цепочкой</button>
               </div>
             </div>
           </div>
-          <p class="muted edit-hint" data-pair-edit-hint hidden>✏️ Режим правки: получателя можно поменять вручную — выберите в списке (Санта сразу получит уведомление с новым адресом); в черновике жеребьёвки — кнопки 🔄; статус можно поставить вручную. Форс-мажоры и обращения приходят вам в Telegram-бот.</p>
+          <p class="muted edit-hint" data-pair-edit-hint hidden>Выберите замену или исключение в строке пары. Перед подтверждением вы увидите, кто кому будет дарить в этой волне.</p>
+          <p class="chain-result" data-chain-result role="status" hidden></p>
           <div data-pairs-warn></div>
           <div class="table-wrap"><table>
             <thead data-pairs-head></thead>
@@ -191,6 +236,7 @@
           <h3>📋 Журнал событий</h3>
           <p class="muted" style="font-size:13px;margin-top:-4px">Удаления аккаунтов, перестройка пар, ручные правки и обращения к администратору. Всё это дублируется вам в Telegram-бот.</p>
           <ul class="adm-log" data-adm-log></ul>
+        </div>
         </div>
       </section>
     </div>
@@ -240,9 +286,9 @@
 
   <script src="js/config.js?v=20261116f"></script>
   <script src="js/cities.js?v=20261116f"></script>
-  <script src="js/core.js?v=20261116f"></script>
-  <script src="js/api.js?v=20261116f"></script>
+  <script src="js/core.js?v=20261122g"></script>
+  <script src="js/api.js?v=20261122g"></script>
   <script src="js/fx.js?v=20261116f"></script>
-  <script src="js/admin.js?v=20261116f"></script>
+  <script src="js/admin.js?v=20261122g"></script>
 </body>
 </html>
