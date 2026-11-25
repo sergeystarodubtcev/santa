@@ -335,20 +335,26 @@
       .forEach((p) => notify(db, ctx, p.santaId, text + (pairRound(p) > 1 ? ` (${pairRound(p)}-я волна)` : ''), 'info', 'whom'));
   }
 
-  // Кнопки под рассылкой: действия бота/кабинета или своя ссылка (до 4 штук)
-  const BUTTON_KINDS = { whom: '🎁 Кому я дарю', sent: '📦 Я отправил подарок', received: '🎉 Я получил подарок', wave: '🌊 Следующие волны', form: '📝 Моя анкета', site: '🌐 Открыть сайт' };
+  // Кнопки под рассылкой: действия бота/кабинета или своя ссылка (до 10 штук)
+  const BUTTON_KINDS = { whom: '🎁 Кому я дарю', sent: '📦 Я отправил подарок', received: '🎉 Я получил подарок', wave: '🌊 Следующие волны', form: '📝 Моя анкета', site: '🌐 Открыть сайт',
+    help: '🆘 Написать организаторам', chat: '💬 Мои переписки', chatSanta: '🎅 Написать моему Санте',
+    chatRecipient: '🎁 Написать моему получателю', wishes: '➕ Дополнить пожелания', track: '📬 Проверить доставку',
+    raffle: '🎟 Розыгрыш и номерки', profile: '👤 Мой профиль', rules: '📖 Правила игры',
+  };
+  const BROADCAST_BUTTON_LIMIT = 10;
   function cleanButtons(list) {
     if (!Array.isArray(list)) return [];
     const outB = [];
-    for (const b of list.slice(0, 6)) {
-      if (b && BUTTON_KINDS[b.kind]) { if (!outB.some((x) => x.kind === b.kind)) outB.push({ kind: b.kind, text: BUTTON_KINDS[b.kind] }); }
+    for (const b of list) {
+      if (b && Object.hasOwn(BUTTON_KINDS, b.kind)) { if (!outB.some((x) => x.kind === b.kind)) outB.push({ kind: b.kind, text: BUTTON_KINDS[b.kind] }); }
       else if (b && b.url) {
         const url = str(b.url, 300);
         if (!/^https:\/\/[^\s<>"]+$/i.test(url)) fail(400, 'Ссылка для кнопки должна начинаться с https://');
         outB.push({ text: str(b.text, 40) || 'Открыть', url });
       }
     }
-    return outB.slice(0, 4);
+    if (outB.length > BROADCAST_BUTTON_LIMIT) fail(400, `Выберите до ${BROADCAST_BUTTON_LIMIT} кнопок`);
+    return outB;
   }
 
   // Состояние аккаунта организатора для админки — без сессии, кода и пароля
@@ -2081,5 +2087,5 @@
     }
   }
 
-  return { handle, serviceBackupSnapshot, BUTTON_KINDS, parsePhoto, photoAccess, tgPhotosNeeded, storeTgPhoto, tgPhotoFailed, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY, FINAL_WAVE };
+  return { handle, serviceBackupSnapshot, BUTTON_KINDS, BROADCAST_BUTTON_LIMIT, parsePhoto, photoAccess, tgPhotosNeeded, storeTgPhoto, tgPhotoFailed, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY, FINAL_WAVE };
 });

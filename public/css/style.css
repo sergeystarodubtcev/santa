@@ -827,3 +827,5 @@ td small { display: block; }
 .admin-search-results:not(:empty) { display: grid; gap: .3rem; margin-top: .35rem; }
 .admin-search-results .btn { justify-content: flex-start; text-align: start; }
 .wave-switch .admin-search-picker { width: min(15rem, 44vw); }
+.bc-button-groups { display: grid; gap: .75rem; }
+.bc-button-groups .field-label { display: block; margin-bottom: .3rem; }

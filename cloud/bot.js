@@ -514,15 +514,17 @@ function createBot({ core, secret, siteUrl, username }) {
     return [`Волна ${round} · ${side === 'r' ? 'Я отправляю посылку' : 'Мне отправляют посылку'}`, `msg:${side}:${round}`];
   }
 
-  function chatMenu(db, ctx, out, chatId) {
+  function chatMenu(db, ctx, out, chatId, direction) {
     const u = userByChat(db, chatId);
     if (!u) return notLinked(out, chatId);
     delete db.tgState[chatId];
     const me = call(db, ctx, 'GET', '/api/me', null, { userId: u.id });
-    const outs = me.assignments || [];
-    const ins = (me.incomings || []).filter((x) => !x.failed);
+    const outs = direction === 's' ? [] : me.assignments || [];
+    const ins = direction === 'r' ? [] : (me.incomings || []).filter((x) => !x.failed);
     if (!outs.length && !ins.length) {
-      out.push({ chat_id: chatId, text: '💬 Переписка откроется после жеребьёвки: можно будет анонимно написать своему получателю (уточнить, что он хочет) и своему Тайному Санте.' });
+      out.push({ chat_id: chatId, text: direction === 's' ? '💬 Сейчас нет доступной переписки с вашим Сантой.'
+        : direction === 'r' ? '💬 Сейчас нет доступной переписки с вашим получателем.'
+          : '💬 Переписка откроется после жеребьёвки: здесь можно анонимно написать получателю или Санте.' });
       return;
     }
     const rows = outs.map((a) => [chatButton('r', a.round)])
@@ -807,6 +809,12 @@ function createBot({ core, secret, siteUrl, username }) {
         if (u0) { greet(out, db, chatId, u0); return { out, actingUid }; }
         db.tgState[chatId] = { flow: 'reg', step: 'name', data: {}, raffle: d === 'raffle:reg' };
         out.push({ chat_id: chatId, text: 'Отлично! Как вас зовут? (Только имя, например «Сергей»)', reply_markup: { remove_keyboard: true } });
+      } else if (d === 'support') {
+        startHelp(db, out, chatId, from);
+      } else if (['chat', 'chat:s', 'chat:r'].includes(d)) {
+        chatMenu(db, ctx, out, chatId, d.split(':')[1]);
+      } else if (d === 'raffle:menu') {
+        if (!u0) notLinked(out, chatId); else raffleMessage(db, ctx, out, chatId, u0, false);
       } else if (d === 'form:show') {
         if (!u0) notLinked(out, chatId); else myForms(db, ctx, out, chatId, u0);
       } else if (d === 'form') {
@@ -1194,9 +1202,15 @@ function createBot({ core, secret, siteUrl, username }) {
 
   // кнопки рассылки → кнопки Telegram (действия бота или ссылки)
   function notifButtons(list) {
-    const CB = { whom: 'whom', sent: 'sent', received: 'received', wave: 'wave', form: 'form:show' };
-    return { inline_keyboard: list.map((b) => [b.url ? { text: b.text, url: b.url }
-      : b.kind === 'site' ? { text: b.text, url: siteUrl + '/cabinet.html' } : { text: b.text, callback_data: CB[b.kind] }]) };
+    const callbacks = { whom: 'whom', sent: 'sent', received: 'received', wave: 'wave', form: 'form:show',
+      help: 'support', chat: 'chat', chatSanta: 'chat:s', chatRecipient: 'chat:r', wishes: 'addwish', raffle: 'raffle:menu' };
+    const pages = { site: '/cabinet.html', profile: '/cabinet.html#profile', track: '/cabinet.html#gift', rules: '/#rules' };
+    const rows = list.flatMap((b) => {
+      const url = b.url || (Object.hasOwn(pages, b.kind) ? siteUrl + pages[b.kind] : '');
+      if (url) return [[{ text: b.text, url }]];
+      return Object.hasOwn(callbacks, b.kind) ? [[{ text: b.text, callback_data: callbacks[b.kind] }]] : [];
+    });
+    return rows.length ? { inline_keyboard: rows } : undefined;
   }
 
   // ---------- уведомления с сайта → Telegram ----------

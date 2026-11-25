@@ -593,14 +593,30 @@
   // кнопки из рассылки организаторов
   function notifButtons(list) {
     if (!list || !list.length) return '';
-    const HREF = { whom: '#give', sent: '#give', received: '#gift', site: './' };
+    const HREF = { whom: '#give', sent: '#give', received: '#gift', track: '#gift', site: './', profile: '#profile', rules: './#rules',
+      raffle: 'https://t.me/coffeemaniacs_bot?start=raffle', help: tgLink?.helpUrl || 'https://t.me/coffeemaniacs_bot?start=help' };
+    const actions = ['chat', 'chatSanta', 'chatRecipient', 'wishes', 'wave', 'form'];
     return `<div class="notif-btns">${list.map((b) => b.url
       ? `<a class="btn btn-ghost btn-sm" href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.text)}</a>`
-      : b.kind === 'wave' ? `<button class="btn btn-ghost btn-sm" type="button" data-wave-join>${esc(b.text)}</button>`
-      : b.kind === 'form' ? `<button class="btn btn-ghost btn-sm" type="button" data-notif-form>${esc(b.text)}</button>`
-      : `<a class="btn btn-ghost btn-sm" href="${HREF[b.kind] || '#'}">${esc(b.text)}</a>`).join('')}</div>`;
+      : actions.includes(b.kind) ? `<button class="btn btn-ghost btn-sm" type="button" data-notif-action="${b.kind}">${esc(b.text)}</button>`
+      : Object.hasOwn(HREF, b.kind) ? `<a class="btn btn-ghost btn-sm" href="${esc(HREF[b.kind])}">${esc(b.text)}</a>` : '').join('')}</div>`;
   }
-  document.addEventListener('click', (e) => { if (e.target.closest('[data-notif-form]')) openPart(); });
+  document.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-notif-action]')?.dataset.notifAction;
+    if (!action) return;
+    if (action === 'form') return openPart();
+    if (action === 'wave') return me.nextWave ? openWavePart() : FX.toast('Запись в следующие волны сейчас закрыта', 'error');
+    if (action === 'wishes') {
+      const button = $('[data-add-wish]');
+      return button ? button.click() : openPart();
+    }
+    const selector = action === 'chatSanta' ? '[data-chat^="santa:"]'
+      : action === 'chatRecipient' ? '[data-chat^="recipient:"]' : '[data-chat]';
+    const threads = $$(selector);
+    if (!threads.length) return FX.toast('Сейчас нет доступной переписки', 'error');
+    threads[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (threads.length === 1) threads[0].querySelector('textarea')?.focus({ preventScroll: true });
+  });
   function renderNotifs() {
     const list = me.notifications;
     $('[data-notifs]').innerHTML = list.length
@@ -618,6 +634,8 @@
       try { tgLink = await Api.get('/api/tg/link'); } catch (e) { tgLink = false; }
     }
     if (!tgLink) { card.hidden = true; return; }
+    const helpLinks = $$('[data-notifs] a[href="https://t.me/coffeemaniacs_bot?start=help"]');
+    if (tgLink.helpUrl) helpLinks.forEach((link) => { link.href = tgLink.helpUrl; });
     card.hidden = false;
     const linked = me.user.tgLinked;
     card.classList.toggle('on', linked);

@@ -71,3 +71,24 @@ test('бот организатора: готовое напоминание у�
   const fresh = db.notifications.slice(n0).filter((x) => x.kind === 'admin');
   assert.ok(fresh.length && fresh.every((x) => x.buttons && x.buttons[0].kind === 'sent'));
 });
+
+test('дополнительные кнопки доставляются, переписки открываются по направлению, лимит явный', () => {
+  const { db, ids } = seed();
+  call(db, 'POST', '/api/admin/shuffle', {}, admin);
+  call(db, 'POST', '/api/admin/wave-confirm', { n: 1 }, admin);
+  const kinds = ['help', 'chat', 'chatSanta', 'chatRecipient', 'wishes', 'track', 'raffle', 'profile', 'rules'];
+  const before = db.notifications.length;
+  call(db, 'POST', '/api/admin/broadcast', { text: 'Тест', userIds: [ids[0]], buttons: kinds.map((kind) => ({ kind })) }, admin);
+  const [notice] = bot.pushNotifications(db, db.notifications.slice(before), null);
+  assert.deepEqual(notice.reply_markup.inline_keyboard.flat().map((b) => b.callback_data || b.url), [
+    'support', 'chat', 'chat:s', 'chat:r', 'addwish', 'https://santa.example/cabinet.html#gift', 'raffle:menu',
+    'https://santa.example/cabinet.html#profile', 'https://santa.example/#rules',
+  ]);
+  const press = (data) => bot.handleUpdate(db, ctx, { callback_query: { id: 'test', data, from: { id: 600 },
+    message: { chat: { id: 600, type: 'private' } } } }).out.flatMap((msg) => msg.reply_markup?.inline_keyboard?.flat() || []);
+  assert.deepEqual(press('chat:s').map((b) => b.callback_data), ['msg:s:1']);
+  assert.deepEqual(press('chat:r').map((b) => b.callback_data), ['msg:r:1']);
+  assert.ok(press('chat').some((b) => b.callback_data === 'msg:r:1'));
+  assert.throws(() => call(db, 'POST', '/api/admin/broadcast', { text: 'Тест', userIds: ids,
+    buttons: Object.keys(core.BUTTON_KINDS).map((kind) => ({ kind })) }, admin), /до 10 кнопок/);
+});

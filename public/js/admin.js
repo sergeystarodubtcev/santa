@@ -1398,8 +1398,15 @@
     FX.toast('Фраза вставлена, получатели отобраны по фильтру — проверьте список', 'success');
   });
   // кнопки под рассылкой
-  const BC_BUTTONS = [['whom', '🎁 Кому я дарю'], ['sent', '📦 Я отправил подарок'], ['received', '🎉 Я получил подарок'], ['wave', '🌊 Следующие волны'], ['form', '📝 Моя анкета'], ['site', '🌐 Открыть сайт'], ['link', '🔗 Своя ссылка']];
-  $('[data-bc-buttons]').innerHTML = BC_BUTTONS.map(([k, l]) => `<label class="chip"><input type="checkbox" data-bc-btn="${k}"><span>${l}</span></label>`).join('');
+  const BC_BUTTON_GROUPS = [
+    ['Подарки и волны', ['whom', 'sent', 'received', 'track', 'wave', 'raffle']],
+    ['Общение', ['help', 'chat', 'chatSanta', 'chatRecipient']],
+    ['Анкета и ссылки', ['form', 'wishes', 'profile', 'rules', 'site', 'link']],
+  ];
+  $('[data-bc-buttons]').innerHTML = BC_BUTTON_GROUPS.map(([title, kinds]) =>
+    `<div><b class="field-label">${title}</b><div class="chips">${kinds.map((kind) =>
+      `<label class="chip"><input type="checkbox" data-bc-btn="${kind}"><span>${SantaCore.BUTTON_KINDS[kind] || '🔗 Своя ссылка'}</span></label>`).join('')}</div></div>`).join('');
+  $('[data-bc-limit]').textContent = `До ${SantaCore.BROADCAST_BUTTON_LIMIT} кнопок в одном сообщении.`;
   const setBcButtons = (kinds) => { $$('[data-bc-btn]').forEach((x) => { x.checked = kinds.includes(x.dataset.bcBtn); }); $('[data-bc-link]').hidden = !kinds.includes('link'); };
   document.addEventListener('change', (e) => { if (e.target.closest('[data-bc-btn="link"]')) $('[data-bc-link]').hidden = !e.target.checked; });
   function bcButtons() {
@@ -1410,6 +1417,7 @@
       if (!/^https:\/\//i.test(url)) throw new Error('Своя ссылка: укажите адрес, начинающийся с https://');
       list.push({ text: f.linkText.value.trim() || 'Открыть', url });
     }
+    if (list.length > SantaCore.BROADCAST_BUTTON_LIMIT) throw new Error(`Выберите до ${SantaCore.BROADCAST_BUTTON_LIMIT} кнопок`);
     return list;
   }
   const bcActive = new Set();
