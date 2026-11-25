@@ -689,12 +689,23 @@
 
   function restoreAnketa(db, ctx, user, body) {
     if (!user.pdConsentAt) fail(409, 'У аккаунта нет подтверждённого согласия на обработку данных');
-    if (db.participations[user.id]) fail(409, 'У аккаунта уже есть действующая анкета');
+    const part = db.participations[user.id];
     const records = (db.anketaArchive || {})[user.id] || [];
-    const archived = records.find((item) => item.id === body.archiveId);
-    let form = archived;
-    if (!body.archiveId && body.backup && normTg(body.backup.tg) === user.tg && normPhone(body.backup.phone) === user.phone) form = body.backup.form;
-    if (!form) fail(404, 'Архивная анкета не найдена или не совпадают ник и телефон');
+    let form = records.find((item) => item.id === body.archiveId);
+    if (!body.archiveId && body.backup && (body.backup.userId === user.id
+        || (normTg(body.backup.tg) === user.tg && normPhone(body.backup.phone) === user.phone))) form = body.backup.form;
+    if (!form) fail(404, 'Архивная анкета не найдена или не совпадают данные аккаунта');
+    if (part) {
+      if (!body.backup || !body.expected) fail(409, 'У аккаунта уже есть действующая анкета');
+      const round = Number(body.round) || 0;
+      const current = anketaFields(round ? anketaFor(db, user.id, round) : part);
+      if (Object.keys(current).some((key) => (current[key] || '') !== (body.expected[key] || ''))) {
+        fail(409, 'Анкета изменилась после сравнения. Обновите данные перед восстановлением.');
+      }
+      saveServiceAnketa(db, ctx, user, { round, form });
+      return;
+    }
+    if (body.expected) fail(409, 'Анкета изменилась после сравнения. Обновите данные перед восстановлением.');
     db.participations[user.id] = { ...readAnketa(db, user, anketaFields(form)), round: 0, moderation: 'pending',
       joinedAt: ctx.now(), updatedAt: ctx.now() };
     notifyAdmins(db, ctx, `📂 Анкета @${user.tg} восстановлена. Выберите волну в сервисном меню.`);
@@ -704,6 +715,25 @@
     if (!part) return [];
     if (!user.banned && modEff(db, part) === 'approved') return forms.map((form) => form.round);
     return [...new Set(db.pairs.filter((pair) => pair.santaId === user.id || pair.recipientId === user.id).map(pairRound))].sort((a, b) => a - b);
+  }
+
+  function serviceBackupSnapshot(data) {
+    if (!data || !Array.isArray(data.users) || !data.participations
+        || typeof data.participations !== 'object' || Array.isArray(data.participations)) fail(400, 'Нужна резервная копия базы Santa в JSON.');
+    const db = ensure(data);
+    return db.users.flatMap((user) => {
+      if (!user || typeof user.id !== 'string' || typeof user.tg !== 'string' || typeof user.phone !== 'string') return [];
+      const part = db.participations[user.id];
+      if (!part) return [];
+      const rounds = serviceSourceRounds(db, user, part);
+      const forms = new Map([[Number(roundOf(part)), part]]);
+      for (const [round, form] of Object.entries(db.waveAnketas?.[user.id] || {})) forms.set(round === 'next' ? 0 : Number(round), form);
+      return [...forms].filter(([round, form]) => Number.isInteger(round) && form
+        && typeof form.fullName === 'string' && typeof form.address === 'string')
+        .map(([round, form]) => ({ userId: user.id, tg: user.tg, phone: user.phone, name: user.name,
+          fullName: form.fullName, round, rounds, moderation: modEff(db, part), banned: !!user.banned, form: anketaFields(form),
+          recipientId: db.pairs.find((pair) => pair.santaId === user.id && pairRound(pair) === round)?.recipientId || null }));
+    });
   }
 
   function saveServiceAnketa(db, ctx, user, body) {
@@ -2028,5 +2058,5 @@
     }
   }
 
-  return { handle, BUTTON_KINDS, parsePhoto, photoAccess, tgPhotosNeeded, storeTgPhoto, tgPhotoFailed, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY, FINAL_WAVE };
+  return { handle, serviceBackupSnapshot, BUTTON_KINDS, parsePhoto, photoAccess, tgPhotosNeeded, storeTgPhoto, tgPhotoFailed, tick, checkWave, fillText, userAccView, modStatus, roundOf, pairRound, datesFor, waveOf, openWave, emptyDb, ensure, SantaError, PREFS, DEFAULT_SETTINGS, plural, normPhone, normTg, DAY, FINAL_WAVE };
 });

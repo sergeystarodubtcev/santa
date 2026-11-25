@@ -110,3 +110,25 @@ test('отклонённая анкета с номером волны дост�
   assert.equal(db.wave2.u6, undefined);
   assert.deepEqual(core.checkWave(db, 1), []);
 });
+
+test('сравнение старой копии и восстановление полей анкеты учитывают актуальное состояние', () => {
+  const db = fixture();
+  const snapshot = core.serviceBackupSnapshot(JSON.parse(JSON.stringify(db)));
+  const old = snapshot.find((item) => item.userId === 'u0');
+  assert.deepEqual(old.rounds, [1]);
+  assert.equal(old.recipientId, 'u1');
+  assert.equal(old.passHash, undefined);
+  assert.equal(old.form.wishes, 'Кофе 0');
+  const expected = { ...old.form, wishes: 'Современные пожелания' };
+  const body = { userId: 'u0', round: 1, expected, backup: { userId: old.userId, form: old.form } };
+  assert.throws(() => service(db, 'restore', body), /изменилась после сравнения/);
+  db.participations.u0.wishes = expected.wishes;
+  const pairs = JSON.stringify(db.pairs);
+  const accounts = JSON.stringify(db.users);
+  service(db, 'restore', body);
+  assert.equal(db.participations.u0.wishes, old.form.wishes);
+  assert.equal(db.participations.u0.moderation, 'approved');
+  assert.deepEqual(db.participations.u0.round, 1);
+  assert.equal(JSON.stringify(db.pairs), pairs);
+  assert.equal(JSON.stringify(db.users), accounts);
+});

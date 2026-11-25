@@ -146,7 +146,10 @@
   const moveForm = $('[data-service-move]');
   const move = moveForm.elements;
   let archive = [];
-  let backupForms = [];
+  let backupForms = null;
+  let backupPairs = new Map();
+  let backupVisible = [];
+  let backupLimit = 50;
   let visibleRecords = [];
   const matchesService = (user, query) => [user.name, user.tg, user.phone, user.fullName, user.participation?.fullName]
     .some((value) => String(value || '').toLowerCase().includes(query.trim().toLowerCase().replace(/^@/, '')));
@@ -198,9 +201,10 @@
     fillSelect(move.userId, state.users.filter((u) => matchesService(u, q)).map((u) => [userLabel(u), u.id]), 'Выберите аккаунт');
     renderServiceWaves();
     renderUnassignedForms();
+    compareBackup();
   }
   function recordAccount(record) {
-    return state.users.find((u) => record.backup ? u.tg === record.tg && u.phone === record.phone : u.id === record.userId);
+    return state.users.find((u) => u.id === record.userId);
   }
   function renderServiceRecordStatus() {
     const value = $('[data-service-record]').value;
@@ -213,10 +217,10 @@
   }
   function renderServiceArchive() {
     const q = $('[data-service-archive-search]').value;
-    visibleRecords = archive.concat(backupForms).filter((r) => matchesService(r, q)).slice(0, 100);
+    visibleRecords = archive.filter((r) => matchesService(r, q)).slice(0, 100);
     const select = $('[data-service-record]');
     select.replaceChildren(new Option(visibleRecords.length ? 'Выберите анкету' : 'Анкет не найдено', ''),
-      ...visibleRecords.map((r, i) => new Option(`${r.fullName || r.name} · @${r.tg} · ${r.round ? 'волна ' + r.round : 'без волны'} · ${r.backup ? 'копия' : 'архив от ' + FX.fmtDateTime(r.archivedAt)}`, i + 1)));
+      ...visibleRecords.map((r, i) => new Option(`${r.fullName || r.name} · @${r.tg} · ${r.round ? 'волна ' + r.round : 'без волны'} · архив от ${FX.fmtDateTime(r.archivedAt)}`, i + 1)));
     renderServiceRecordStatus();
   }
   async function loadServiceArchive() {
@@ -249,27 +253,113 @@
   $('[data-service-rec-search]').addEventListener('input', renderServiceRecipients);
   $('[data-service-archive-search]').addEventListener('input', renderServiceArchive);
   $('[data-service-record]').addEventListener('change', renderServiceRecordStatus);
+  const backupFields = { fullName: 'ФИО', address: 'ПВЗ', wishes: 'Пожелания', notes: 'Пометки', prefs: 'Предпочтения' };
+  const moderationLabels = { approved: 'Одобрена', pending: 'На модерации', rejected: 'Отклонена' };
+  const backupFormFields = (form) => Object.fromEntries(Object.keys(backupFields).map((key) => [key, form?.[key] || '']));
+  const backupWaves = (rounds) => rounds?.length ? rounds.map((n) => 'Волна ' + n).join(', ') : 'Без волны';
+
+  function compareBackup() {
+    const host = $('[data-backup-comparison]');
+    const summary = $('[data-backup-summary]');
+    $('[data-backup-controls]').hidden = !backupForms;
+    if (!backupForms) { host.replaceChildren(); return; }
+    const q = $('[data-backup-search]').value;
+    const changedOnly = $('[data-backup-changed]').checked;
+    const byId = new Map(state.users.map((u) => [u.id, u]));
+    const byIdentity = new Map(state.users.map((u) => [JSON.stringify([u.tg, u.phone]), u]));
+    const assignments = new Map(state.pairs.map((p) => [JSON.stringify([p.santaId, SantaCore.pairRound(p)]), p]));
+    const rows = backupForms.map((old) => {
+      const user = byId.get(old.userId) || byIdentity.get(JSON.stringify([old.tg, old.phone]));
+      const current = user?.participation || null;
+      const rounds = user?.serviceSourceRounds || [];
+      const availableRound = rounds.includes(old.round) ? old.round : rounds.length ? null : 0;
+      const form = current && (availableRound === 0 ? current : user.waveAnketas?.[old.round] || current);
+      const previous = backupFormFields(old.form);
+      const actual = backupFormFields(form);
+      const diffs = form ? Object.keys(backupFields).filter((key) => previous[key] !== actual[key]) : [];
+      const oldRecipient = old.recipientId && backupPairs.get(old.recipientId);
+      const currentRecipient = user && assignments.get(JSON.stringify([user.id, old.round]))?.recipient;
+      const notes = [
+        ...(!user ? ['Аккаунт отсутствует'] : !current ? ['Анкета отсутствует'] : []),
+        ...(current && (old.moderation !== current.moderation || old.banned !== !!user.banned) ? ['Статус изменился'] : []),
+        ...(current && backupWaves(old.rounds) !== backupWaves(rounds) ? ['Участие изменилось'] : []),
+        ...(diffs.length ? ['Анкета изменилась'] : []),
+        ...((oldRecipient || '') !== (currentRecipient || '') ? ['Получатель изменился'] : []),
+      ];
+      const expected = availableRound === 0 ? backupFormFields(current) : actual;
+      const canRestore = !!user?.pdConsentAt && (!current || (availableRound !== null
+        && Object.keys(previous).some((key) => previous[key] !== expected[key])));
+      return { old, user, current, rounds, previous, actual, diffs, notes, availableRound, expected, canRestore, oldRecipient, currentRecipient };
+    });
+    const changes = rows.filter((row) => row.notes.length).length;
+    const filtered = rows.filter((row) => (!changedOnly || row.notes.length)
+        && (matchesService(row.old, q) || (row.user && matchesService(row.user, q))))
+      .sort((a, b) => b.notes.length - a.notes.length);
+    backupVisible = filtered.slice(0, backupLimit);
+    summary.textContent = `Анкет в копии: ${rows.length}. С отличиями: ${changes}. Показано: ${backupVisible.length} из ${filtered.length}.`;
+    const status = (part, banned) => banned ? 'В чёрном списке' : moderationLabels[part] || 'Без статуса';
+    const showField = (key, value) => key === 'prefs' ? SantaCore.PREFS[value] || value || '—' : value || '—';
+    host.innerHTML = backupVisible.map((row, i) => {
+      const { old, user, current, rounds, previous, actual, diffs, notes, oldRecipient, currentRecipient } = row;
+      return `<details class="backup-record">
+        <summary><b>${esc(old.fullName || old.name)} · @${esc(old.tg)}</b>
+          <span>${old.round ? 'Запись волны ' + old.round : 'Без волны'}</span>
+          ${notes.map((note) => `<span class="backup-change">${esc(note)}</span>`).join('')}</summary>
+        <div class="backup-detail">
+          <p><b>В копии</b> · ${esc(status(old.moderation, old.banned))} · ${backupWaves(old.rounds)}${oldRecipient ? ` · Дарит ${esc(oldRecipient)}` : ''}</p>
+          <p><b>Сейчас</b> · ${current ? `${esc(status(current.moderation, user.banned))} · ${backupWaves(rounds)}` : 'Анкеты нет'}${currentRecipient ? ` · Дарит ${esc(currentRecipient)}` : ''}</p>
+          <dl>${(current ? diffs : Object.keys(backupFields)).map((key) => `<dt>${backupFields[key]}</dt><dd><b>В копии</b> ${esc(showField(key, previous[key]))}
+            ${current ? `<br><b>Сейчас</b> ${esc(showField(key, actual[key]))}` : ''}</dd>`).join('')}</dl>
+          <div class="actions">${row.canRestore ? `<button class="btn btn-primary btn-sm" type="button" data-backup-restore="${i}">Восстановить данные анкеты</button>` : ''}
+            ${user ? `<button class="btn btn-ghost btn-sm" type="button" data-backup-open="${i}">Открыть участника</button>`
+            : '<span class="muted">Для восстановления нужен действующий аккаунт участника.</span>'}</div>
+        </div></details>`;
+    }).join('') + (backupVisible.length < filtered.length ? '<button type="button" class="btn btn-ghost btn-sm" data-backup-more>Показать ещё</button>' : '');
+  }
+
+  for (const selector of ['[data-backup-search]', '[data-backup-changed]']) {
+    $(selector).addEventListener('input', () => { backupLimit = 50; compareBackup(); });
+  }
+  $('[data-backup-comparison]').addEventListener('click', (event) => {
+    if (event.target.closest('[data-backup-more]')) { backupLimit += 50; compareBackup(); return; }
+    const open = event.target.closest('[data-backup-open]');
+    const restore = event.target.closest('[data-backup-restore]');
+    const row = open ? backupVisible[Number(open.dataset.backupOpen)] : restore ? backupVisible[Number(restore.dataset.backupRestore)] : null;
+    if (!row?.user) return;
+    if (open) {
+      $('[data-service-search]').value = '';
+      renderServiceUsers();
+      move.userId.value = row.user.id;
+      renderServiceWaves();
+      move.userId.focus();
+      return;
+    }
+    if (!row.canRestore) return;
+    const body = { userId: row.user.id, backup: { userId: row.old.userId, tg: row.old.tg, phone: row.old.phone, form: row.previous },
+      ...(row.current ? { round: row.availableRound, expected: row.expected } : {}) };
+    reviewAction({
+      title: 'Восстановить данные анкеты?',
+      detail: `Данные из копии будут сохранены для @${row.user.tg}. Текущие волны и пары сохранятся.`,
+      label: 'Восстановить',
+      apply: () => serviceSave('restore', body, 'Данные анкеты восстановлены.'),
+    });
+  });
   $('[data-service-backup]').addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    backupForms = [];
-    serviceMessage('');
-    if (!file) return renderServiceArchive();
+    const input = event.target;
+    const file = input.files[0];
+    backupForms = null;
+    backupLimit = 50;
+    compareBackup();
+    const summary = $('[data-backup-summary]');
+    summary.textContent = '';
+    if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      if (!data || !Array.isArray(data.users) || !data.participations || Array.isArray(data.participations)) throw new Error('Нужна резервная копия базы Santa в JSON.');
-      backupForms = data.users.filter((u) => u && typeof u.tg === 'string' && typeof u.phone === 'string')
-        .flatMap((u) => {
-          const base = data.participations[u.id];
-          const forms = [base && [base.round ?? 1, base], ...Object.entries(data.waveAnketas?.[u.id] || {})];
-          return forms.filter((entry) => entry && entry[1] && typeof entry[1].fullName === 'string' && typeof entry[1].address === 'string')
-            .map(([round, form]) => {
-              const { fullName, address, wishes, notes, prefs } = form;
-              return { backup: true, tg: u.tg, phone: u.phone, name: u.name, fullName, round, form: { fullName, address, wishes, notes, prefs } };
-            });
-        });
-      serviceMessage(`Из копии доступно анкет: ${backupForms.length}. Файл обработан в браузере.`);
-    } catch (e) { serviceMessage(e.message); }
-    renderServiceArchive();
+      if (input.files[0] !== file) return;
+      backupForms = SantaCore.serviceBackupSnapshot(data);
+      backupPairs = new Map(data.users.filter((u) => u?.tg).map((u) => [u.id, '@' + u.tg]));
+      compareBackup();
+    } catch (e) { if (input.files[0] === file) summary.textContent = e.message; }
   });
   $('[data-service-edit-form]').addEventListener('click', () => {
     const user = serviceUser();
@@ -324,8 +414,7 @@
     const record = visibleRecords[Number($('[data-service-record]').value) - 1];
     const user = record && recordAccount(record);
     if (!user || user.participation) return;
-    const body = record.backup ? { userId: user.id, backup: { tg: record.tg, phone: record.phone, form: record.form } }
-      : { userId: user.id, archiveId: record.id };
+    const body = { userId: user.id, archiveId: record.id };
     reviewAction({
       title: 'Восстановить анкету?',
       detail: `Для @${user.tg} будет восстановлена выбранная анкета. Волну можно выбрать после восстановления.`,
