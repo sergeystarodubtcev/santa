@@ -1220,6 +1220,7 @@ function createBot({ core, secret, siteUrl, username }) {
           chat_id: u.tgChatId,
           text: (n.action === 'msg' ? '' : '🔔 ') + esc(n.text),
           reply_markup: n.action === 'msg' && n.msg ? ib([[[n.msg.reply === 'santa' ? '↩️ Ответить Санте' : '↩️ Ответить получателю', `msg:${n.msg.reply === 'santa' ? 's' : 'r'}:${n.msg.round}`]]])
+            : n.action === 'account-restored' ? ib([[['Личный кабинет', siteUrl + '/cabinet.html']]])
             : n.action === 'raffle-start' ? raffleChannelButtons('🎁 Участвовать в розыгрыше')
             : n.buttons && n.buttons.length ? notifButtons(n.buttons) : n.action === 'whom' ? WHOM_WAVE_BTN : n.action === 'gift' ? ib([[['🎉 Я получил подарок', 'received']]]) : n.action === 'wave2' ? W2_BTN : n.action === 'wavejoin' ? WAVEJOIN_BTN : undefined,
         });

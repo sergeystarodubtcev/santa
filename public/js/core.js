@@ -505,7 +505,7 @@
   }
 
   // ---------- users ----------
-  function register(db, ctx, body) {
+  function register(db, ctx, body, welcome = true) {
     const name = str(body.name, 60);
     if (name.length < 2) fail(400, 'Как вас зовут?');
     const phone = normPhone(body.phone);
@@ -517,7 +517,7 @@
     if (db.users.some((u) => u.tg === tg)) fail(409, 'Этот Telegram уже зарегистрирован — войдите в кабинет');
     const user = { id: newId(ctx), name, phone, tg, passHash: ctx.hash(password), createdAt: ctx.now(), banned: false, pdConsentAt: ctx.now() };
     db.users.push(user);
-    notify(db, ctx, user.id, 'Добро пожаловать к Кофеманьякам! Заполните анкету, чтобы попасть в жеребьёвку ☕', 'info');
+    if (welcome) notify(db, ctx, user.id, 'Добро пожаловать к Кофеманьякам! Заполните анкету, чтобы попасть в жеребьёвку ☕', 'info');
     return user;
   }
 
@@ -717,6 +717,24 @@
     return [...new Set(db.pairs.filter((pair) => pair.santaId === user.id || pair.recipientId === user.id).map(pairRound))].sort((a, b) => a - b);
   }
 
+  function recreateBackupAccount(db, ctx, body) {
+    const backup = body.backup;
+    if (!backup || body.pdConsent !== true) fail(400, 'Подтвердите, что участник согласился на восстановление аккаунта и обработку данных');
+    if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 128) {
+      fail(400, 'Задайте новый пароль от 12 до 128 символов');
+    }
+    if (backup.userId && db.users.some((user) => user.id === backup.userId)) fail(409, 'Этот аккаунт уже существует. Обновите сравнение.');
+    const form = readAnketa(db, null, anketaFields(backup.form || {}));
+    const user = register(db, ctx, { name: backup.name, tg: backup.tg, phone: backup.phone, password: body.password, pdConsent: true }, false);
+    const chat = Number(backup.tgChatId);
+    const linked = Number.isSafeInteger(chat) && chat > 0 && !db.users.some((other) => Number(other.tgChatId) === chat);
+    if (linked) user.tgChatId = chat;
+    db.participations[user.id] = { ...form, round: 0, moderation: 'pending', joinedAt: ctx.now(), updatedAt: ctx.now() };
+    notify(db, ctx, user.id, 'Твой аккаунт Тайного Санты восстановлен 🎁 Анкета снова доступна в личном кабинете. Для входа используй новый пароль, который передаст организатор.', 'success', 'account-restored');
+    notifyAdmins(db, ctx, `📂 Аккаунт @${user.tg} создан заново из резервной копии. Анкета восстановлена без волны.`);
+    return linked;
+  }
+
   function serviceBackupSnapshot(data) {
     if (!data || !Array.isArray(data.users) || !data.participations
         || typeof data.participations !== 'object' || Array.isArray(data.participations)) fail(400, 'Нужна резервная копия базы Santa в JSON.');
@@ -731,7 +749,7 @@
       return [...forms].filter(([round, form]) => Number.isInteger(round) && form
         && typeof form.fullName === 'string' && typeof form.address === 'string')
         .map(([round, form]) => ({ userId: user.id, tg: user.tg, phone: user.phone, name: user.name,
-          fullName: form.fullName, round, rounds, moderation: modEff(db, part), banned: !!user.banned, form: anketaFields(form),
+          fullName: form.fullName, tgChatId: user.tgChatId || null, round, rounds, moderation: modEff(db, part), banned: !!user.banned, form: anketaFields(form),
           recipientId: db.pairs.find((pair) => pair.santaId === user.id && pairRound(pair) === round)?.recipientId || null }));
     });
   }
@@ -1693,6 +1711,11 @@
         needAdmin();
         return ok(db.users.flatMap((u) => ((db.anketaArchive || {})[u.id] || []).map((item) =>
           ({ ...item, userId: u.id, tg: u.tg, name: u.name }))));
+      }
+      case 'POST /api/admin/service/recreate': {
+        needAdmin();
+        const telegramLinked = recreateBackupAccount(db, ctx, body);
+        return ok({ ...adminState(db), telegramLinked }, true);
       }
       case 'POST /api/admin/service/archive':
       case 'POST /api/admin/service/restore':

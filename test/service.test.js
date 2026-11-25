@@ -132,3 +132,36 @@ test('сравнение старой копии и восстановление
   assert.equal(JSON.stringify(db.pairs), pairs);
   assert.equal(JSON.stringify(db.users), accounts);
 });
+
+test('воссоздание аккаунта назначает новый ID и пароль, восстанавливает анкету без пар и уведомляет сохранённый чат', () => {
+  const db = fixture();
+  db.users.find((u) => u.id === 'u6').tgChatId = 606;
+  const [backup] = core.serviceBackupSnapshot(JSON.parse(JSON.stringify(db))).filter((row) => row.userId === 'u6');
+  call(db, 'POST', '/api/account/delete', {}, { userId: 'u6', isAdmin: false });
+  const pairs = JSON.stringify(db.pairs);
+  const payload = { backup, password: 'new-password-123', pdConsent: true };
+  const extra = { hash: (s) => 'new-hash:' + s };
+  assert.throws(() => call(db, 'POST', '/api/admin/service/recreate', { ...payload, pdConsent: false }, extra), /согласился/);
+  assert.throws(() => call(db, 'POST', '/api/admin/service/recreate', payload, { ...extra, isAdmin: false }), /админку/);
+  const before = db.notifications.length;
+  const view = call(db, 'POST', '/api/admin/service/recreate', payload, extra);
+  const user = db.users.find((u) => u.tg === 'member6');
+  assert.notEqual(user.id, 'u6');
+  assert.equal(user.passHash, 'new-hash:' + payload.password);
+  assert.equal(view.telegramLinked, true);
+  assert.equal(db.participations[user.id].round, 0);
+  assert.equal(JSON.stringify(db.pairs), pairs);
+  const { createBot } = require('../cloud/bot');
+  const bot = createBot({ core, secret: 'test', siteUrl: 'https://example.com', username: 'testbot' });
+  const outgoing = bot.pushNotifications(db, db.notifications.slice(before));
+  assert.equal(outgoing[0].chat_id, 606);
+  assert.match(outgoing[0].text, /аккаунт Тайного Санты восстановлен/);
+  assert.equal(outgoing[0].text.includes(payload.password), false);
+  assert.throws(() => call(db, 'POST', '/api/admin/service/recreate', payload, extra), /уже зарегистрирован/);
+
+  call(db, 'POST', '/api/account/delete', {}, { userId: user.id, isAdmin: false });
+  db.users[0].tgChatId = 606;
+  const conflicting = call(db, 'POST', '/api/admin/service/recreate', payload, extra);
+  assert.equal(conflicting.telegramLinked, false);
+  assert.equal(db.users[0].tgChatId, 606);
+});

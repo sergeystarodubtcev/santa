@@ -312,7 +312,7 @@
             ${current ? `<br><b>Сейчас</b> ${esc(showField(key, actual[key]))}` : ''}</dd>`).join('')}</dl>
           <div class="actions">${row.canRestore ? `<button class="btn btn-primary btn-sm" type="button" data-backup-restore="${i}">Восстановить данные анкеты</button>` : ''}
             ${user ? `<button class="btn btn-ghost btn-sm" type="button" data-backup-open="${i}">Открыть участника</button>`
-            : '<span class="muted">Для восстановления нужен действующий аккаунт участника.</span>'}</div>
+            : `<button class="btn btn-primary btn-sm" type="button" data-backup-recreate="${i}">Создать аккаунт из копии</button>`}</div>
         </div></details>`;
     }).join('') + (backupVisible.length < filtered.length ? '<button type="button" class="btn btn-ghost btn-sm" data-backup-more>Показать ещё</button>' : '');
   }
@@ -320,8 +320,49 @@
   for (const selector of ['[data-backup-search]', '[data-backup-changed]']) {
     $(selector).addEventListener('input', () => { backupLimit = 50; compareBackup(); });
   }
+  function openBackupAccount(row) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'card pair-picker';
+    dialog.innerHTML = `<h3>Создать аккаунт из копии</h3><p data-recreate-summary></p>
+      <form class="form">
+        <label>Новый пароль <input type="password" name="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
+        <label class="check"><input type="checkbox" name="consent" required> Участник согласился восстановить аккаунт и на обработку данных</label>
+        <p class="muted">Передайте пароль участнику лично. Анкета появится без волны.</p>
+        <p class="form-err" role="alert"></p>
+        <div class="actions"><button type="button" class="btn btn-ghost" data-close>Отмена</button>
+          <button type="submit" class="btn btn-primary">Создать аккаунт</button></div>
+      </form>`;
+    $('[data-recreate-summary]', dialog).textContent = `@${row.old.tg} · ${row.old.name}.` + (row.old.tgChatId
+      ? ' Если сохранённый чат свободен, бот отправит уведомление участнику.' : ' В этом файле нет сохранённого чата Telegram.');
+    const form = $('form', dialog);
+    $('[data-close]', dialog).addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = $('button[type=submit]', form);
+      button.disabled = true;
+      const { userId, name, tg, phone, tgChatId } = row.old;
+      try {
+        await serviceSave('recreate', { backup: { userId, name, tg, phone, tgChatId, form: row.previous },
+          password: form.elements.password.value, pdConsent: form.elements.consent.checked }, 'Аккаунт создан, анкета восстановлена.');
+        const result = $('[data-service-result]');
+        result.textContent += state.telegramLinked ? ' Чат Telegram привязан, уведомление поставлено в очередь.' : ' Сохранённый чат Telegram недоступен.';
+        dialog.close();
+      } catch (e) { $('[role=alert]', form).textContent = e.message; }
+      finally { button.disabled = false; }
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+
   $('[data-backup-comparison]').addEventListener('click', (event) => {
     if (event.target.closest('[data-backup-more]')) { backupLimit += 50; compareBackup(); return; }
+    const recreate = event.target.closest('[data-backup-recreate]');
+    if (recreate) {
+      const record = backupVisible[Number(recreate.dataset.backupRecreate)];
+      if (record && !record.user) openBackupAccount(record);
+      return;
+    }
     const open = event.target.closest('[data-backup-open]');
     const restore = event.target.closest('[data-backup-restore]');
     const row = open ? backupVisible[Number(open.dataset.backupOpen)] : restore ? backupVisible[Number(restore.dataset.backupRestore)] : null;
