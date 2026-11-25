@@ -161,25 +161,83 @@
     result.textContent = text;
     result.hidden = !text;
   }
-  function fillSelect(select, options, placeholder) {
-    const current = select.value;
-    select.replaceChildren(new Option(placeholder, ''), ...options.map(([label, value]) => new Option(label, value)));
-    if (options.some(([, value]) => String(value) === current)) select.value = current;
+  const searchPickers = new WeakMap();
+  const personOption = (u) => [userLabel(u), u.id, [u.phone, u.fullName, u.participation?.fullName].filter(Boolean).join(' ')];
+  function setSearchValue(field, value) {
+    field.value = value ?? '';
+    const picker = searchPickers.get(field);
+    if (!picker) return;
+    const match = picker.options.find((o) => o.value === field.value);
+    if (!match) field.value = '';
+    picker.input.value = match?.label || '';
+    picker.input.setCustomValidity(field.hasAttribute('data-required') && !match ? 'Выберите вариант из результатов поиска.' : '');
+    picker.results.replaceChildren();
   }
+  function fillSearch(field, options, placeholder) {
+    let picker = searchPickers.get(field);
+    if (!picker) {
+      const root = document.createElement('div');
+      root.className = 'admin-search-picker';
+      const input = document.createElement('input');
+      input.type = 'search';
+      input.autocomplete = 'off';
+      input.maxLength = 120;
+      const results = document.createElement('div');
+      results.className = 'admin-search-results';
+      results.setAttribute('aria-label', 'Результаты поиска');
+      root.append(input, results);
+      field.after(root);
+      picker = { input, results, options: [] };
+      searchPickers.set(field, picker);
+      input.addEventListener('input', () => {
+        field.value = '';
+        const query = searchWords(input.value);
+        input.setCustomValidity(field.hasAttribute('data-required') || query.length ? 'Выберите вариант из результатов поиска.' : '');
+        results.replaceChildren();
+        if (!query.length) return;
+        const matches = picker.options.map((option) => ({ option, score: recipientSearchScore(query, option.words) }))
+          .filter(({ score }) => Number.isFinite(score)).sort((a, b) => a.score - b.score).slice(0, 8);
+        for (const { option } of matches) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn-ghost btn-sm';
+          button.textContent = option.label;
+          button.addEventListener('click', () => {
+            setSearchValue(field, option.value);
+            input.focus();
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          results.append(button);
+        }
+        if (!matches.length) results.textContent = 'Совпадений нет.';
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown') return;
+        const first = results.querySelector('button');
+        if (first) { event.preventDefault(); first.focus(); }
+      });
+    }
+    picker.options = options.map(([label, value, aliases]) => ({ label, value: String(value), words: searchWords(label + ' ' + (aliases || '')) }));
+    picker.input.placeholder = placeholder;
+    picker.input.setAttribute('aria-label', placeholder);
+    if (document.activeElement !== picker.input) setSearchValue(field, field.value);
+  }
+  const preferenceOptions = () => Object.entries(SantaCore.PREFS).map(([value, label]) => [label, value]);
+  function focusSearch(field) { searchPickers.get(field)?.input.focus(); }
+
   function renderServiceRecipients() {
     const n = Number(move.to.value);
-    const q = $('[data-service-rec-search]').value;
     const options = state.users.filter((u) => u.id !== move.userId.value && !u.banned && u.participation?.moderation === 'approved'
-      && (u.enrolledWaves || []).includes(n) && matchesService(u, q));
-    fillSelect(move.recipientId, options.map((u) => [userLabel(u), u.id]), 'Без ручного назначения');
+      && (u.enrolledWaves || []).includes(n));
+    fillSearch(move.recipientId, options.map(personOption), 'Найти получателя или оставить пустым');
   }
   function renderServiceWaves() {
     const user = serviceUser();
     const enrolled = user?.serviceSourceRounds || [];
     const source = !user?.participation ? [] : enrolled.length ? enrolled : [0];
-    fillSelect(move.from, source.map((n) => [n ? 'Волна ' + n : 'Анкета без волны', n]), 'Выберите исходную волну');
-    if (source.length === 1) move.from.value = source[0];
-    fillSelect(move.to, (state.waves || []).filter((w) => w.status !== 'closed' && !enrolled.includes(w.n))
+    fillSearch(move.from, source.map((n) => [n ? 'Волна ' + n : 'Анкета без волны', n]), 'Выберите исходную волну');
+    if (source.length === 1) setSearchValue(move.from, source[0]);
+    fillSearch(move.to, (state.waves || []).filter((w) => w.status !== 'closed' && !enrolled.includes(w.n))
       .map((w) => ['Волна ' + w.n, w.n]), 'Выберите целевую волну');
     $('[data-service-archive-user]').disabled = !user?.participation;
     $('[data-service-edit-form]').disabled = !user;
@@ -197,8 +255,7 @@
     </tr>`).join('');
   }
   function renderServiceUsers() {
-    const q = $('[data-service-search]').value;
-    fillSelect(move.userId, state.users.filter((u) => matchesService(u, q)).map((u) => [userLabel(u), u.id]), 'Выберите аккаунт');
+    fillSearch(move.userId, state.users.map(personOption), 'Найти участника');
     renderServiceWaves();
     renderUnassignedForms();
     compareBackup();
@@ -216,11 +273,11 @@
     $('[data-service-restore]').disabled = !record || !!blocked;
   }
   function renderServiceArchive() {
-    const q = $('[data-service-archive-search]').value;
-    visibleRecords = archive.filter((r) => matchesService(r, q)).slice(0, 100);
-    const select = $('[data-service-record]');
-    select.replaceChildren(new Option(visibleRecords.length ? 'Выберите анкету' : 'Анкет не найдено', ''),
-      ...visibleRecords.map((r, i) => new Option(`${r.fullName || r.name} · @${r.tg} · ${r.round ? 'волна ' + r.round : 'без волны'} · архив от ${FX.fmtDateTime(r.archivedAt)}`, i + 1)));
+    visibleRecords = archive;
+    const field = $('[data-service-record]');
+    setSearchValue(field, '');
+    fillSearch(field, visibleRecords.map((r, i) => [`${r.fullName || r.name} · @${r.tg} · ${r.round ? 'волна ' + r.round : 'без волны'} · архив от ${FX.fmtDateTime(r.archivedAt)}`, i + 1]),
+      'Найти архивную анкету');
     renderServiceRecordStatus();
   }
   async function loadServiceArchive() {
@@ -236,22 +293,19 @@
     serviceMessage(message);
   }
 
-  $('[data-service-search]').addEventListener('input', renderServiceUsers);
   $('[data-service-unassigned-search]').addEventListener('input', renderUnassignedForms);
   $('[data-service-unassigned]').addEventListener('click', (event) => {
     const button = event.target.closest('[data-unassigned-user]');
     if (!button) return;
-    $('[data-service-search]').value = '';
+
     renderServiceUsers();
-    move.userId.value = button.dataset.unassignedUser;
+    setSearchValue(move.userId, button.dataset.unassignedUser);
     renderServiceWaves();
-    move.userId.focus();
+    focusSearch(move.userId);
   });
 
   move.userId.addEventListener('change', renderServiceWaves);
   move.to.addEventListener('change', renderServiceRecipients);
-  $('[data-service-rec-search]').addEventListener('input', renderServiceRecipients);
-  $('[data-service-archive-search]').addEventListener('input', renderServiceArchive);
   $('[data-service-record]').addEventListener('change', renderServiceRecordStatus);
   const backupFields = { fullName: 'ФИО', address: 'ПВЗ', wishes: 'Пожелания', notes: 'Пометки', prefs: 'Предпочтения' };
   const moderationLabels = { approved: 'Одобрена', pending: 'На модерации', rejected: 'Отклонена' };
@@ -368,11 +422,11 @@
     const row = open ? backupVisible[Number(open.dataset.backupOpen)] : restore ? backupVisible[Number(restore.dataset.backupRestore)] : null;
     if (!row?.user) return;
     if (open) {
-      $('[data-service-search]').value = '';
+
       renderServiceUsers();
-      move.userId.value = row.user.id;
+      setSearchValue(move.userId, row.user.id);
       renderServiceWaves();
-      move.userId.focus();
+      focusSearch(move.userId);
       return;
     }
     if (!row.canRestore) return;
@@ -416,15 +470,16 @@
         <label>Адрес ПВЗ Ozon <input name="address" required minlength="5" maxlength="400"></label>
         <label>Пожелания <textarea name="wishes" maxlength="1000"></textarea></label>
         <label>Пометки <textarea name="notes" maxlength="500"></textarea></label>
-        <label>Предпочтения <select name="prefs"></select></label>
+        <label>Предпочтения <input type="hidden" name="prefs" data-required></label>
         <p class="form-err" role="alert"></p>
         <div class="actions"><button type="button" class="btn btn-ghost" data-close>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить анкету</button></div>
       </form>`;
     $('[data-form-title]', dialog).textContent = `Анкета @${user.tg} · ${round ? 'волна ' + round : 'без волны'}`;
     const form = $('form', dialog);
-    form.elements.prefs.replaceChildren(...Object.entries(SantaCore.PREFS).map(([key, label]) => new Option(label, key)));
-    for (const key of ['fullName', 'address', 'wishes', 'notes', 'prefs']) form.elements[key].value = current[key] || (key === 'prefs' ? 'any' : '');
+    fillSearch(form.elements.prefs, preferenceOptions(), 'Найти предпочтение');
+    for (const key of ['fullName', 'address', 'wishes', 'notes']) form.elements[key].value = current[key] || '';
+    setSearchValue(form.elements.prefs, current.prefs || 'any');
     $('[data-close]', dialog).addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     form.addEventListener('submit', async (event) => {
@@ -562,7 +617,7 @@
     const inW2 = new Set(list.map((w) => w.userId));
     const cand = state.users.filter((u) => u.participation && !u.banned && !inW2.has(u.id));
     $('[data-w2-invite-wrap]').hidden = !ow || !cand.length;
-    $('[data-w2-invite]').innerHTML = cand.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
+    fillSearch($('[data-w2-invite]'), cand.map(personOption), 'Найти участника для приглашения');
   }
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-w2]');
@@ -869,8 +924,6 @@
 
   function renderPairs() {
     const players = state.users.filter((u) => u.participation && u.participation.moderation === 'approved' && !u.banned);
-    const opt = (sel, except) => '<option value="">— нет —</option>' + players.filter((u) => u.id !== except)
-      .map((u) => `<option value="${u.id}" ${u.id === sel ? 'selected' : ''}>@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
     const chk = state.pairsCheck || {};
     const warn = [];
     if ((chk.noRecipient || []).length) warn.push('🎁 Без получателя (никому не дарят): ' + chk.noRecipient.map(esc).join(', '));
@@ -888,13 +941,13 @@
     $('[data-pairs-head]').innerHTML = pairEdit
       ? '<tr><th>Волна</th><th>Санта</th><th></th><th>Получатель (можно изменить)</th><th>Статус</th><th>Трек</th><th>Статус вручную</th></tr>'
       : '<tr><th>Волна</th><th>Санта</th><th></th><th>Получатель</th><th>Статус</th><th>Трек</th></tr>';
-    $('[data-pair-add-santa]').innerHTML = free.map((u) => `<option value="${u.id}">@${esc(u.tg)} · ${esc(u.name)}</option>`).join('');
-    $('[data-pair-add-rec]').innerHTML = opt('', null);
+    fillSearch($('[data-pair-add-santa]'), free.map(personOption), 'Найти Санту');
+    fillSearch($('[data-pair-add-rec]'), players.map(personOption), 'Найти получателя');
     $('[data-adm-log]').innerHTML = (state.adminLog || []).map((n) => `<li>${esc(n.text)}<time>${FX.fmtDateTime(n.createdAt)}</time></li>`).join('') || '<li class="muted">Пока ничего не случилось.</li>';
     const rnd = (p) => (p.round > 1 ? p.round : 1);
     const chainWave = $('[data-chain-wave]');
-    chainWave.replaceChildren(new Option('Все волны', 'all'), ...(state.waves || []).map((w) => new Option(`Волна ${w.n}`, w.n)));
-    chainWave.value = wave() ? String(wave().n) : 'all';
+    fillSearch(chainWave, [['Все волны', 'all'], ...(state.waves || []).map((w) => [`Волна ${w.n}`, w.n])], 'Найти волну в цепочках');
+    if (document.activeElement !== searchPickers.get(chainWave).input) setSearchValue(chainWave, wave() ? wave().n : 'all');
     const byWave = wave() ? state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === wave().n) : state.pairs;
     const who = (id) => { const u = state.users.find((x) => x.id === id); return u ? `@${u.tg} ${u.name}` : ''; };
     const q = $('[data-pair-search]').value.trim().toLowerCase().replace(/^@/, '');
@@ -922,13 +975,14 @@
       <td>🌊 ${rnd(p)}${draft(p) ? '<small>черновик</small>' : ''}</td><td>${esc(p.santa)} ${swapBtn(p, 'santa')}</td><td>🎁→</td><td><div class="rec-cell"><button type="button" class="btn btn-ghost btn-sm" data-replace-recipient="${p.santaId}" data-round="${rnd(p)}" ${p.status === 'assigned' ? '' : 'disabled'}>${esc(p.recipient)} · Заменить</button>${swapBtn(p, 'recipient')}</div>${p.priority ? '<small>⭐ приоритет</small>' : ''}</td>
       <td><span class="status ${p.status}">${STATUS[p.status]}</span>${p.status === 'assigned' && !draft(p) ? `<small>${p.ackAt ? '👍 собирает посылку' : '🤷 не подтвердил'}</small>` : ''}${p.sentAt ? `<small>${FX.fmtDateTime(p.sentAt)}</small>` : ''}${p.failed ? '<small class="bad">😢 не отправил</small>' : ''}</td>
       <td>${esc(p.track) || '—'}</td>
-      <td>${draft(p) ? '<span class="muted">после подтверждения</span>' : `<select data-pair="${p.santaId}" data-round="${rnd(p)}">${Object.keys(STATUS).map((k) => `<option value="${k}" ${k === p.status ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>`}
+      <td>${draft(p) ? '<span class="muted">после подтверждения</span>' : `<input type="hidden" data-pair="${esc(p.santaId)}" data-round="${rnd(p)}" value="${esc(p.status)}">`}
         ${p.status === 'assigned' && !p.sentAt ? `<details class="pair-actions"><summary>Действия с цепочкой</summary>
           <button type="button" class="btn btn-ghost btn-sm" data-chain-exclude="${p.santaId}" data-round="${rnd(p)}">Исключить Санту</button>
           <button type="button" class="btn btn-ghost btn-sm" data-chain-exclude="${p.recipientId}" data-round="${rnd(p)}">Исключить получателя</button>
           ${!p.failed && !draft(p) ? `<button type="button" class="btn btn-ghost btn-sm" data-rescue="${p.santaId}" data-round="${rnd(p)}">Отметить неотправку</button>` : ''}
         </details>` : ''}</td>
     </tr>`).join('') || `<tr><td colspan="7" class="muted">${byWave.length ? 'По фильтрам никого нет.' : 'Пар пока нет — нажмите «Раскидать людей».'}</td></tr>`;
+    $$('[data-pair]', $('[data-pairs]')).forEach((field) => fillSearch(field, Object.entries(STATUS).map(([key, label]) => [label, key]), 'Найти статус'));
   }
 
   // ---------- правка данных участника ----------
@@ -949,7 +1003,8 @@
     uf.address.value = p ? p.address || '' : '';
     uf.wishes.value = p ? p.wishes || '' : '';
     uf.notes.value = p ? p.notes || '' : '';
-    uf.prefs.value = p ? p.prefs || 'any' : 'any';
+    fillSearch(uf.prefs, preferenceOptions(), 'Найти предпочтение');
+    setSearchValue(uf.prefs, p?.prefs || 'any');
     $('[data-um-anketa]').hidden = !p;
     $('[data-err]', uf).textContent = '';
     um.hidden = false;
@@ -1106,22 +1161,21 @@
   }
   function renderWaveSwitch() {
     if (!['all', 'raffle', 'service'].includes(curWave) && !wave()) curWave = 'all';
-    const w = wave();
     const sw = $('[data-wave-switch]');
-    const open = sw.querySelector('[data-ws-menu]') && !sw.querySelector('[data-ws-menu]').hidden;
     sw.hidden = false;
-    const last = (state.waves || [])[state.waves.length - 1];
-    const isFinal = last && last.n >= SantaCore.FINAL_WAVE;
-    const blocked = last && (last.status === 'open' || last.status === 'drawing');
-    sw.innerHTML = `<button class="ws-btn" type="button" data-ws-toggle>${curWave === 'service' ? 'Сервисное меню' : curWave === 'raffle' ? '🎁 Розыгрыш' : w ? `🌊 Волна ${w.n}` : '📊 Все волны'} <span class="ws-caret">▾</span></button>
-      <div class="ws-menu" data-ws-menu ${open ? '' : 'hidden'}>
-        <button type="button" data-ws="all" class="${curWave === 'all' ? 'on' : ''}">📊 Все волны<small>сводка: кто что не сделал</small></button>
-        ${(state.waves || []).map((x) => `<button type="button" data-ws="${x.n}" class="${w && w.n === x.n ? 'on' : ''}">🌊 Волна ${x.n}<small>${fd(x.start)} — ${fd(x.end)} · ${WST[x.status] || x.status}</small></button>`).join('')}
-        ${isFinal ? `<button type="button" data-ws="raffle" class="${curWave === 'raffle' ? 'on' : ''}">🎁 Розыгрыш<small>общий для всех волн</small></button>` : ''}
-        ${isFinal ? '' : `<button type="button" data-ws-new ${blocked ? 'disabled' : ''}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}<small>${blocked ? 'сначала жеребьёвка или остановка текущей' : 'лист ожидания получит приглашение'}</small></button>`}
-        <button type="button" data-ws="service" class="${curWave === 'service' ? 'on' : ''}">Сервисное меню<small>архив анкет и перевод между волнами</small></button>
-      </div>`;
+    if (!$('[data-section-search]', sw)) sw.innerHTML = '<input type="hidden" data-section-search>';
+    const field = $('[data-section-search]', sw);
+    const waves = state.waves || [];
+    const options = [['Все волны', 'all'], ...waves.map((w) => [`Волна ${w.n}`, w.n]),
+      ['Розыгрыш', 'raffle'], ['Сервисное меню', 'service', 'архив анкеты резервная копия']];
+    fillSearch(field, options, 'Найти раздел админки');
+    if (document.activeElement !== searchPickers.get(field).input) setSearchValue(field, curWave);
   }
+  $('[data-wave-switch]').addEventListener('change', (event) => {
+    if (!event.target.matches('[data-section-search]')) return;
+    setWave(event.target.value);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
   function tiles(list) { $('[data-tiles]').innerHTML = list.map(([v, l, cls]) => `<div class="card tile ${cls || ''}"><b>${v}</b><span>${l}</span></div>`).join(''); }
   function renderWavePanel() {
     const host = $('[data-wave-panel]');
@@ -1187,17 +1241,9 @@
       <p class="muted" style="font-size:13px;margin-top:12px">Жеребьёвка в два шага: сначала пары видите только вы, после «Подтвердить» — участники (и им приходят уведомления). Раздача случайная, никто не дарит сам себе, забаненные не участвуют.${w.n > 1 ? ' Участникам с ⭐ приоритетом достаётся надёжный Санта (уже отправлял подарок раньше).' : ''} Пары и участники ниже показаны только для этой волны. «Остановить» — когда волна закончилась: напоминания по ней больше не приходят; потом создайте следующую.</p>`;
   }
   document.addEventListener('click', async (e) => {
-    const t = e.target.closest('[data-ws-toggle]');
-    const menu = $('[data-ws-menu]');
-    if (t) { menu.hidden = !menu.hidden; return; }
-    if (menu && !menu.hidden && !e.target.closest('[data-wave-switch]')) menu.hidden = true;
     const ws = e.target.closest('[data-ws]');
-    if (ws) { if (menu) menu.hidden = true; setWave(ws.dataset.ws); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-    if (e.target.closest('[data-ws-new]')) {
-      if (menu) menu.hidden = true;
-      openNewWave();
-      return;
-    }
+    if (ws) { setWave(ws.dataset.ws); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (e.target.closest('[data-ws-new]')) { openNewWave(); return; }
     const cf = e.target.closest('[data-wave-confirm]');
     if (cf) {
       const n = Number(cf.dataset.waveConfirm);
@@ -1590,7 +1636,7 @@
     try { await load(); } catch (e) { showLogin(); }
     setInterval(async () => {
       if ($('[data-dash]').hidden) return;
-      if (curWave === 'raffle' || curWave === 'service') return;
+      if (curWave === 'raffle' || curWave === 'service' || document.activeElement?.closest('.admin-search-picker')) return;
       const revision = stateRevision;
       try {
         const next = await Api.get('/api/admin/state', A);

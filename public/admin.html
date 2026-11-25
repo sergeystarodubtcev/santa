@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261125d">
+  <link rel="stylesheet" href="css/style.css?v=20261125e">
 </head>
 <body>
   <header class="topbar">
@@ -87,12 +87,10 @@
             <section class="card raffle-card">
               <h2>Текущие участники</h2>
               <form class="form" data-service-move>
-                <label>Поиск по имени, нику или телефону <input type="search" data-service-search></label>
-                <label>Участник <select name="userId" required></select></label>
-                <label>Из какой волны <select name="from" required></select></label>
-                <label>В какую волну <select name="to" required></select></label>
-                <label>Поиск получателя <input type="search" data-service-rec-search></label>
-                <label>Получатель подарка <select name="recipientId"></select></label>
+                <label>Участник <input type="hidden" name="userId" data-required></label>
+                <label>Из какой волны <input type="hidden" name="from" data-required></label>
+                <label>В какую волну <input type="hidden" name="to" data-required></label>
+                <label>Получатель подарка <input type="hidden" name="recipientId"></label>
                 <div class="actions"><button type="submit" class="btn btn-primary">Проверить перевод</button>
                   <button type="button" class="btn btn-ghost" data-service-edit-form>Создать или изменить анкету</button>
                   <button type="button" class="btn btn-ghost" data-service-archive-user>Архивировать анкету</button></div>
@@ -101,8 +99,7 @@
             <section class="card raffle-card">
               <h2>Архив анкет</h2>
               <div class="form">
-                <label>Поиск в архиве <input type="search" data-service-archive-search></label>
-                <label>Анкета <select data-service-record></select></label>
+                <label>Анкета <input type="hidden" data-service-record></label>
                 <p class="muted" data-service-record-status></p>
                 <button type="button" class="btn btn-primary" data-service-restore disabled>Восстановить анкету</button>
               </div>
@@ -247,7 +244,7 @@
             <div class="chips" data-pf></div>
             <div class="toolbar" style="margin:0">
               <b data-pairs-count></b>
-              <label>Волна <select data-chain-wave aria-label="Волна в цепочках"><option value="all">Все волны</option></select></label>
+              <label>Волна <input type="hidden" data-chain-wave aria-label="Волна в цепочках"></label>
               <div class="actions" style="margin:0">
                 <input type="search" placeholder="Найти: ник, имя, трек" data-pair-search style="max-width:240px">
                 <button class="btn btn-ghost btn-sm" type="button" data-pf-reset>Сбросить фильтры</button>
@@ -263,9 +260,9 @@
             <tbody data-pairs></tbody>
           </table></div>
           <div class="actions" data-pair-add-wrap hidden>
-            <select data-pair-add-santa></select>
+            <input type="hidden" data-pair-add-santa>
             <span>🎁→</span>
-            <select data-pair-add-rec></select>
+            <input type="hidden" data-pair-add-rec>
             <button class="btn btn-ghost btn-sm" data-pair-add>Назначить</button>
           </div>
         </details>
@@ -278,7 +275,7 @@
             <tbody data-w2-rows></tbody>
           </table></div>
           <div class="actions" data-w2-invite-wrap>
-            <select data-w2-invite></select>
+            <input type="hidden" data-w2-invite>
             <button class="btn btn-ghost btn-sm" type="button" data-w2-invite-btn>📨 Пригласить в открытую волну</button>
           </div>
         </details>
@@ -315,7 +312,7 @@
           <label>Пожелания<textarea name="wishes" rows="2"></textarea></label>
           <div class="row2">
             <label>Тематика
-              <select name="prefs"><option value="coffee">☕ Кофейное</option><option value="noncoffee">🧸 Некофейное</option><option value="any">🎲 Удивите меня</option></select>
+              <input type="hidden" name="prefs">
             </label>
             <label>Особые пометки<input name="notes"></label>
           </div>
@@ -337,9 +334,9 @@
 
   <script src="js/config.js?v=20261116f"></script>
   <script src="js/cities.js?v=20261116f"></script>
-  <script src="js/core.js?v=20261125d"></script>
-  <script src="js/api.js?v=20261125d"></script>
+  <script src="js/core.js?v=20261125e"></script>
+  <script src="js/api.js?v=20261125e"></script>
   <script src="js/fx.js?v=20261116f"></script>
-  <script src="js/admin.js?v=20261125d"></script>
+  <script src="js/admin.js?v=20261125e"></script>
 </body>
 </html>

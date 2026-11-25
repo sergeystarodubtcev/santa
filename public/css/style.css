@@ -823,3 +823,7 @@ td small { display: block; }
 .backup-detail { padding: .25rem 0 1rem 1rem; overflow-wrap: anywhere; }
 .backup-detail dt { font-weight: 700; }
 .backup-detail dd { margin-inline-start: 0; margin-bottom: .65rem; white-space: pre-wrap; }
+.admin-search-picker input { width: 100%; min-width: 9rem; }
+.admin-search-results:not(:empty) { display: grid; gap: .3rem; margin-top: .35rem; }
+.admin-search-results .btn { justify-content: flex-start; text-align: start; }
+.wave-switch .admin-search-picker { width: min(15rem, 44vw); }
