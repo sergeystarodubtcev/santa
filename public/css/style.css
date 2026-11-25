@@ -813,3 +813,6 @@ td small { display: block; }
   .hero-raffle > div { flex-basis: 100%; }
   .hero-actions { margin-top: -12px; }
 }
+.recipient-suggestions { display: grid; gap: .35rem; }
+.recipient-suggestions .btn { justify-content: flex-start; text-align: start; }
+[data-service-unassigned-search] { display: block; margin: .45rem 0 1rem; }

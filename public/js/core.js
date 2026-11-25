@@ -95,7 +95,7 @@
     // те, кто записался во вторую волну до появления подтверждения, — ждут подтверждения
     for (const uid of Object.keys(db.participations)) {
       const p = db.participations[uid];
-      if (p && p.round === 2 && !db.wave2[uid] && !((db.waveWithdrawals || {})[uid] || {})[2]) db.wave2[uid] = { round: 2, status: 'invited', reason: 'new', priority: 0, addedAt: p.joinedAt || 0 };
+      if (p && p.round === 2 && !db.wave2[uid] && !((db.serviceWaves || {})[uid] || {})[2] && !((db.waveWithdrawals || {})[uid] || {})[2]) db.wave2[uid] = { round: 2, status: 'invited', reason: 'new', priority: 0, addedAt: p.joinedAt || 0 };
     }
     for (const w of Object.values(db.wave2)) if (w && w.round === undefined) w.round = w.status === 'waiting' ? null : 2;
     if (!Array.isArray(db.messages)) db.messages = [];
@@ -189,24 +189,29 @@
   // priority: чем выше, тем раньше ему подбирают надёжного Санту (пострадавшим — максимальный).
   const W2_PRIORITY = 100;
   const wave2Of = (db, uid) => (db.wave2 || {})[uid] || null;
-  const inWave = (db, uid, n) => { const w = wave2Of(db, uid); return !!w && w.status === 'confirmed' && w.round === n; };
+  const serviceWaves = (db, uid) => (db.serviceWaves || {})[uid] || {};
+  const inWave = (db, uid, n) => { const w = wave2Of(db, uid); return !!serviceWaves(db, uid)[n] || (!!w && w.status === 'confirmed' && w.round === n); };
   const myLaterWave = (db, uid) => { const w = wave2Of(db, uid); return w && w.status === 'confirmed' && w.round > 1 ? w.round : null; };
   const withdrawn = (db, uid, n) => !!((db.waveWithdrawals || {})[uid] || {})[n];
   const w2prio = (db, uid) => (wave2Of(db, uid) || {}).priority || 0;
-  // Допущенные модерацией — только они попадают в жеребьёвку. В волны 2+ — только подтвердившие участие.
-  function approvedParticipants(db, round) {
-    return db.users.filter((u) => !u.banned && db.participations[u.id] && modEff(db, db.participations[u.id]) === 'approved'
-      && (!round || (!withdrawn(db, u.id, round) && (round > 1 ? inWave(db, u.id, round) || hadPairIn(db, u.id, round) : roundOf(db.participations[u.id]) === 1))));
-  }
   const hadPairIn = (db, uid, n) => !!drawnFor(db, n) && db.pairs.some((p) => pairRound(p) === n && (p.santaId === uid || p.recipientId === uid));
+  function approvedParticipants(db, round) {
+    return db.users.filter((u) => {
+      const part = db.participations[u.id];
+      if (!part || u.banned || modEff(db, part) !== 'approved') return false;
+      if (!round) return true;
+      if (withdrawn(db, u.id, round)) return false;
+      return inWave(db, u.id, round) || (round === 1 ? roundOf(part) === 1 : hadPairIn(db, u.id, round));
+    });
+  }
   // Анкета получателя для конкретной волны (своя анкета волны или основная)
   function anketaFor(db, uid, n) {
-    const wa = n > 1 && db.waveAnketas && db.waveAnketas[uid] && db.waveAnketas[uid][n];
+    const wa = db.waveAnketas && db.waveAnketas[uid] && db.waveAnketas[uid][n];
     return wa || db.participations[uid] || {};
   }
   function ownAnketas(db, uid, part, w2) {
     if (!part) return [];
-    const rounds = new Set();
+    const rounds = new Set(Object.keys(serviceWaves(db, uid)).map(Number));
     const baseRound = Number(roundOf(part));
     if (baseRound > 0 && (baseRound === 1 || !w2 || w2.round !== baseRound || w2.status === 'confirmed')) rounds.add(baseRound);
     if (w2 && w2.status === 'confirmed' && w2.round > 0) rounds.add(Number(w2.round));
@@ -396,7 +401,7 @@
     notify(db, ctx, santaId, `🎁 Волна ${round}. ${intro}\n\n${wishes}\n\nНовый адрес ПВЗ и данные для отправки — в разделе «Кому я дарю».`, 'warn', 'whom');
   }
 
-  function removeFromDraw(db, ctx, uid, onlyRound) {
+  function removeFromDraw(db, ctx, uid, onlyRound, withdrew = !!onlyRound) {
     const lines = [];
     for (const round of onlyRound ? [onlyRound] : [...new Set(db.pairs.map(pairRound))]) {
     const same = (p) => pairRound(p) === round;
@@ -412,7 +417,7 @@
         if (inc.round != null) replacement.round = inc.round;
         if (out.priority) replacement.priority = true;
         db.pairs[db.pairs.indexOf(inc)] = replacement;
-        if (!onlyRound || published(db, round)) notifyNewRecipient(db, ctx, santaId, newRecipient, round, !!onlyRound);
+        if (!onlyRound || published(db, round)) notifyNewRecipient(db, ctx, santaId, newRecipient, round, withdrew);
         lines.push(`↪️ ${nick(db, santaId)} теперь дарит ${nick(db, newRecipient)} (новый адрес отправлен ему)` + (wasSent ? ' ⚠️ его прошлая посылка уже была отправлена!' : ''));
       } else {
         db.pairs = db.pairs.filter((p) => p !== inc);
@@ -463,6 +468,8 @@
   function deleteUser(db, uid) {
     db.users = db.users.filter((u) => u.id !== uid);
     delete db.participations[uid];
+    if (db.serviceWaves) delete db.serviceWaves[uid];
+    if (db.anketaArchive) delete db.anketaArchive[uid];
     if (db.tgUserPrefs) delete db.tgUserPrefs[uid];
     if (db.waveWithdrawals) delete db.waveWithdrawals[uid];
     if (db.raffle) delete db.raffle.entries[uid];
@@ -655,6 +662,140 @@
       fail(409, 'Жеребьёвка уже проведена — выйти нельзя, напишите организаторам');
     }
     delete db.participations[userId];
+    if (db.serviceWaves) delete db.serviceWaves[userId];
+  }
+
+  function anketaFields(form) {
+    return { fullName: form.fullName, address: form.address, wishes: form.wishes, notes: form.notes, prefs: form.prefs };
+  }
+
+  function archiveAnketa(db, ctx, user) {
+    const part = db.participations[user.id];
+    if (!part) fail(404, 'У участника нет анкеты');
+    if (db.pairs.some((p) => p.santaId === user.id || p.recipientId === user.id)) fail(409, 'Сначала снимите участника с пар его волн');
+    db.anketaArchive = db.anketaArchive || {};
+    const copies = [{ round: Number(roundOf(part)), ...anketaFields(part) }];
+    for (const [round, form] of Object.entries((db.waveAnketas || {})[user.id] || {})) {
+      if (form) copies.push({ round: round === 'next' ? 0 : Number(round), ...anketaFields(form) });
+    }
+    const records = db.anketaArchive[user.id] || (db.anketaArchive[user.id] = []);
+    for (const form of copies) records.push({ id: newId(ctx), archivedAt: ctx.now(), ...form });
+    delete db.participations[user.id];
+    if (db.wave2) delete db.wave2[user.id];
+    if (db.waveAnketas) delete db.waveAnketas[user.id];
+    if (db.serviceWaves) delete db.serviceWaves[user.id];
+    notifyAdmins(db, ctx, `📁 Анкеты @${user.tg} перемещены в архив. Аккаунт сохранён.`);
+  }
+
+  function restoreAnketa(db, ctx, user, body) {
+    if (!user.pdConsentAt) fail(409, 'У аккаунта нет подтверждённого согласия на обработку данных');
+    if (db.participations[user.id]) fail(409, 'У аккаунта уже есть действующая анкета');
+    const records = (db.anketaArchive || {})[user.id] || [];
+    const archived = records.find((item) => item.id === body.archiveId);
+    let form = archived;
+    if (!body.archiveId && body.backup && normTg(body.backup.tg) === user.tg && normPhone(body.backup.phone) === user.phone) form = body.backup.form;
+    if (!form) fail(404, 'Архивная анкета не найдена или не совпадают ник и телефон');
+    db.participations[user.id] = { ...readAnketa(db, user, anketaFields(form)), round: 0, moderation: 'pending',
+      joinedAt: ctx.now(), updatedAt: ctx.now() };
+    notifyAdmins(db, ctx, `📂 Анкета @${user.tg} восстановлена. Выберите волну в сервисном меню.`);
+  }
+
+  function serviceSourceRounds(db, user, part, forms = ownAnketas(db, user.id, part, wave2Of(db, user.id))) {
+    if (!part) return [];
+    if (!user.banned && modEff(db, part) === 'approved') return forms.map((form) => form.round);
+    return [...new Set(db.pairs.filter((pair) => pair.santaId === user.id || pair.recipientId === user.id).map(pairRound))].sort((a, b) => a - b);
+  }
+
+  function saveServiceAnketa(db, ctx, user, body) {
+    if (!user.pdConsentAt) fail(409, 'У аккаунта нет подтверждённого согласия на обработку данных');
+    const uid = user.id;
+    const part = db.participations[uid];
+    const round = Number(body.round) || 0;
+    const current = serviceSourceRounds(db, user, part);
+    if (round ? !current.includes(round) : current.length) fail(409, 'Выберите текущую волну анкеты');
+    if (db.pairs.some((p) => p.recipientId === uid && pairRound(p) === round && (p.sentAt || p.status !== 'assigned'))) {
+      fail(409, 'На эту анкету уже отправлена посылка');
+    }
+    const form = { ...readAnketa(db, user, anketaFields(body.form || {})), updatedAt: ctx.now() };
+    if (!part) db.participations[uid] = { ...form, round: 0, moderation: 'pending', joinedAt: ctx.now() };
+    else if (!round || (Number(roundOf(part)) === round && current.length === 1 && anketaFor(db, uid, round) === part)) {
+      Object.assign(part, form);
+    } else {
+      db.waveAnketas[uid] = { ...db.waveAnketas[uid], [round]: form };
+    }
+    notifyAdmins(db, ctx, `🛠 Обновлена анкета @${user.tg}${round ? ' в волне ' + round : ' без волны'}.`);
+  }
+
+  function planServiceMove(db, user, body) {
+    const uid = user.id;
+    const part = db.participations[uid];
+    const from = Number(body.from), to = Number(body.to);
+    const target = waveOf(db, to);
+    if (!part || user.banned) fail(409, 'Нужна действующая анкета участника');
+    if (!target || target.status === 'closed' || from === to) fail(400, 'Выберите другую действующую волну');
+    const enrolled = serviceSourceRounds(db, user, part);
+    if (!(from ? enrolled.includes(from) : body.from != null && !enrolled.length)) fail(409, 'Участие в исходной волне изменилось');
+    if (enrolled.includes(to)) fail(409, 'Участник уже в целевой волне');
+    const forUser = (p) => p.santaId === uid || p.recipientId === uid;
+    if (db.pairs.some((p) => pairRound(p) === to && forUser(p))) fail(409, 'У участника уже есть пара в целевой волне');
+    const source = from ? db.pairs.filter((p) => pairRound(p) === from && forUser(p)) : [];
+    const incoming = source.filter((p) => p.recipientId === uid);
+    const outgoing = source.filter((p) => p.santaId === uid);
+    if (incoming.length > 1 || outgoing.length > 1) fail(409, 'Сначала исправьте дубли в исходной волне');
+    if (incoming[0] && outgoing[0] && incoming[0].santaId === outgoing[0].recipientId) fail(409, 'В исходной волне останется участник без пары. Сначала разберите эту пару вручную.');
+    const recipient = body.recipientId ? getUser(db, body.recipientId) : null;
+    if (recipient && (recipient.id === uid || !approvedParticipants(db, to).some((u) => u.id === recipient.id))) fail(409, 'Выберите другого допущенного участника целевой волны');
+    const holders = recipient ? db.pairs.filter((p) => pairRound(p) === to && p.recipientId === recipient.id) : [];
+    if (holders.length > 1 || holders[0]?.locked) fail(409, 'Выбранный получатель уже закреплён или у него несколько Сант');
+    if (source.concat(holders).some((p) => p.sentAt || p.status !== 'assigned')) fail(409, 'Одна из затронутых посылок уже отправлена');
+    const previous = incoming[0] && outgoing[0] ? ` Исходная цепочка: ${nick(db, incoming[0].santaId)} → ${nick(db, outgoing[0].recipientId)}.`
+      : source.length ? ' В исходной волне одна связь будет снята, оставшегося участника можно назначить вручную.' : '';
+    const assignment = recipient ? ` Назначение: @${user.tg} → @${recipient.tg}.` +
+      (holders[0] ? ` ${nick(db, holders[0].santaId)} → @${user.tg}.` : target.status === 'open' ? ' Остальные пары определит жеребьёвка.' : ' Входящего Санту нужно назначить отдельно.')
+      : target.status === 'open' ? ' Получателя определит жеребьёвка.' : ' Пары нужно назначить отдельно.';
+    const form = anketaFields(from ? anketaFor(db, uid, from) : part);
+    return { from, to, recipient, holder: holders[0], form,
+      summary: `@${user.tg}: ${from ? 'из волны ' + from : 'из анкет без волны'} → волна ${to}.${previous}${assignment}`,
+      revision: JSON.stringify([from, to, target.status, form, part.moderation, enrolled, recipient && recipient.id, source, holders]) };
+  }
+
+  function applyServiceMove(db, ctx, user, plan) {
+    const uid = user.id;
+    const { from, to, recipient, holder, form } = plan;
+    if (from) {
+      const source = db.pairs.some((p) => pairRound(p) === from && (p.santaId === uid || p.recipientId === uid));
+      if (source) removeFromDraw(db, ctx, uid, from, false);
+      if (db.wave2 && db.wave2[uid]?.round === from) delete db.wave2[uid];
+      db.waveWithdrawals = db.waveWithdrawals || {};
+      db.waveWithdrawals[uid] = { ...db.waveWithdrawals[uid], [from]: true };
+      if (db.serviceWaves?.[uid]) delete db.serviceWaves[uid][from];
+    }
+    const enrollment = wave2Of(db, uid);
+    if (enrollment?.round === to) Object.assign(enrollment, { status: 'confirmed', confirmedAt: ctx.now(), byAdmin: true });
+    else if (!from && enrollment) delete db.wave2[uid];
+    if (!from && db.serviceWaves) delete db.serviceWaves[uid];
+    if (db.waveWithdrawals?.[uid]) delete db.waveWithdrawals[uid][to];
+    db.serviceWaves = db.serviceWaves || {};
+    db.serviceWaves[uid] = { ...db.serviceWaves[uid], [to]: true };
+    const part = db.participations[uid];
+    const baseMoves = !from || (Number(roundOf(part)) === from && anketaFor(db, uid, from) === part);
+    if (baseMoves) {
+      part.round = to;
+      if (db.waveAnketas[uid]) delete db.waveAnketas[uid][to];
+    } else {
+      db.waveAnketas[uid] = { ...db.waveAnketas[uid], [to]: { ...form, updatedAt: ctx.now() } };
+    }
+    Object.assign(part, { moderation: 'approved', moderatedAt: ctx.now() });
+    if (recipient) {
+      if (holder) {
+        db.pairs[db.pairs.indexOf(holder)] = { round: to, santaId: holder.santaId, recipientId: uid, status: 'assigned' };
+        if (published(db, to)) notifyNewRecipient(db, ctx, holder.santaId, uid, to, false);
+      }
+      db.pairs.push({ round: to, santaId: uid, recipientId: recipient.id, status: 'assigned', locked: true });
+    }
+    notify(db, ctx, uid, `Организаторы перевели вас в волну ${to}.` +
+      (recipient && published(db, to) ? ' Ваш получатель уже в разделе «Кому я дарю».' : ''), 'info', recipient && published(db, to) ? 'whom' : null);
+    notifyAdmins(db, ctx, '🛠 ' + plan.summary);
   }
 
   // ---------- draw ----------
@@ -681,15 +822,36 @@
     };
     // Полностью случайная раздача: каждому — случайный получатель, никто не дарит сам себе.
     // Перемешиваем, пока не получится перестановка без «самому себе» (в среднем ~3 попытки).
+    const fixed = db.pairs.filter((p) => pairRound(p) === round && p.locked);
+    const pinned = new Map(fixed.map((p) => [p.santaId, p.recipientId]));
+    const reserved = new Set(pinned.values());
     let recipients;
-    do { recipients = shuffled(ids); } while (recipients.some((r, i) => r === ids[i]));
-    if (round > 1) prioritize(db, ids, recipients, round);
+    if (!fixed.length) {
+      do { recipients = shuffled(ids); } while (recipients.some((r, i) => r === ids[i]));
+    } else {
+      const members = new Set(ids);
+      if (pinned.size !== fixed.length || reserved.size !== fixed.length
+          || fixed.some((p) => !members.has(p.santaId) || !members.has(p.recipientId) || p.santaId === p.recipientId)) {
+        fail(409, 'Проверьте закреплённые пары перед жеребьёвкой');
+      }
+      const available = shuffled(ids.filter((id) => !reserved.has(id)));
+      recipients = ids.map((id) => pinned.has(id) ? pinned.get(id) : available.pop());
+      const free = ids.map((_, i) => i).filter((i) => !pinned.has(ids[i]));
+      for (const i of free) {
+        if (ids[i] !== recipients[i]) continue;
+        const j = free.find((k) => k !== i);
+        if (j == null) fail(409, 'С закреплёнными парами оставшийся участник дарил бы себе');
+        [recipients[i], recipients[j]] = [recipients[j], recipients[i]];
+      }
+    }
+    if (round > 1) prioritize(db, ids, recipients, round, pinned);
     // Порядок пар тоже случайный — по списку нельзя восстановить, кто кому дарит «по цепочке».
     const order = shuffled(ids.map((_, i) => i));
     const fresh = order.map((i) => ({
       round,
       santaId: ids[i],
       recipientId: recipients[i],
+      ...(pinned.has(ids[i]) ? { locked: true } : {}),
       priority: round > 1 && w2prio(db, recipients[i]) > 0 ? true : undefined,
       status: 'assigned',
       track: '',
@@ -826,12 +988,13 @@
 
   // Второй круг: участникам с приоритетом (пострадавшим) — надёжных Сант, тех, кто уже отправил подарок в первом круге.
   // recipients[i] — получатель Санты ids[i]; меняем получателей местами, не допуская «самому себе».
-  function prioritize(db, ids, recipients, round) {
+  function prioritize(db, ids, recipients, round, pinned) {
     const reliable = (id) => db.pairs.some((p) => pairRound(p) < round && p.santaId === id && p.status !== 'assigned');
-    const locked = new Set();
+    const locked = new Set(ids.map((_, i) => i).filter((i) => pinned.has(ids[i])));
     const order = ids.filter((id) => w2prio(db, id) > 0).sort((a, b) => w2prio(db, b) - w2prio(db, a));
     for (const p of order) {
       const i = recipients.indexOf(p);
+      if (locked.has(i)) continue;
       if (reliable(ids[i])) { locked.add(i); continue; }
       const free = (s, k) => k !== i && !locked.has(k) && reliable(s) && s !== p && w2prio(db, recipients[k]) === 0;
       let j = ids.findIndex((s, k) => free(s, k) && recipients[k] !== ids[i]);
@@ -1063,11 +1226,12 @@
     const part = db.participations[userId];
     const w2 = wave2Of(db, userId);
     const ow = openWave(db);
-    const round = myLaterWave(db, userId) || (part ? roundOf(part) : (db.drawnAt ? (ow ? ow.n : 0) : 1));
+    const ownForms = ownAnketas(db, userId, part, w2);
+    const round = ownForms.at(-1)?.round || (part ? 0 : (db.drawnAt ? (ow ? ow.n : 0) : 1));
     const out = {
       user: publicUser(user),
       participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null,
-      ownAnketas: ownAnketas(db, userId, part, w2),
+      ownAnketas: ownForms,
       round,
       drawn: !!drawnFor(db, round),
       dates: datesFor(db, round || 1),
@@ -1099,7 +1263,7 @@
     const ow2 = openWave(db);
     const target = ow2 && ow2.n > 1 ? ow2 : null;
     const w1open = (waveOf(db, 1) || {}).status === 'open';
-    const inTarget = w2 && (target ? w2.round === target.n && w2.status === 'confirmed' : w2.status === 'waiting');
+    const inTarget = target ? inWave(db, userId, target.n) : w2?.status === 'waiting';
     out.nextWave = !part || user.banned || w1open || !db.settings.round2Open || finalEnrollmentClosed(db) || (target && withdrawn(db, userId, target.n)) ? null : {
       n: target ? target.n : null, start: target ? target.start : null, end: target ? target.end : null,
       joined: !!inTarget, invited: !!(w2 && target && w2.round === target.n && w2.status === 'invited'),
@@ -1184,8 +1348,9 @@
       drawnAt: db.drawnAt,
       users: db.users.map((u) => {
         const part = db.participations[u.id];
+        const forms = ownAnketas(db, u.id, part, wave2Of(db, u.id));
         return Object.assign(publicUser(u), { pdConsentAt: u.pdConsentAt || null, participation: part ? Object.assign({}, part, { moderation: modEff(db, part) }) : null,
-          waveAnketas: (db.waveAnketas || {})[u.id] || null, withdrawnWaves: Object.keys((db.waveWithdrawals || {})[u.id] || {}).map(Number) });
+          waveAnketas: (db.waveAnketas || {})[u.id] || null, enrolledWaves: forms.map((a) => a.round), serviceSourceRounds: serviceSourceRounds(db, u, part, forms), withdrawnWaves: Object.keys((db.waveWithdrawals || {})[u.id] || {}).map(Number) });
       }),
       pairs: db.pairs.map((p) => Object.assign({}, p, {
         santa: byId[p.santaId] ? '@' + byId[p.santaId].tg : '—',
@@ -1493,6 +1658,28 @@
           }
         });
         return ok(Object.assign(adminState(db), { approvedNow: n }), true);
+      }
+      case 'GET /api/admin/service/archive': {
+        needAdmin();
+        return ok(db.users.flatMap((u) => ((db.anketaArchive || {})[u.id] || []).map((item) =>
+          ({ ...item, userId: u.id, tg: u.tg, name: u.name }))));
+      }
+      case 'POST /api/admin/service/archive':
+      case 'POST /api/admin/service/restore':
+      case 'POST /api/admin/service/form':
+      case 'POST /api/admin/service/move': {
+        needAdmin();
+        const user = getUser(db, body.userId);
+        if (path.endsWith('/archive')) archiveAnketa(db, ctx, user);
+        if (path.endsWith('/restore')) restoreAnketa(db, ctx, user, body);
+        if (path.endsWith('/form')) saveServiceAnketa(db, ctx, user, body);
+        if (path.endsWith('/move')) {
+          const plan = planServiceMove(db, user, body);
+          if (body.revision == null) return ok({ summary: plan.summary, revision: plan.revision });
+          if (body.revision !== plan.revision) fail(409, 'Пары или анкета изменились. Проверьте перевод заново.');
+          applyServiceMove(db, ctx, user, plan);
+        }
+        return ok(adminState(db), true);
       }
       case 'POST /api/admin/delete': {
         needAdmin();

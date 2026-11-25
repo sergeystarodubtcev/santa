@@ -142,6 +142,211 @@
     });
   });
 
+  const service = $('[data-service]');
+  const moveForm = $('[data-service-move]');
+  const move = moveForm.elements;
+  let archive = [];
+  let backupForms = [];
+  let visibleRecords = [];
+  const matchesService = (user, query) => [user.name, user.tg, user.phone, user.fullName, user.participation?.fullName]
+    .some((value) => String(value || '').toLowerCase().includes(query.trim().toLowerCase().replace(/^@/, '')));
+  const userLabel = (user) => `${user.name} · @${user.tg}`;
+  const serviceUser = () => state.users.find((u) => u.id === move.userId.value);
+
+  function serviceMessage(text) {
+    const result = $('[data-service-result]');
+    result.textContent = text;
+    result.hidden = !text;
+  }
+  function fillSelect(select, options, placeholder) {
+    const current = select.value;
+    select.replaceChildren(new Option(placeholder, ''), ...options.map(([label, value]) => new Option(label, value)));
+    if (options.some(([, value]) => String(value) === current)) select.value = current;
+  }
+  function renderServiceRecipients() {
+    const n = Number(move.to.value);
+    const q = $('[data-service-rec-search]').value;
+    const options = state.users.filter((u) => u.id !== move.userId.value && !u.banned && u.participation?.moderation === 'approved'
+      && (u.enrolledWaves || []).includes(n) && matchesService(u, q));
+    fillSelect(move.recipientId, options.map((u) => [userLabel(u), u.id]), 'Без ручного назначения');
+  }
+  function renderServiceWaves() {
+    const user = serviceUser();
+    const enrolled = user?.serviceSourceRounds || [];
+    const source = !user?.participation ? [] : enrolled.length ? enrolled : [0];
+    fillSelect(move.from, source.map((n) => [n ? 'Волна ' + n : 'Анкета без волны', n]), 'Выберите исходную волну');
+    if (source.length === 1) move.from.value = source[0];
+    fillSelect(move.to, (state.waves || []).filter((w) => w.status !== 'closed' && !enrolled.includes(w.n))
+      .map((w) => ['Волна ' + w.n, w.n]), 'Выберите целевую волну');
+    $('[data-service-archive-user]').disabled = !user?.participation;
+    $('[data-service-edit-form]').disabled = !user;
+    renderServiceRecipients();
+  }
+  function renderUnassignedForms() {
+    const q = $('[data-service-unassigned-search]').value;
+    const users = state.users.filter((u) => u.participation && !(u.serviceSourceRounds || []).length && matchesService(u, q));
+    $('[data-service-unassigned-empty]').hidden = !!users.length;
+    const labels = { rejected: 'Отклонена', pending: 'На модерации', approved: 'Одобрена' };
+    $('[data-service-unassigned]').innerHTML = users.map((u) => `<tr>
+      <td><b>${esc(u.participation.fullName || u.name)}</b><small>@${esc(u.tg)}</small></td>
+      <td>${esc(u.banned ? 'В чёрном списке' : labels[u.participation.moderation] || 'Без волны')}</td>
+      <td><button type="button" class="btn btn-ghost btn-sm" data-unassigned-user="${esc(u.id)}">Открыть</button></td>
+    </tr>`).join('');
+  }
+  function renderServiceUsers() {
+    const q = $('[data-service-search]').value;
+    fillSelect(move.userId, state.users.filter((u) => matchesService(u, q)).map((u) => [userLabel(u), u.id]), 'Выберите аккаунт');
+    renderServiceWaves();
+    renderUnassignedForms();
+  }
+  function recordAccount(record) {
+    return state.users.find((u) => record.backup ? u.tg === record.tg && u.phone === record.phone : u.id === record.userId);
+  }
+  function renderServiceRecordStatus() {
+    const value = $('[data-service-record]').value;
+    const record = value ? visibleRecords[Number(value) - 1] : null;
+    const user = record && recordAccount(record);
+    const blocked = !user ? 'Нужен действующий аккаунт с тем же ником и телефоном.' : user.participation
+      ? 'У аккаунта уже есть действующая анкета.' : !user.pdConsentAt ? 'У аккаунта нет подтверждённого согласия.' : '';
+    $('[data-service-record-status]').textContent = record ? (blocked || `Восстановление для @${user.tg}.`) : '';
+    $('[data-service-restore]').disabled = !record || !!blocked;
+  }
+  function renderServiceArchive() {
+    const q = $('[data-service-archive-search]').value;
+    visibleRecords = archive.concat(backupForms).filter((r) => matchesService(r, q)).slice(0, 100);
+    const select = $('[data-service-record]');
+    select.replaceChildren(new Option(visibleRecords.length ? 'Выберите анкету' : 'Анкет не найдено', ''),
+      ...visibleRecords.map((r, i) => new Option(`${r.fullName || r.name} · @${r.tg} · ${r.round ? 'волна ' + r.round : 'без волны'} · ${r.backup ? 'копия' : 'архив от ' + FX.fmtDateTime(r.archivedAt)}`, i + 1)));
+    renderServiceRecordStatus();
+  }
+  async function loadServiceArchive() {
+    archive = await Api.get('/api/admin/service/archive', A);
+    renderServiceArchive();
+  }
+  async function serviceSave(path, body, message) {
+    state = await Api.post('/api/admin/service/' + path, body, A);
+    stateRevision++;
+    renderServiceUsers();
+    try { await loadServiceArchive(); }
+    catch (e) { message += ' Архив пока не обновился: ' + e.message; }
+    serviceMessage(message);
+  }
+
+  $('[data-service-search]').addEventListener('input', renderServiceUsers);
+  $('[data-service-unassigned-search]').addEventListener('input', renderUnassignedForms);
+  $('[data-service-unassigned]').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-unassigned-user]');
+    if (!button) return;
+    $('[data-service-search]').value = '';
+    renderServiceUsers();
+    move.userId.value = button.dataset.unassignedUser;
+    renderServiceWaves();
+    move.userId.focus();
+  });
+
+  move.userId.addEventListener('change', renderServiceWaves);
+  move.to.addEventListener('change', renderServiceRecipients);
+  $('[data-service-rec-search]').addEventListener('input', renderServiceRecipients);
+  $('[data-service-archive-search]').addEventListener('input', renderServiceArchive);
+  $('[data-service-record]').addEventListener('change', renderServiceRecordStatus);
+  $('[data-service-backup]').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    backupForms = [];
+    serviceMessage('');
+    if (!file) return renderServiceArchive();
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || !Array.isArray(data.users) || !data.participations || Array.isArray(data.participations)) throw new Error('Нужна резервная копия базы Santa в JSON.');
+      backupForms = data.users.filter((u) => u && typeof u.tg === 'string' && typeof u.phone === 'string')
+        .flatMap((u) => {
+          const base = data.participations[u.id];
+          const forms = [base && [base.round ?? 1, base], ...Object.entries(data.waveAnketas?.[u.id] || {})];
+          return forms.filter((entry) => entry && entry[1] && typeof entry[1].fullName === 'string' && typeof entry[1].address === 'string')
+            .map(([round, form]) => {
+              const { fullName, address, wishes, notes, prefs } = form;
+              return { backup: true, tg: u.tg, phone: u.phone, name: u.name, fullName, round, form: { fullName, address, wishes, notes, prefs } };
+            });
+        });
+      serviceMessage(`Из копии доступно анкет: ${backupForms.length}. Файл обработан в браузере.`);
+    } catch (e) { serviceMessage(e.message); }
+    renderServiceArchive();
+  });
+  $('[data-service-edit-form]').addEventListener('click', () => {
+    const user = serviceUser();
+    if (!user) return;
+    if (user.participation && !move.from.value) return serviceMessage('Выберите волну редактируемой анкеты.');
+    const round = Number(move.from.value);
+    const current = user.waveAnketas?.[round] || user.participation || {};
+    const dialog = document.createElement('dialog');
+    dialog.className = 'card pair-picker';
+    dialog.innerHTML = `<h3 data-form-title></h3>
+      <form class="form">
+        <label>ФИО <input name="fullName" required minlength="3" maxlength="120"></label>
+        <label>Адрес ПВЗ Ozon <input name="address" required minlength="5" maxlength="400"></label>
+        <label>Пожелания <textarea name="wishes" maxlength="1000"></textarea></label>
+        <label>Пометки <textarea name="notes" maxlength="500"></textarea></label>
+        <label>Предпочтения <select name="prefs"></select></label>
+        <p class="form-err" role="alert"></p>
+        <div class="actions"><button type="button" class="btn btn-ghost" data-close>Отмена</button>
+          <button type="submit" class="btn btn-primary">Сохранить анкету</button></div>
+      </form>`;
+    $('[data-form-title]', dialog).textContent = `Анкета @${user.tg} · ${round ? 'волна ' + round : 'без волны'}`;
+    const form = $('form', dialog);
+    form.elements.prefs.replaceChildren(...Object.entries(SantaCore.PREFS).map(([key, label]) => new Option(label, key)));
+    for (const key of ['fullName', 'address', 'wishes', 'notes', 'prefs']) form.elements[key].value = current[key] || (key === 'prefs' ? 'any' : '');
+    $('[data-close]', dialog).addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = $('button[type=submit]', form);
+      button.disabled = true;
+      try {
+        await serviceSave('form', { userId: user.id, round, form: Object.fromEntries(new FormData(form)) }, 'Анкета сохранена.');
+        dialog.close();
+      } catch (e) { $('[role=alert]', form).textContent = e.message; }
+      finally { button.disabled = false; }
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+
+  $('[data-service-archive-user]').addEventListener('click', () => {
+    const user = serviceUser();
+    if (!user?.participation) return;
+    reviewAction({
+      title: 'Убрать анкету в архив?',
+      detail: `Аккаунт @${user.tg} сохранится. Архивирование доступно для анкет без пар.`,
+      label: 'Архивировать',
+      apply: () => serviceSave('archive', { userId: user.id }, 'Анкета сохранена в архиве.'),
+    });
+  });
+  $('[data-service-restore]').addEventListener('click', () => {
+    const record = visibleRecords[Number($('[data-service-record]').value) - 1];
+    const user = record && recordAccount(record);
+    if (!user || user.participation) return;
+    const body = record.backup ? { userId: user.id, backup: { tg: record.tg, phone: record.phone, form: record.form } }
+      : { userId: user.id, archiveId: record.id };
+    reviewAction({
+      title: 'Восстановить анкету?',
+      detail: `Для @${user.tg} будет восстановлена выбранная анкета. Волну можно выбрать после восстановления.`,
+      label: 'Восстановить',
+      apply: () => serviceSave('restore', body, 'Анкета восстановлена. Выберите участника и целевую волну.'),
+    });
+  });
+  moveForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const body = { userId: move.userId.value, from: Number(move.from.value), to: Number(move.to.value), recipientId: move.recipientId.value };
+    try {
+      const plan = await Api.post('/api/admin/service/move', body, A);
+      reviewAction({
+        title: 'Подтвердить перевод?',
+        detail: plan.summary,
+        label: 'Перевести',
+        apply: () => serviceSave('move', { ...body, revision: plan.revision }, plan.summary),
+      });
+    } catch (e) { serviceMessage(e.message); }
+  });
+
   // ---------- render ----------
   function render() {
     $('[data-login]').hidden = true;
@@ -150,8 +355,10 @@
     renderWaveSwitch();
     const raffleView = curWave === 'raffle';
     raffle.hidden = !raffleView;
-    $('[data-waves-view]').hidden = raffleView;
-    if (raffleView) return;
+    const serviceView = curWave === 'service';
+    service.hidden = !serviceView;
+    $('[data-waves-view]').hidden = raffleView || serviceView;
+    if (raffleView || serviceView) return;
     const noForm = state.users.filter((u) => !u.participation);
     const noFormBot = noForm.filter((u) => u.tgLinked).length;
     const pend = state.users.filter((u) => u.participation && u.participation.moderation === 'pending').length;
@@ -258,7 +465,10 @@
     state.pairs.filter((p) => (p.round > 1 ? p.round : 1) === n).forEach((p) => { ids.add(p.santaId); ids.add(p.recipientId); });
     if (n === 1) state.users.forEach((u) => { if (u.participation && (u.participation.round == null || u.participation.round === 1)) ids.add(u.id); });
     else (state.wave2 || []).forEach((w) => { if (w.round === n && w.status !== 'declined') ids.add(w.userId); });
-    for (const u of state.users) if ((u.withdrawnWaves || []).includes(n)) ids.delete(u.id);
+    for (const u of state.users) {
+      if ((u.enrolledWaves || []).includes(n)) ids.add(u.id);
+      if ((u.withdrawnWaves || []).includes(n)) ids.delete(u.id);
+    }
     return ids;
   }
   function renderUsers() {
@@ -278,7 +488,7 @@
     if (title) title.textContent = w ? `👥 Участники · волна ${w.n}` : '👥 Участники';
     $('[data-users]').innerHTML = users.map((u) => {
       // во 2-й волне и дальше — анкета этой волны (если человек её поправлял при записи)
-      const wa = w && w.n > 1 && u.waveAnketas && u.waveAnketas[w.n];
+      const wa = w && u.waveAnketas && u.waveAnketas[w.n];
       const p = u.participation && wa ? Object.assign({}, u.participation, wa) : u.participation;
       const tag = w && w.n > 1 && w2[u.id] && w2[u.id].round === w.n ? `<small>${W2S[w2[u.id].status] || ''}${w2[u.id].reason === 'victim' ? ' · 😢 пострадавший' : w2[u.id].reason === 'self' ? ' · 🔁 повторно' : ''}${w2[u.id].priority ? ' · ⭐' : ''}</small>` : '';
       return `<tr class="${u.banned ? 'banned' : ''}">
@@ -410,11 +620,45 @@
     try { FX.lightbox((await Api.post('/api/photo', { id: b.dataset.adminPhoto }, A)).image); } catch (ex) { FX.toast(ex.message, 'error'); }
   });
 
+  const searchWords = (value) => String(value || '').toLowerCase().replace(/ё/g, 'е').match(/[a-zа-я0-9]+/g) || [];
+  function typoDistance(a, b) {
+    const rows = [Array.from({ length: b.length + 1 }, (_, i) => i)];
+    for (let i = 1; i <= a.length; i++) {
+      const row = rows[i] = [i];
+      for (let j = 1; j <= b.length; j++) {
+        row[j] = Math.min(rows[i - 1][j] + 1, row[j - 1] + 1, rows[i - 1][j - 1] + Number(a[i - 1] !== b[j - 1]));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) row[j] = Math.min(row[j], rows[i - 2][j - 2] + 1);
+      }
+    }
+    return rows[a.length][b.length];
+  }
+  function recipientSearchScore(query, words) {
+    let total = 0;
+    for (const token of query) {
+      let best = Infinity;
+      for (const word of words) {
+        if (word === token) best = 0;
+        else if (word.startsWith(token)) best = Math.min(best, 1);
+        else if (word.includes(token)) best = Math.min(best, 2);
+        else if (token.length >= 3 && best > 2) {
+          const limit = token.length >= 6 ? 2 : 1;
+          for (let n = Math.max(1, token.length - limit); n <= Math.min(word.length, token.length + limit); n++) {
+            const distance = typoDistance(token, word.slice(0, n));
+            if (distance <= limit) best = Math.min(best, 3 + distance);
+          }
+        }
+      }
+      if (!Number.isFinite(best)) return Infinity;
+      total += best;
+    }
+    return total;
+  }
+
   function openRecipientPicker(santaId, round) {
     const ids = waveUserIds(round);
     const pair = state.pairs.find((p) => p.santaId === santaId && SantaCore.pairRound(p) === round);
     if (!pair || pair.status !== 'assigned') return;
-    const people = state.users.filter((u) => ids.has(u.id) && u.id !== santaId
+    const people = state.users.filter((u) => ids.has(u.id) && u.id !== santaId && u.id !== pair.recipientId
       && u.participation && u.participation.moderation === 'approved' && !u.banned);
     const taken = new Set(state.pairs.filter((p) => SantaCore.pairRound(p) === round && p.santaId !== santaId).map((p) => p.recipientId));
     const dialog = document.createElement('dialog');
@@ -422,37 +666,29 @@
     dialog.innerHTML = `<form method="dialog"><button class="btn btn-ghost btn-sm" aria-label="Закрыть">Закрыть</button></form>
       <h3>Замена получателя · Волна ${round}</h3>
       <p>Санта: ${esc(pair.santa)} · Сейчас дарит: ${esc(pair.recipient)}</p>
-      <label>Поиск по имени, ФИО или нику <input type="search" data-find autofocus></label>
-      <label>Новый получатель <select size="7" data-candidates></select></label>
+      <label>Поиск по имени, ФИО или нику <input type="search" data-find autofocus autocomplete="off" maxlength="100"></label>
+      <div class="recipient-suggestions" data-candidates aria-label="Подсказки получателя"></div>
       <p data-plan class="muted" aria-live="polite">Выберите получателя, чтобы увидеть изменения в цепочке.</p>
       <div class="actions"><button class="btn btn-primary" type="button" data-save>Подтвердить замену</button></div>`;
     const input = $('[data-find]', dialog);
-    const select = $('[data-candidates]', dialog);
+    const suggestions = $('[data-candidates]', dialog);
     const save = $('[data-save]', dialog);
     const summary = $('[data-plan]', dialog);
+    const indexed = people.map((u) => ({ u, words: searchWords(`${u.name} ${u.tg} ${u.participation.fullName || ''}`) }));
+    let recipientId = '';
     let revision = null;
     let request = 0;
-    const render = () => {
-      const q = input.value.toLowerCase().trim().replace(/^@/, '');
-      const matches = people.filter((u) => `${u.name} ${u.tg} ${u.participation.fullName || ''}`.toLowerCase().includes(q));
-      select.replaceChildren(...matches.map((u) => {
-        const option = new Option(`@${u.tg} · ${u.name}` + (u.id === pair.recipientId ? ' · текущий' : taken.has(u.id) ? ' · уже есть Санта' : ''), u.id);
-        option.disabled = u.id === pair.recipientId;
-        return option;
-      }));
-      if (!matches.length) select.add(new Option('Никого не найдено', ''));
+    function resetPlan() {
       save.disabled = true;
       revision = null;
-      request++;
-      summary.textContent = 'Выберите получателя, чтобы увидеть изменения в цепочке.';
-    };
-    input.addEventListener('input', render);
-    const body = () => ({ action: 'replace', userId: santaId, recipientId: select.value, round });
-    select.addEventListener('change', async () => {
-      const current = ++request;
-      save.disabled = true;
-      revision = null;
-      if (!select.value) return;
+      return ++request;
+    }
+    const body = () => ({ action: 'replace', userId: santaId, recipientId, round });
+    async function choose(user) {
+      const current = resetPlan();
+      recipientId = user.id;
+      input.value = userLabel(user);
+      suggestions.replaceChildren();
       summary.textContent = 'Проверяем цепочку…';
       try {
         const plan = await Api.post('/api/admin/chain', body(), A);
@@ -461,6 +697,33 @@
         summary.textContent = plan.summary;
         save.disabled = false;
       } catch (e) { if (request === current) summary.textContent = e.message; }
+    }
+    function render() {
+      resetPlan();
+      recipientId = '';
+      suggestions.replaceChildren();
+      const query = searchWords(input.value);
+      if (!query.length) {
+        summary.textContent = 'Начните вводить имя, ФИО или ник.';
+        return;
+      }
+      const matches = indexed.map(({ u, words }) => ({ u, score: recipientSearchScore(query, words) }))
+        .filter(({ score }) => Number.isFinite(score)).sort((a, b) => a.score - b.score || a.u.name.localeCompare(b.u.name)).slice(0, 8);
+      summary.textContent = matches.length ? 'Выберите подсказку для предпросмотра цепочки.' : 'Совпадений нет.';
+      for (const { u } of matches) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-ghost btn-sm';
+        button.textContent = userLabel(u) + (taken.has(u.id) ? ' · уже есть Санта' : '');
+        button.addEventListener('click', () => choose(u));
+        suggestions.append(button);
+      }
+    }
+    input.addEventListener('input', render);
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown' || !suggestions.firstElementChild) return;
+      event.preventDefault();
+      suggestions.firstElementChild.focus();
     });
     save.addEventListener('click', async () => {
       if (!revision) return;
@@ -699,6 +962,10 @@
     try { localStorage.setItem('adm_wave', curWave); } catch (e) { /* ignore */ }
     render();
     if (curWave === 'raffle') loadRaffle();
+    if (curWave === 'service') {
+      renderServiceUsers();
+      loadServiceArchive().catch((e) => serviceMessage(e.message));
+    }
   }
   const pRound = (p) => (p.round > 1 ? p.round : 1);
   const wavePairs = (n) => state.pairs.filter((p) => pRound(p) === n);
@@ -708,7 +975,7 @@
     return (state.wave2 || []).filter((x) => x.round === n && x.status === 'confirmed').map((x) => x.userId);
   }
   function renderWaveSwitch() {
-    if (!['all', 'raffle'].includes(curWave) && !wave()) curWave = 'all';
+    if (!['all', 'raffle', 'service'].includes(curWave) && !wave()) curWave = 'all';
     const w = wave();
     const sw = $('[data-wave-switch]');
     const open = sw.querySelector('[data-ws-menu]') && !sw.querySelector('[data-ws-menu]').hidden;
@@ -716,12 +983,13 @@
     const last = (state.waves || [])[state.waves.length - 1];
     const isFinal = last && last.n >= SantaCore.FINAL_WAVE;
     const blocked = last && (last.status === 'open' || last.status === 'drawing');
-    sw.innerHTML = `<button class="ws-btn" type="button" data-ws-toggle>${curWave === 'raffle' ? '🎁 Розыгрыш' : w ? `🌊 Волна ${w.n}` : '📊 Все волны'} <span class="ws-caret">▾</span></button>
+    sw.innerHTML = `<button class="ws-btn" type="button" data-ws-toggle>${curWave === 'service' ? 'Сервисное меню' : curWave === 'raffle' ? '🎁 Розыгрыш' : w ? `🌊 Волна ${w.n}` : '📊 Все волны'} <span class="ws-caret">▾</span></button>
       <div class="ws-menu" data-ws-menu ${open ? '' : 'hidden'}>
         <button type="button" data-ws="all" class="${curWave === 'all' ? 'on' : ''}">📊 Все волны<small>сводка: кто что не сделал</small></button>
         ${(state.waves || []).map((x) => `<button type="button" data-ws="${x.n}" class="${w && w.n === x.n ? 'on' : ''}">🌊 Волна ${x.n}<small>${fd(x.start)} — ${fd(x.end)} · ${WST[x.status] || x.status}</small></button>`).join('')}
         ${isFinal ? `<button type="button" data-ws="raffle" class="${curWave === 'raffle' ? 'on' : ''}">🎁 Розыгрыш<small>общий для всех волн</small></button>` : ''}
         ${isFinal ? '' : `<button type="button" data-ws-new ${blocked ? 'disabled' : ''}>➕ Новая волна${last ? ` (${last.n + 1}-я)` : ''}<small>${blocked ? 'сначала жеребьёвка или остановка текущей' : 'лист ожидания получит приглашение'}</small></button>`}
+        <button type="button" data-ws="service" class="${curWave === 'service' ? 'on' : ''}">Сервисное меню<small>архив анкет и перевод между волнами</small></button>
       </div>`;
   }
   function tiles(list) { $('[data-tiles]').innerHTML = list.map(([v, l, cls]) => `<div class="card tile ${cls || ''}"><b>${v}</b><span>${l}</span></div>`).join(''); }
@@ -1172,6 +1440,7 @@
 
   async function load() {
     state = await Api.get('/api/admin/state', A);
+    if (location.hash === '#service') curWave = 'service';
     if (location.hash === '#raffle') curWave = 'raffle';
     if (location.hash === '#chains') {
       if (curWave === 'raffle') curWave = 'all';
@@ -1179,6 +1448,10 @@
     }
     render();
     if (curWave === 'raffle') await loadRaffle();
+    if (curWave === 'service') {
+      renderServiceUsers();
+      await loadServiceArchive().catch((e) => serviceMessage(e.message));
+    }
   }
 
   (async () => {
@@ -1187,7 +1460,7 @@
     try { await load(); } catch (e) { showLogin(); }
     setInterval(async () => {
       if ($('[data-dash]').hidden) return;
-      if (curWave === 'raffle') return;
+      if (curWave === 'raffle' || curWave === 'service') return;
       const revision = stateRevision;
       try {
         const next = await Api.get('/api/admin/state', A);

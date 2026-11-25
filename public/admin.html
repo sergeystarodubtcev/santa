@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Unbounded:wght@500;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261122g">
+  <link rel="stylesheet" href="css/style.css?v=20261125b">
 </head>
 <body>
   <header class="topbar">
@@ -80,6 +80,46 @@
               </table>
             </div>
           </section>
+        </section>
+        <section class="raffle-panel" data-service hidden aria-labelledby="service-title">
+          <div class="card raffle-hero"><div><h1 id="service-title">Сервисное меню</h1><p>Анкеты, восстановление и перевод между волнами.</p></div></div>
+          <div class="raffle-columns">
+            <section class="card raffle-card">
+              <h2>Текущие участники</h2>
+              <form class="form" data-service-move>
+                <label>Поиск по имени, нику или телефону <input type="search" data-service-search></label>
+                <label>Участник <select name="userId" required></select></label>
+                <label>Из какой волны <select name="from" required></select></label>
+                <label>В какую волну <select name="to" required></select></label>
+                <label>Поиск получателя <input type="search" data-service-rec-search></label>
+                <label>Получатель подарка <select name="recipientId"></select></label>
+                <div class="actions"><button type="submit" class="btn btn-primary">Проверить перевод</button>
+                  <button type="button" class="btn btn-ghost" data-service-edit-form>Создать или изменить анкету</button>
+                  <button type="button" class="btn btn-ghost" data-service-archive-user>Архивировать анкету</button></div>
+              </form>
+            </section>
+            <section class="card raffle-card">
+              <h2>Восстановление анкет</h2>
+              <p class="muted">Восстанавливается одна анкета в существующий аккаунт без анкеты. Затем выберите ей волну.</p>
+              <div class="form">
+                <label>Резервная копия JSON <input type="file" accept=".json,application/json" data-service-backup></label>
+                <label>Поиск в архиве и копии <input type="search" data-service-archive-search></label>
+                <label>Анкета <select data-service-record></select></label>
+                <p class="muted" data-service-record-status></p>
+                <button type="button" class="btn btn-primary" data-service-restore disabled>Восстановить анкету</button>
+              </div>
+            </section>
+          </div>
+          <section class="card raffle-card" aria-labelledby="unassigned-title">
+            <h2 id="unassigned-title">Анкеты без волны</h2>
+            <label>Поиск по имени, ФИО, нику или телефону <input type="search" data-service-unassigned-search></label>
+            <p class="muted" data-service-unassigned-empty hidden>Подходящих анкет нет.</p>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Участник</th><th>Статус анкеты</th><th>Действие</th></tr></thead>
+              <tbody data-service-unassigned></tbody>
+            </table></div>
+          </section>
+          <p class="chain-result" role="status" data-service-result hidden></p>
         </section>
         <div data-waves-view>
         <h1 class="page-title">Пульт <span class="grad">Деда Мороза</span></h1>
@@ -286,9 +326,9 @@
 
   <script src="js/config.js?v=20261116f"></script>
   <script src="js/cities.js?v=20261116f"></script>
-  <script src="js/core.js?v=20261122g"></script>
-  <script src="js/api.js?v=20261122g"></script>
+  <script src="js/core.js?v=20261125b"></script>
+  <script src="js/api.js?v=20261125b"></script>
   <script src="js/fx.js?v=20261116f"></script>
-  <script src="js/admin.js?v=20261122g"></script>
+  <script src="js/admin.js?v=20261125b"></script>
 </body>
 </html>
